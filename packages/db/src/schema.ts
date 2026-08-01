@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 /**
  * Unified transaction-code taxonomy (SEC-derived; every market maps into it
@@ -107,12 +108,15 @@ export const filings = pgTable(
       .notNull()
       .references(() => companies.id),
     rawXmlUrl: text("raw_xml_url"),
+    /** Set on the ORIGINAL filing when an amendment (4/A...) replaces it; APIs hide superseded rows by default. */
+    supersededByFilingId: uuid("superseded_by_filing_id").references((): AnyPgColumn => filings.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("filings_accession_no_unique").on(t.accessionNo),
     index("filings_issuer_company_id_idx").on(t.issuerCompanyId),
     index("filings_filed_at_idx").on(t.filedAt),
+    index("filings_superseded_by_idx").on(t.supersededByFilingId),
   ],
 );
 

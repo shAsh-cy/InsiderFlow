@@ -15,6 +15,20 @@
       "when": 1785608942281,
       "tag": "0001_noisy_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785610422209,
+      "tag": "0002_uneven_kat_farrell",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785611352445,
+      "tag": "0003_backfill_usd_and_relevance",
+      "breakpoints": true
     }
   ]
 }

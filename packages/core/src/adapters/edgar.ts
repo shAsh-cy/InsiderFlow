@@ -87,6 +87,7 @@ export function parseEdgarSubmission(
     filedAt,
     sourceUrl: ref.sourceUrl,
     rawXmlUrl: null,
+    originalFiledDate: doc.originalSubmissionDate,
   };
 
   const transactions: UnifiedTransaction[] = [];

@@ -50,6 +50,8 @@ export interface ParsedOwnershipDocument {
   /** "3" | "4" | "5" (amendments keep their base type here; see filings.form_type for the raw type). */
   formType: string;
   periodOfReport: string | null;
+  /** For amendments (4/A...): the date the original filing was submitted. */
+  originalSubmissionDate: string | null;
   /** The filing-level "made pursuant to a Rule 10b5-1 plan" checkbox. */
   affTenB51: boolean;
   issuer: Form4Issuer;
@@ -241,6 +243,7 @@ export function parseOwnershipDocument(xml: string): ParsedOwnershipDocument {
   return {
     formType: valueOf(root.documentType) ?? "4",
     periodOfReport: dateOf(root.periodOfReport),
+    originalSubmissionDate: dateOf(root.dateOfOriginalSubmission),
     affTenB51,
     issuer,
     owners: arr(root.reportingOwner).map(parseOwner),

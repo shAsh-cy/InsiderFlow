@@ -1,0 +1,3 @@
+ALTER TABLE "filings" ADD COLUMN "superseded_by_filing_id" uuid;--> statement-breakpoint
+ALTER TABLE "filings" ADD CONSTRAINT "filings_superseded_by_filing_id_filings_id_fk" FOREIGN KEY ("superseded_by_filing_id") REFERENCES "public"."filings"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "filings_superseded_by_idx" ON "filings" USING btree ("superseded_by_filing_id");

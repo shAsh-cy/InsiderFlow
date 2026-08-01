@@ -81,6 +81,28 @@ FX (Frankfurter/ECB) and daily price context (Stooq) are keyless and cached in
 Postgres; API responses are cached in `api_cache` so free-tier budgets are never
 spent twice.
 
+### Public API
+
+Free and rate-limited: 60 requests/min per IP, or 600/min with an `x-api-key`
+(set `API_KEYS` in the web app's environment). Docs at [`/docs`](/docs), spec at
+`/api/openapi.json`. Responses carry edge-cache headers (`s-maxage` +
+`stale-while-revalidate`) and ETags; all inputs are Zod-validated.
+
+| Endpoint                           | What it returns                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `/api/trades`                      | Normalized trades — filter by market, ticker, code, role, relevance, source, min_value(_usd), cluster, dip, exec_only, from/to |
+| `/api/companies/:ticker`           | Profile, 90-day aggregates, insider sentiment (MSPR), trade-vs-close price context                                             |
+| `/api/companies/:ticker/sentiment` | MSPR time series                                                                                                               |
+| `/api/insiders/:id`                | Insider profile + recent trades                                                                                                |
+| `/api/screener/:preset`            | Canned screens: big-buys, cluster-buys, exec-buys, dip-buys, ...                                                               |
+| `/api/heatmap`                     | Per-company USD buy/sell aggregates for treemaps                                                                               |
+| `/api/politicians`                 | Placeholder (congressional trading ingestion planned)                                                                          |
+| `/api/rss/:screen`                 | RSS 2.0 feed of any screen                                                                                                     |
+| `/api/stream`                      | SSE live feed — ~25s serverless windows, Last-Event-ID resume, `?mode=poll` fallback                                           |
+
+Form 4/A amendments supersede their originals and are hidden by default
+(`include_superseded=true` to opt back in).
+
 ### Monorepo layout
 
 ```

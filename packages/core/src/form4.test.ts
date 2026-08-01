@@ -91,4 +91,13 @@ describe("parseOwnershipDocument", () => {
   it("rejects non-ownership XML", () => {
     expect(() => parseOwnershipDocument("<html><body>404</body></html>")).toThrow();
   });
+
+  it("extracts dateOfOriginalSubmission from amendments", () => {
+    expect(doc.originalSubmissionDate).toBeNull();
+    const amendment = SAMPLE_FORM4_XML.replace(
+      "<documentType>4</documentType>",
+      "<documentType>4/A</documentType>\n    <dateOfOriginalSubmission>2026-07-31</dateOfOriginalSubmission>",
+    );
+    expect(parseOwnershipDocument(amendment).originalSubmissionDate).toBe("2026-07-31");
+  });
 });

@@ -88,6 +88,8 @@ export interface UnifiedFiling {
   filedAt: string | null;
   sourceUrl: string | null;
   rawXmlUrl: string | null;
+  /** For amendments ("4/A"...): the date the original filing was submitted — used to link and supersede it. */
+  originalFiledDate: string | null;
 }
 
 export interface UnifiedTransaction {

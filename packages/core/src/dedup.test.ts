@@ -33,6 +33,7 @@ function edgarStyle(
       filedAt: "2026-07-31T21:05:12.000Z",
       sourceUrl: null,
       rawXmlUrl: null,
+      originalFiledDate: null,
     },
     txnDate: "2026-07-30",
     code: "S",

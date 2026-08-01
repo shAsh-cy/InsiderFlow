@@ -28,6 +28,8 @@ import {
   inArray,
   ingestionState,
   insiders,
+  isNull,
+  ne,
   sql,
   transactions,
 } from "@insiderflow/db";
@@ -50,6 +52,8 @@ export interface PersistStats {
   transactionsInserted: number;
   /** Rows dropped by the dedup_key unique index (same trade from another source/run). */
   transactionsDeduped: number;
+  /** The dedup keys of those dropped rows — used to re-home rows onto amendments. */
+  dedupedKeys: string[];
   filingsCreated: number;
 }
 
@@ -206,6 +210,7 @@ export async function persistUnified(
   const stats: PersistStats = {
     transactionsInserted: 0,
     transactionsDeduped: 0,
+    dedupedKeys: [],
     filingsCreated: 0,
   };
   if (txns.length === 0) return stats;
@@ -264,9 +269,11 @@ export async function persistUnified(
     .insert(transactions)
     .values(rows)
     .onConflictDoNothing({ target: transactions.dedupKey })
-    .returning({ id: transactions.id });
+    .returning({ id: transactions.id, dedupKey: transactions.dedupKey });
   stats.transactionsInserted = inserted.length;
   stats.transactionsDeduped = rows.length - inserted.length;
+  const insertedKeys = new Set(inserted.map((r) => r.dedupKey));
+  stats.dedupedKeys = rows.map((r) => r.dedupKey).filter((key) => !insertedKeys.has(key));
 
   if (stats.transactionsDeduped > 0) {
     log("cross_source_dedup", {
@@ -293,8 +300,83 @@ export async function persistFilingOnly(
   return {
     transactionsInserted: 0,
     transactionsDeduped: 0,
+    dedupedKeys: [],
     filingsCreated: created ? 1 : 0,
   };
+}
+
+/**
+ * Link an amendment (4/A, 3/A, 5/A) to the filing(s) it replaces: mark the
+ * originals superseded, and re-home rows the amendment re-reported
+ * unchanged (they deduped against the original) so they stay visible when
+ * APIs hide superseded filings by default.
+ */
+export async function linkAmendment(
+  db: Database,
+  accessionNo: string,
+  originalFiledDate: string,
+  insiderExternalKey: string,
+  dedupedKeys: string[],
+  log: Logger = jsonLogger,
+): Promise<number> {
+  const [amendment] = await db
+    .select({
+      id: filings.id,
+      issuerCompanyId: filings.issuerCompanyId,
+      formType: filings.formType,
+    })
+    .from(filings)
+    .where(eq(filings.accessionNo, accessionNo));
+  if (!amendment) return 0;
+
+  const baseFormType = amendment.formType.replace("/A", "");
+  const candidateConditions = and(
+    eq(filings.issuerCompanyId, amendment.issuerCompanyId),
+    eq(filings.formType, baseFormType),
+    // EDGAR filing dates are US Eastern.
+    sql`date(${filings.filedAt} AT TIME ZONE 'America/New_York') = ${originalFiledDate}`,
+    isNull(filings.supersededByFilingId),
+    ne(filings.id, amendment.id),
+  );
+
+  // Several insiders can file against the same issuer on the same day, so
+  // the original must share the amendment's reporting owner (via its rows).
+  let originals = await db
+    .select({ id: filings.id })
+    .from(filings)
+    .where(
+      and(
+        candidateConditions,
+        sql`exists (select 1 from transactions t join insiders i on i.id = t.insider_id
+             where t.filing_id = ${filings.id} and i.external_key = ${insiderExternalKey})`,
+      ),
+    );
+  if (originals.length === 0) {
+    // Holdings-only originals (e.g. Form 3) have no rows to match on —
+    // safe only when the candidate is unambiguous.
+    const candidates = await db.select({ id: filings.id }).from(filings).where(candidateConditions);
+    if (candidates.length !== 1) return 0;
+    originals = candidates;
+  }
+
+  const originalIds = originals.map((o) => o.id);
+  await db
+    .update(filings)
+    .set({ supersededByFilingId: amendment.id })
+    .where(inArray(filings.id, originalIds));
+  if (dedupedKeys.length > 0) {
+    await db
+      .update(transactions)
+      .set({ filingId: amendment.id })
+      .where(
+        and(
+          inArray(transactions.dedupKey, dedupedKeys),
+          inArray(transactions.filingId, originalIds),
+        ),
+      );
+  }
+  log("amendment_linked", { amendment: accessionNo, superseded: originalIds.length });
+  return originalIds.length;
 }
 
 // ── EDGAR primary flow ──────────────────────────────────────────────────────
@@ -433,6 +515,17 @@ export async function ingestFilingRefs(
           : await persistFilingOnly(db, parsed, url);
       stats.transactionsInserted += result.transactionsInserted;
       stats.transactionsDeduped += result.transactionsDeduped;
+
+      if (parsed.filing.formType.includes("/A") && parsed.filing.originalFiledDate) {
+        await linkAmendment(
+          db,
+          parsed.filing.accessionNo,
+          parsed.filing.originalFiledDate,
+          parsed.insider.externalKey,
+          result.dedupedKeys,
+          log,
+        );
+      }
 
       if (result.filingsCreated > 0 || result.transactionsInserted > 0) {
         stats.ingested++;

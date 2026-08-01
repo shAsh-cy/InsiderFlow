@@ -16,12 +16,19 @@ import * as dbExports from "@insiderflow/db";
 import type { Database } from "@insiderflow/db";
 
 import type { FetchLike, FetchLikeResponse } from "./http";
-import { ingestFromFeed, persistUnified } from "./pipeline";
+import { ingestFilingRefs, ingestFromFeed, persistUnified } from "./pipeline";
 
 const SECOND_FORM4_XML = SAMPLE_FORM4_XML.replace("0001214156", "0009876543").replace(
   "Doe  Jane A.",
   "Smith Robert",
 );
+
+// Form 4/A amending filing -000123: the sale and RSU rows are re-reported
+// unchanged, the purchase quantity is corrected 2500 → 2600.
+const AMENDMENT_XML = SAMPLE_FORM4_XML.replace(
+  "<documentType>4</documentType>",
+  "<documentType>4/A</documentType>\n    <dateOfOriginalSubmission>2026-07-31</dateOfOriginalSubmission>",
+).replace("<value>2500</value>", "<value>2600</value>");
 
 // Holdings-only Form 3 (initial ownership statement): no transaction tables.
 // Its filing must still be recorded, or it gets re-fetched every run.
@@ -82,6 +89,9 @@ const fetchMock: FetchLike = (url) => {
   }
   if (url.endsWith("/0000320193-26-000125.txt")) {
     return Promise.resolve(textResponse(wrapAsSubmissionText(FORM3_XML, "20260731170801")));
+  }
+  if (url.endsWith("/0000320193-26-000126.txt")) {
+    return Promise.resolve(textResponse(wrapAsSubmissionText(AMENDMENT_XML, "20260801090001")));
   }
   return Promise.resolve(textResponse("not found", 404));
 };
@@ -227,6 +237,53 @@ describe("ingestion pipeline (PGlite integration)", () => {
     expect(finnhubRow.insiderId).toBe(jane.id);
     expect(await db.select().from(dbExports.companies)).toHaveLength(1);
     expect(await db.select().from(dbExports.insiders)).toHaveLength(2);
+
+    // ── Form 4/A amendment: supersede the original, keep unchanged rows ────
+    const amendStats = await ingestFilingRefs(
+      [
+        {
+          accessionNo: "0000320193-26-000126",
+          cik: "0000320193",
+          formType: "4/A",
+          filedAt: "2026-08-01T09:00:01-04:00",
+          sourceUrl: null,
+        },
+      ],
+      options,
+    );
+    // The corrected purchase (2600 shares) inserts; the unchanged sale and
+    // RSU rows dedupe against the original filing's rows.
+    expect(amendStats.ingested).toBe(1);
+    expect(amendStats.transactionsInserted).toBe(1);
+    expect(amendStats.transactionsDeduped).toBe(2);
+
+    const filingsAfterAmend = await db.select().from(dbExports.filings);
+    expect(filingsAfterAmend).toHaveLength(4);
+    const amendment = filingsAfterAmend.find((f) => f.accessionNo === "0000320193-26-000126")!;
+    expect(amendment.formType).toBe("4/A");
+    expect(amendment.supersededByFilingId).toBeNull();
+    const supersededOriginal = filingsAfterAmend.find(
+      (f) => f.accessionNo === "0000320193-26-000123",
+    )!;
+    expect(supersededOriginal.supersededByFilingId).toBe(amendment.id);
+
+    // Smith's same-day filing against the same issuer must NOT be superseded.
+    const smithFiling = filingsAfterAmend.find((f) => f.accessionNo === "0000320193-26-000124")!;
+    expect(smithFiling.supersededByFilingId).toBeNull();
+
+    const txnsAfterAmend = await db.select().from(dbExports.transactions);
+    expect(txnsAfterAmend).toHaveLength(8);
+    // Unchanged rows were re-homed onto the amendment (still visible when
+    // superseded filings are hidden)...
+    const saleAfter = txnsAfterAmend.find((t) => t.code === "S" && t.insiderId === jane.id)!;
+    expect(saleAfter.filingId).toBe(amendment.id);
+    // ...while the corrected-away original purchase stays on the superseded filing.
+    const stalePurchase = txnsAfterAmend.find((t) => t.code === "P" && t.shares === "2500.0000")!;
+    expect(stalePurchase.filingId).toBe(supersededOriginal.id);
+    const correctedPurchase = txnsAfterAmend.find(
+      (t) => t.code === "P" && t.shares === "2600.0000",
+    )!;
+    expect(correctedPurchase.filingId).toBe(amendment.id);
 
     // Cursor recorded for observability.
     const cursorRows = await db.select().from(dbExports.ingestionState);
