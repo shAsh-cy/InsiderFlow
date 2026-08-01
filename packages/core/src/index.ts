@@ -26,4 +26,24 @@ export {
   parseDailyFormIdx,
 } from "./edgar";
 export type { EdgarFilingRef } from "./edgar";
+export type { FetchLike, FetchLikeResponse, Logger } from "./http";
+export { classifyRelevance } from "./relevance";
+export type { Relevance } from "./relevance";
+export { AdapterNotConfiguredError, buildTransaction, rolesFromText } from "./unified";
+export type {
+  AdapterContext,
+  LatencyClass,
+  MarketMetadata,
+  SourceAdapter,
+  SourceId,
+  UnifiedCompany,
+  UnifiedFiling,
+  UnifiedInsider,
+  UnifiedTransaction,
+} from "./unified";
+export { assignDedupKeys, transactionIdentity } from "./dedup";
+export { frankfurterUrl, parseFrankfurterRate, toUsd } from "./fx";
+export { parseStooqCsv, stooqDailyUrl } from "./prices";
+export type { DailyPriceRow } from "./prices";
+export * from "./adapters";
 export type { Market } from "./types";

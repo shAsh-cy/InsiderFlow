@@ -1,31 +1,303 @@
 /**
- * EDGAR → Postgres ingestion pipeline. Runtime-agnostic: the Cloudflare
- * Worker cron, the backfill script, and the integration tests all run this
- * exact code with different fetch/db handles.
+ * Ingestion pipeline. Source adapters produce UnifiedTransactions;
+ * persistUnified() writes them idempotently — companies/insiders resolved by
+ * cross-source identity, filings by accession number, transactions by
+ * dedup key. Adding a market touches none of this code.
  */
 import {
+  assignDedupKeys,
   edgarCurrentFeedUrl,
   edgarSubmissionTextUrl,
-  extractAcceptanceDatetime,
-  extractOwnershipXml,
-  isSecTransactionCode,
   parseCurrentFeed,
-  parseOwnershipDocument,
+  parseEdgarSubmission,
+  toUsd,
 } from "@insiderflow/core";
-import type { EdgarFilingRef, ParsedOwnershipDocument } from "@insiderflow/core";
+import type {
+  EdgarFilingRef,
+  EdgarNormalizedSubmission,
+  UnifiedCompany,
+  UnifiedFiling,
+  UnifiedInsider,
+  UnifiedTransaction,
+} from "@insiderflow/core";
 import {
+  and,
   companies,
+  eq,
   filings,
+  inArray,
   ingestionState,
   insiders,
-  transactions,
-  inArray,
   sql,
+  transactions,
 } from "@insiderflow/db";
 import type { Database, NewTransaction } from "@insiderflow/db";
 
 import { fetchWithRetry, jsonLogger, RateLimiter } from "./http";
 import type { FetchLike, Logger } from "./http";
+
+/** Resolve the USD rate for (currency, ISO date); null = leave USD fields empty. */
+export type FxRateLookup = (currency: string, dateIso: string) => Promise<number | null>;
+
+export interface PersistOptions {
+  db: Database;
+  log?: Logger;
+  /** Defaults to identity for USD and no conversion otherwise. */
+  fxRateLookup?: FxRateLookup;
+}
+
+export interface PersistStats {
+  transactionsInserted: number;
+  /** Rows dropped by the dedup_key unique index (same trade from another source/run). */
+  transactionsDeduped: number;
+  filingsCreated: number;
+}
+
+const toNumeric = (n: number | null): string | null => (n === null ? null : String(n));
+
+const defaultFxLookup: FxRateLookup = (currency) =>
+  Promise.resolve(currency.toUpperCase() === "USD" ? 1 : null);
+
+async function resolveCompany(
+  db: Database,
+  company: UnifiedCompany,
+  cache: Map<string, string>,
+): Promise<string> {
+  const cached = cache.get(company.externalKey);
+  if (cached) return cached;
+
+  let id: string | undefined;
+  const [byKey] = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(eq(companies.externalKey, company.externalKey));
+  id = byKey?.id;
+
+  // Cross-source join: another adapter may know this company under a
+  // different key (EDGAR "cik:...", Finnhub "ticker:US:...").
+  if (!id && company.ticker) {
+    const [byTicker] = await db
+      .select({ id: companies.id })
+      .from(companies)
+      .where(and(eq(companies.ticker, company.ticker), eq(companies.country, company.country)))
+      .limit(1);
+    id = byTicker?.id;
+  }
+
+  if (!id) {
+    const [row] = await db
+      .insert(companies)
+      .values({
+        externalKey: company.externalKey,
+        cik: company.cik,
+        name: company.name,
+        ticker: company.ticker,
+        country: company.country,
+      })
+      .onConflictDoUpdate({
+        target: companies.externalKey,
+        set: {
+          name: sql`excluded.name`,
+          ticker: sql`coalesce(excluded.ticker, ${companies.ticker})`,
+        },
+      })
+      .returning({ id: companies.id });
+    id = row!.id;
+  }
+
+  cache.set(company.externalKey, id);
+  return id;
+}
+
+async function resolveInsider(
+  db: Database,
+  insider: UnifiedInsider,
+  cache: Map<string, string>,
+): Promise<string> {
+  const cached = cache.get(insider.externalKey);
+  if (cached) return cached;
+
+  let id: string | undefined;
+  const [byKey] = await db
+    .select({ id: insiders.id })
+    .from(insiders)
+    .where(eq(insiders.externalKey, insider.externalKey));
+  id = byKey?.id;
+
+  // Cross-source join on the exact normalized name (aggregators have no CIK).
+  // Tradeoff: two distinct people with identical normalized names would merge.
+  if (!id) {
+    const [byName] = await db
+      .select({ id: insiders.id })
+      .from(insiders)
+      .where(eq(insiders.name, insider.name))
+      .limit(1);
+    id = byName?.id;
+  }
+
+  if (!id) {
+    const [row] = await db
+      .insert(insiders)
+      .values({
+        externalKey: insider.externalKey,
+        cik: insider.externalKey.startsWith("cik:") ? insider.externalKey.slice(4) : null,
+        name: insider.name,
+        isDirector: insider.isDirector,
+        isOfficer: insider.isOfficer,
+        isTenPctOwner: insider.isTenPercentOwner,
+        officerTitle: insider.title,
+      })
+      .onConflictDoUpdate({
+        target: insiders.externalKey,
+        set: {
+          name: sql`excluded.name`,
+          isDirector: sql`excluded.is_director`,
+          isOfficer: sql`excluded.is_officer`,
+          isTenPctOwner: sql`excluded.is_ten_pct_owner`,
+          // Keep the last known title when a later filing omits it.
+          officerTitle: sql`coalesce(excluded.officer_title, ${insiders.officerTitle})`,
+        },
+      })
+      .returning({ id: insiders.id });
+    id = row!.id;
+  }
+
+  cache.set(insider.externalKey, id);
+  return id;
+}
+
+async function resolveFiling(
+  db: Database,
+  filing: UnifiedFiling,
+  companyId: string,
+  fallbackRawXmlUrl: string | null,
+): Promise<{ id: string; created: boolean }> {
+  const [inserted] = await db
+    .insert(filings)
+    .values({
+      accessionNo: filing.accessionNo,
+      formType: filing.formType,
+      filedAt: filing.filedAt ? new Date(filing.filedAt) : new Date(),
+      sourceUrl: filing.sourceUrl,
+      issuerCompanyId: companyId,
+      rawXmlUrl: filing.rawXmlUrl ?? fallbackRawXmlUrl,
+    })
+    .onConflictDoNothing({ target: filings.accessionNo })
+    .returning({ id: filings.id });
+  if (inserted) return { id: inserted.id, created: true };
+
+  const [existing] = await db
+    .select({ id: filings.id })
+    .from(filings)
+    .where(eq(filings.accessionNo, filing.accessionNo));
+  return { id: existing!.id, created: false };
+}
+
+/**
+ * Persist a batch of UnifiedTransactions from any source adapter.
+ * Idempotent at every level; the same trade arriving from a second source
+ * is dropped by the dedup_key unique index.
+ */
+export async function persistUnified(
+  txns: UnifiedTransaction[],
+  { db, log = jsonLogger, fxRateLookup = defaultFxLookup }: PersistOptions,
+  context: { rawXmlUrl?: string } = {},
+): Promise<PersistStats> {
+  const stats: PersistStats = {
+    transactionsInserted: 0,
+    transactionsDeduped: 0,
+    filingsCreated: 0,
+  };
+  if (txns.length === 0) return stats;
+
+  const companyCache = new Map<string, string>();
+  const insiderCache = new Map<string, string>();
+  const filingCache = new Map<string, string>();
+  const dedupKeys = assignDedupKeys(txns);
+
+  const rows: NewTransaction[] = [];
+  for (let i = 0; i < txns.length; i++) {
+    const txn = txns[i]!;
+    const companyId = await resolveCompany(db, txn.company, companyCache);
+    const insiderId = await resolveInsider(db, txn.insider, insiderCache);
+
+    let filingId: string | null = null;
+    if (txn.filing) {
+      const cachedFiling = filingCache.get(txn.filing.accessionNo);
+      if (cachedFiling) {
+        filingId = cachedFiling;
+      } else {
+        const resolved = await resolveFiling(db, txn.filing, companyId, context.rawXmlUrl ?? null);
+        if (resolved.created) stats.filingsCreated++;
+        filingCache.set(txn.filing.accessionNo, resolved.id);
+        filingId = resolved.id;
+      }
+    }
+
+    const rate = await fxRateLookup(txn.currency, txn.txnDate);
+    rows.push({
+      source: txn.source,
+      filingId,
+      insiderId,
+      companyId,
+      txnDate: txn.txnDate,
+      code: txn.code,
+      rawCode: txn.rawCode,
+      shares: toNumeric(txn.shares),
+      price: toNumeric(txn.price),
+      value: toNumeric(txn.value),
+      currency: txn.currency,
+      priceUsd: toNumeric(toUsd(txn.price, rate)),
+      valueUsd: toNumeric(toUsd(txn.value, rate)),
+      acquiredDisposed: txn.acquiredDisposed,
+      sharesOwnedAfter: toNumeric(txn.sharesOwnedAfter),
+      is10b51: txn.is10b51,
+      isDerivative: txn.isDerivative,
+      relevance: txn.relevance,
+      dedupKey: dedupKeys[i]!,
+      footnote: txn.footnote,
+      country: txn.country,
+    });
+  }
+
+  const inserted = await db
+    .insert(transactions)
+    .values(rows)
+    .onConflictDoNothing({ target: transactions.dedupKey })
+    .returning({ id: transactions.id });
+  stats.transactionsInserted = inserted.length;
+  stats.transactionsDeduped = rows.length - inserted.length;
+
+  if (stats.transactionsDeduped > 0) {
+    log("cross_source_dedup", {
+      source: txns[0]!.source,
+      deduped: stats.transactionsDeduped,
+      inserted: stats.transactionsInserted,
+    });
+  }
+  return stats;
+}
+
+/**
+ * Record a holdings-only filing (most Form 3s report positions, not trades).
+ * Without this the filing never enters the DB diff and gets re-fetched on
+ * every run, permanently clogging the per-run batch.
+ */
+export async function persistFilingOnly(
+  db: Database,
+  parsed: Pick<EdgarNormalizedSubmission, "company" | "filing">,
+  rawXmlUrl: string | null,
+): Promise<PersistStats> {
+  const companyId = await resolveCompany(db, parsed.company, new Map());
+  const { created } = await resolveFiling(db, parsed.filing, companyId, rawXmlUrl);
+  return {
+    transactionsInserted: 0,
+    transactionsDeduped: 0,
+    filingsCreated: created ? 1 : 0,
+  };
+}
+
+// ── EDGAR primary flow ──────────────────────────────────────────────────────
 
 export interface PipelineOptions {
   db: Database;
@@ -42,6 +314,7 @@ export interface PipelineOptions {
   /** Which ownership form feeds to poll. */
   forms?: readonly string[];
   log?: Logger;
+  fxRateLookup?: FxRateLookup;
 }
 
 export interface IngestStats {
@@ -49,7 +322,8 @@ export interface IngestStats {
   alreadyKnown: number;
   ingested: number;
   transactionsInserted: number;
-  skippedNoXml: number;
+  transactionsDeduped: number;
+  skippedEmpty: number;
   errors: number;
 }
 
@@ -85,9 +359,9 @@ export async function ingestFromFeed(opts: PipelineOptions): Promise<IngestStats
 }
 
 /**
- * Ingest a batch of filing refs (from the live feed or a backfill index):
- * diff against filings already in the DB, fetch + parse the new ones, and
- * upsert idempotently (accession_no is the unique key).
+ * Ingest a batch of EDGAR filing refs (live feed or backfill index):
+ * diff against filings already in the DB, fetch + normalize the new ones,
+ * and persist idempotently.
  */
 export async function ingestFilingRefs(
   allRefs: EdgarFilingRef[],
@@ -110,7 +384,8 @@ export async function ingestFilingRefs(
     alreadyKnown: 0,
     ingested: 0,
     transactionsInserted: 0,
-    skippedNoXml: 0,
+    transactionsDeduped: 0,
+    skippedEmpty: 0,
     errors: 0,
   };
 
@@ -138,28 +413,34 @@ export async function ingestFilingRefs(
       await rate.wait();
       const url = edgarSubmissionTextUrl(ref.cik, ref.accessionNo);
       const response = await fetchWithRetry(fetchFn, url, headers, { log });
-      const fullText = await response.text();
+      const parsed = parseEdgarSubmission(ref, await response.text());
 
-      const xml = extractOwnershipXml(fullText);
-      if (!xml) {
-        stats.skippedNoXml++;
+      if (!parsed) {
+        stats.skippedEmpty++;
         log("edgar_no_ownership_xml", { accessionNo: ref.accessionNo });
         continue;
       }
 
-      const doc = parseOwnershipDocument(xml);
-      const filedAt =
-        extractAcceptanceDatetime(fullText) ?? ref.filedAt ?? new Date().toISOString();
-      const result = await persistFiling(db, ref, doc, filedAt, url, log);
+      // Holdings-only filings (most Form 3s) still get a filing row so the
+      // DB diff marks them known; trade-bearing ones go through the full path.
+      const result =
+        parsed.transactions.length > 0
+          ? await persistUnified(
+              parsed.transactions,
+              { db, log, fxRateLookup: opts.fxRateLookup },
+              { rawXmlUrl: url },
+            )
+          : await persistFilingOnly(db, parsed, url);
+      stats.transactionsInserted += result.transactionsInserted;
+      stats.transactionsDeduped += result.transactionsDeduped;
 
-      if (result) {
+      if (result.filingsCreated > 0 || result.transactionsInserted > 0) {
         stats.ingested++;
-        stats.transactionsInserted += result.transactionCount;
         log("filing_ingested", {
           accessionNo: ref.accessionNo,
-          formType: doc.formType,
-          issuer: doc.issuer.ticker ?? doc.issuer.name,
-          transactions: result.transactionCount,
+          formType: ref.formType,
+          issuer: parsed.company.ticker ?? parsed.company.name,
+          transactions: result.transactionsInserted,
         });
       } else {
         stats.alreadyKnown++;
@@ -185,115 +466,4 @@ export async function ingestFilingRefs(
     });
 
   return stats;
-}
-
-async function upsertCompany(db: Database, doc: ParsedOwnershipDocument): Promise<string> {
-  const [row] = await db
-    .insert(companies)
-    .values({ cik: doc.issuer.cik, name: doc.issuer.name, ticker: doc.issuer.ticker })
-    .onConflictDoUpdate({
-      target: companies.cik,
-      set: {
-        name: sql`excluded.name`,
-        ticker: sql`coalesce(excluded.ticker, ${companies.ticker})`,
-      },
-    })
-    .returning({ id: companies.id });
-  return row!.id;
-}
-
-async function upsertInsiders(db: Database, doc: ParsedOwnershipDocument): Promise<string[]> {
-  const ids: string[] = [];
-  for (const owner of doc.owners) {
-    const [row] = await db
-      .insert(insiders)
-      .values({
-        cik: owner.cik,
-        name: owner.name,
-        isDirector: owner.isDirector,
-        isOfficer: owner.isOfficer,
-        isTenPctOwner: owner.isTenPercentOwner,
-        officerTitle: owner.officerTitle,
-      })
-      .onConflictDoUpdate({
-        target: insiders.cik,
-        set: {
-          name: sql`excluded.name`,
-          isDirector: sql`excluded.is_director`,
-          isOfficer: sql`excluded.is_officer`,
-          isTenPctOwner: sql`excluded.is_ten_pct_owner`,
-          // Keep the last known title when a later filing omits it.
-          officerTitle: sql`coalesce(excluded.officer_title, ${insiders.officerTitle})`,
-        },
-      })
-      .returning({ id: insiders.id });
-    ids.push(row!.id);
-  }
-  return ids;
-}
-
-const toNumeric = (n: number | null): string | null => (n === null ? null : String(n));
-
-async function persistFiling(
-  db: Database,
-  ref: EdgarFilingRef,
-  doc: ParsedOwnershipDocument,
-  filedAtIso: string,
-  rawXmlUrl: string,
-  log: Logger,
-): Promise<{ transactionCount: number } | null> {
-  if (doc.owners.length === 0) {
-    throw new Error("ownershipDocument has no reportingOwner");
-  }
-
-  const companyId = await upsertCompany(db, doc);
-  const insiderIds = await upsertInsiders(db, doc);
-  // Multi-owner filings (e.g. a fund + its GP) report one shared transaction
-  // set; we attach it to the first (primary) owner.
-  const primaryInsiderId = insiderIds[0]!;
-
-  const [filing] = await db
-    .insert(filings)
-    .values({
-      accessionNo: ref.accessionNo,
-      formType: ref.formType || doc.formType,
-      filedAt: new Date(filedAtIso),
-      sourceUrl: ref.sourceUrl ?? rawXmlUrl,
-      issuerCompanyId: companyId,
-      rawXmlUrl,
-    })
-    .onConflictDoNothing({ target: filings.accessionNo })
-    .returning({ id: filings.id });
-
-  // Lost the race / already ingested — transactions were written with the
-  // filing the first time, so there is nothing left to do.
-  if (!filing) return null;
-
-  const rows: NewTransaction[] = [];
-  for (const txn of doc.transactions) {
-    if (!isSecTransactionCode(txn.code)) {
-      log("unknown_transaction_code", { accessionNo: ref.accessionNo, code: txn.code });
-      continue;
-    }
-    rows.push({
-      filingId: filing.id,
-      insiderId: primaryInsiderId,
-      companyId,
-      txnDate: txn.transactionDate ?? doc.periodOfReport ?? filedAtIso.slice(0, 10),
-      code: txn.code,
-      shares: toNumeric(txn.shares),
-      price: toNumeric(txn.pricePerShare),
-      value: toNumeric(txn.value),
-      acquiredDisposed: txn.acquiredDisposed,
-      sharesOwnedAfter: toNumeric(txn.sharesOwnedAfter),
-      is10b51: txn.isTenB51,
-      isDerivative: txn.isDerivative,
-      footnote: txn.footnote,
-      country: "US",
-    });
-  }
-  if (rows.length > 0) {
-    await db.insert(transactions).values(rows);
-  }
-  return { transactionCount: rows.length };
 }

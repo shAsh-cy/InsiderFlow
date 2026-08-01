@@ -1,3 +1,9 @@
 # Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
 DATABASE_URL=postgres://postgres:postgres@localhost:5433/insiderflow
 EDGAR_USER_AGENT="InsiderFlow/0.1 (your-email@example.com)"
+
+# Optional secondary sources — leave empty to run EDGAR only.
+FINNHUB_API_KEY=
+FMP_API_KEY=
+WATCHLIST_SYMBOLS=AAPL,MSFT,NVDA
+INDIA_FEED_URL=

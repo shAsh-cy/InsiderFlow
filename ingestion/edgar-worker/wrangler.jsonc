@@ -19,4 +19,8 @@
   // Secrets (set with `wrangler secret put <NAME>`, mirrored in .dev.vars for local dev):
   //   DATABASE_URL       — Supabase transaction-pooler URL (prod) / local Postgres (dev)
   //   EDGAR_USER_AGENT   — descriptive UA required by the SEC fair-access policy
+  //   FINNHUB_API_KEY    — optional; enables the Finnhub adapter (60 calls/min free tier)
+  //   FMP_API_KEY        — optional; enables the FMP adapter (~250 calls/day free tier)
+  //   WATCHLIST_SYMBOLS  — optional; comma-separated symbols for Finnhub/FMP
+  //   INDIA_FEED_URL     — optional; licensed NSE/BSE feed (see IndiaAdapter legal note)
 }

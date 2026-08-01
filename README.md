@@ -59,6 +59,28 @@ flowchart LR
     PG --> TG
 ```
 
+### Source adapters
+
+Every market plugs in through one `SourceAdapter` (`packages/core/src/adapters/`):
+`fetch()` pulls raw payloads, `normalize()` maps them into a `UnifiedTransaction`
+(unified role flags, SEC-derived code taxonomy, native currency + USD via FX, and a
+routine-vs-opportunistic `relevance` label). Persistence resolves entities across
+sources and drops cross-source duplicates on a `(company, insider, date, shares, code)`
+dedup key. **Adding a market = implementing one adapter — no schema change.**
+
+| Adapter   | Market | Status                                             | Free-tier budget       |
+| --------- | ------ | -------------------------------------------------- | ---------------------- |
+| `edgar`   | US     | Live (primary, filing-based)                       | SEC fair-access policy |
+| `finnhub` | US     | Optional — insider transactions + sentiment (MSPR) | 60 calls/min           |
+| `fmp`     | US     | Optional — insider trading endpoint                | ~250 calls/day         |
+| `nse-bse` | IN     | Normalizer ready; needs a licensed feed (legal ↓)  | n/a                    |
+| `eu-mar`  | EU     | Stub — needs a commercial aggregator               | n/a                    |
+| `sedi`    | CA     | Stub — needs a commercial aggregator               | n/a                    |
+
+FX (Frankfurter/ECB) and daily price context (Stooq) are keyless and cached in
+Postgres; API responses are cached in `api_cache` so free-tier budgets are never
+spent twice.
+
 ### Monorepo layout
 
 ```

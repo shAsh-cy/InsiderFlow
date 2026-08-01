@@ -62,8 +62,9 @@ E2E tests are optional locally (`pnpm exec playwright install chromium` once, th
 - **Code style**: Prettier + ESLint are the source of truth; do not hand-format against them.
 - **Types**: TypeScript `strict` everywhere. Avoid `any`; prefer narrowing helpers in
   `@insiderflow/core`.
-- **New markets**: normalization into the canonical schema belongs in `packages/core`;
-  fetching belongs in a new `ingestion/*` worker. Check the legal notes in the README first —
+- **New markets**: implement one `SourceAdapter` in `packages/core/src/adapters/`
+  (`fetch()` + `normalize()` → `UnifiedTransaction` + market metadata) and register it in
+  `SOURCE_ADAPTERS`. No schema change is needed. Check the legal notes in the README first —
   some exchanges (e.g. NSE/BSE) restrict redistribution.
 - **Free tier only**: no dependency or service that requires payment to run the project.
 
