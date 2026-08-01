@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -12,23 +13,49 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-/** Mirrors `Market` in @insiderflow/core. */
-export const marketEnum = pgEnum("market", ["US", "IN"]);
+/** Mirrors SEC_TRANSACTION_CODES in @insiderflow/core. */
+export const transactionCodeEnum = pgEnum("transaction_code", [
+  "P",
+  "S",
+  "V",
+  "A",
+  "D",
+  "F",
+  "I",
+  "M",
+  "C",
+  "E",
+  "H",
+  "O",
+  "X",
+  "G",
+  "L",
+  "W",
+  "Z",
+  "J",
+  "K",
+  "U",
+]);
 
 export const companies = pgTable(
   "companies",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    market: marketEnum("market").notNull().default("US"),
-    /** SEC CIK (10-digit zero-padded) for US; exchange symbol for other markets. */
-    externalId: text("external_id").notNull(),
-    name: text("name").notNull(),
+    /** SEC CIK, 10-digit zero-padded. */
+    cik: text("cik").notNull(),
     ticker: text("ticker"),
+    name: text("name").notNull(),
+    exchange: text("exchange"),
+    sector: text("sector"),
+    country: text("country").notNull().default("US"),
+    logoUrl: text("logo_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("companies_market_external_id_idx").on(t.market, t.externalId),
+    uniqueIndex("companies_cik_unique").on(t.cik),
     index("companies_ticker_idx").on(t.ticker),
+    // Requires the pg_trgm extension (created in the initial migration).
+    index("companies_name_trgm_idx").using("gin", sql`${t.name} gin_trgm_ops`),
   ],
 );
 
@@ -36,41 +63,41 @@ export const insiders = pgTable(
   "insiders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    market: marketEnum("market").notNull().default("US"),
-    /** SEC CIK for US insiders. */
-    externalId: text("external_id").notNull(),
+    /** SEC CIK, 10-digit zero-padded. */
+    cik: text("cik").notNull(),
     /** Normalized via normalizeInsiderName() in @insiderflow/core. */
     name: text("name").notNull(),
+    isDirector: boolean("is_director").notNull().default(false),
+    isOfficer: boolean("is_officer").notNull().default(false),
+    isTenPctOwner: boolean("is_ten_pct_owner").notNull().default(false),
+    officerTitle: text("officer_title"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("insiders_market_external_id_idx").on(t.market, t.externalId)],
+  (t) => [
+    uniqueIndex("insiders_cik_unique").on(t.cik),
+    index("insiders_name_trgm_idx").using("gin", sql`${t.name} gin_trgm_ops`),
+  ],
 );
 
 export const filings = pgTable(
   "filings",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    market: marketEnum("market").notNull().default("US"),
-    /** EDGAR accession number, canonical dashed form. */
-    accessionNumber: text("accession_number").notNull(),
-    formType: text("form_type").notNull().default("4"),
-    companyId: uuid("company_id")
+    /** EDGAR accession number, canonical dashed form — the idempotency key. */
+    accessionNo: text("accession_no").notNull(),
+    /** Raw form type as filed: "4", "4/A", "3", "5"... */
+    formType: text("form_type").notNull(),
+    filedAt: timestamp("filed_at", { withTimezone: true }).notNull(),
+    sourceUrl: text("source_url"),
+    issuerCompanyId: uuid("issuer_company_id")
       .notNull()
       .references(() => companies.id),
-    insiderId: uuid("insider_id")
-      .notNull()
-      .references(() => insiders.id),
-    /** Insider roles at filing time, e.g. ["Director", "10% Owner"]. */
-    insiderRoles: jsonb("insider_roles").$type<string[]>().notNull().default([]),
-    filedAt: timestamp("filed_at", { withTimezone: true }).notNull(),
-    periodOfReport: date("period_of_report"),
-    sourceUrl: text("source_url").notNull(),
+    rawXmlUrl: text("raw_xml_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("filings_accession_number_idx").on(t.accessionNumber),
-    index("filings_company_id_idx").on(t.companyId),
-    index("filings_insider_id_idx").on(t.insiderId),
+    uniqueIndex("filings_accession_no_unique").on(t.accessionNo),
+    index("filings_issuer_company_id_idx").on(t.issuerCompanyId),
     index("filings_filed_at_idx").on(t.filedAt),
   ],
 );
@@ -82,27 +109,42 @@ export const transactions = pgTable(
     filingId: uuid("filing_id")
       .notNull()
       .references(() => filings.id, { onDelete: "cascade" }),
-    /** SEC transaction code (P, S, M, ...) — see SEC_TRANSACTION_CODES in @insiderflow/core. */
-    code: text("code").notNull(),
-    /** Denormalized classifyTransaction() result for cheap filtering. */
-    direction: text("direction", { enum: ["buy", "sell", "neutral"] }).notNull(),
-    transactionDate: date("transaction_date").notNull(),
-    securityTitle: text("security_title"),
+    insiderId: uuid("insider_id")
+      .notNull()
+      .references(() => insiders.id),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id),
+    txnDate: date("txn_date").notNull(),
+    code: transactionCodeEnum("code").notNull(),
     shares: numeric("shares", { precision: 20, scale: 4 }),
-    pricePerShare: numeric("price_per_share", { precision: 20, scale: 4 }),
-    totalValue: numeric("total_value", { precision: 20, scale: 4 }),
+    price: numeric("price", { precision: 20, scale: 4 }),
+    /** shares × price when both are reported. */
+    value: numeric("value", { precision: 24, scale: 4 }),
+    acquiredDisposed: text("acquired_disposed", { enum: ["A", "D"] }),
     sharesOwnedAfter: numeric("shares_owned_after", { precision: 20, scale: 4 }),
-    /** "D" = direct, "I" = indirect ownership. */
-    ownershipForm: text("ownership_form", { enum: ["D", "I"] }),
+    /** Covered by a Rule 10b5-1 trading plan (checkbox or footnote language). */
+    is10b51: boolean("is_10b5_1").notNull().default(false),
     isDerivative: boolean("is_derivative").notNull().default(false),
+    footnote: text("footnote"),
+    country: text("country").notNull().default("US"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("transactions_filing_id_idx").on(t.filingId),
-    index("transactions_date_idx").on(t.transactionDate),
-    index("transactions_direction_idx").on(t.direction),
+    index("transactions_insider_id_idx").on(t.insiderId),
+    index("transactions_company_id_idx").on(t.companyId),
+    index("transactions_txn_date_idx").on(t.txnDate),
+    index("transactions_code_idx").on(t.code),
   ],
 );
+
+/** Small key/value store for ingestion cursors and heartbeats. */
+export const ingestionState = pgTable("ingestion_state", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<Record<string, unknown>>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
@@ -112,3 +154,4 @@ export type Filing = typeof filings.$inferSelect;
 export type NewFiling = typeof filings.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
+export type IngestionState = typeof ingestionState.$inferSelect;

@@ -3,13 +3,20 @@
   "name": "insiderflow-edgar-worker",
   "main": "src/index.ts",
   "compatibility_date": "2025-06-01",
-  // Free plan: cron triggers are included (5 schedules max per worker).
+  // nodejs_compat lets postgres.js use cloudflare:sockets + node built-ins.
+  "compatibility_flags": ["nodejs_compat"],
+  // Free plan includes cron triggers; every minute keeps filing→DB latency < 2 min.
   "triggers": {
-    "crons": ["*/10 * * * *"],
+    "crons": ["* * * * *"],
+  },
+  "vars": {
+    // Keep well under the 50 subrequests/invocation free-tier cap.
+    "MAX_FILINGS_PER_RUN": "25",
   },
   "observability": {
     "enabled": true,
   },
   // Secrets (set with `wrangler secret put <NAME>`, mirrored in .dev.vars for local dev):
-  //   EDGAR_USER_AGENT, SUPABASE_URL, SUPABASE_SERVICE_KEY
+  //   DATABASE_URL       — Supabase transaction-pooler URL (prod) / local Postgres (dev)
+  //   EDGAR_USER_AGENT   — descriptive UA required by the SEC fair-access policy
 }

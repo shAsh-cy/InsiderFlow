@@ -18,8 +18,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @insiderflow/db db:generate",
+    "db:migrate": "pnpm --filter @insiderflow/db db:migrate",
     "db:push": "pnpm --filter @insiderflow/db db:push",
     "db:studio": "pnpm --filter @insiderflow/db db:studio",
+    "backfill": "pnpm --filter @insiderflow/edgar-worker backfill",
     "prepare": "husky"
   },
   "devDependencies": {

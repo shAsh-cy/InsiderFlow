@@ -29,17 +29,54 @@ export type SecTransactionCode = keyof typeof SEC_TRANSACTION_CODES;
 
 export type TradeDirection = "buy" | "sell" | "neutral";
 
-/** Heuristic mapping of transaction codes to buy/sell pressure, used for display and alerts. */
-const BUY_CODES: ReadonlySet<string> = new Set(["P", "A", "M", "C", "X", "L"]);
-const SELL_CODES: ReadonlySet<string> = new Set(["S", "D", "F", "E", "H", "O", "U"]);
+/**
+ * Heuristic signal weight per code, in [-1, 1]. Positive = insider gaining
+ * exposure (bullish), negative = reducing exposure (bearish), 0 = no signal.
+ * Open-market purchases (P) and sales (S) carry full weight; grants,
+ * exercises, and tax withholdings are discounted because they are usually
+ * scheduled compensation events, not conviction trades.
+ * Used for ranking and scoring only — NOT investment advice.
+ */
+export const TRANSACTION_SIGNAL_WEIGHTS: Record<SecTransactionCode, number> = {
+  P: 1,
+  A: 0.3,
+  L: 0.2,
+  M: 0.15,
+  X: 0.15,
+  C: 0.1,
+  O: 0.1,
+  V: 0,
+  I: 0,
+  G: 0,
+  J: 0,
+  K: 0,
+  W: 0,
+  Z: 0,
+  E: 0,
+  H: 0,
+  F: -0.2,
+  U: -0.4,
+  D: -0.5,
+  S: -1,
+};
+
+/** Codes where the insider is gaining / reducing exposure. Derived from the sign of the weights. */
+const BUY_CODES: ReadonlySet<string> = new Set(["P", "A", "L", "M", "X", "C", "O"]);
+const SELL_CODES: ReadonlySet<string> = new Set(["S", "D", "F", "U"]);
 
 export function isSecTransactionCode(code: string): code is SecTransactionCode {
   return code in SEC_TRANSACTION_CODES;
 }
 
+/** Signal weight for a raw code string; unknown codes weigh 0. */
+export function signalWeight(code: string): number {
+  const normalized = code.trim().toUpperCase();
+  return isSecTransactionCode(normalized) ? TRANSACTION_SIGNAL_WEIGHTS[normalized] : 0;
+}
+
 /**
  * Classify a transaction code as buy-side, sell-side, or neutral.
- * Unknown or informational codes (G, V, I, J, K, W, Z) are "neutral".
+ * Informational codes (G, V, I, J, K, W, Z, E, H) and unknown codes are "neutral".
  */
 export function classifyTransaction(code: string): TradeDirection {
   const normalized = code.trim().toUpperCase();

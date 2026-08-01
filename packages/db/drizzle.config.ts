@@ -6,7 +6,7 @@ export default defineConfig({
   dialect: "postgresql",
   dbCredentials: {
     // Falls back to the docker-compose database for local development.
-    url: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/insiderflow",
+    url: process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5433/insiderflow",
   },
   strict: true,
   verbose: true,

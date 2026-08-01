@@ -1,47 +1,59 @@
-import { parseAccessionNumbersFromAtom } from "./parse";
+import { createDbHandle, eq, ingestionState } from "@insiderflow/db";
+
+import { jsonLogger } from "./http";
+import { ingestFromFeed } from "./pipeline";
 
 export interface Env {
+  /** Postgres URL — Supabase transaction-pooler in prod, local docker in dev. */
+  DATABASE_URL: string;
   /** Required by the SEC fair-access policy, e.g. "InsiderFlow/0.1 (you@example.com)". */
   EDGAR_USER_AGENT: string;
-  SUPABASE_URL?: string;
-  SUPABASE_SERVICE_KEY?: string;
-}
-
-/** Latest Form 4 filings, newest first. Poll at most every 10 minutes; stay under SEC rate limits. */
-const EDGAR_CURRENT_FORM4_ATOM =
-  "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&owner=include&count=100&output=atom";
-
-async function ingestLatestForm4Filings(env: Env): Promise<string[]> {
-  const response = await fetch(EDGAR_CURRENT_FORM4_ATOM, {
-    headers: {
-      "User-Agent": env.EDGAR_USER_AGENT,
-      "Accept-Encoding": "gzip, deflate",
-      Host: "www.sec.gov",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`EDGAR responded ${response.status}`);
-  }
-
-  const atom = await response.text();
-  const accessionNumbers = parseAccessionNumbersFromAtom(atom);
-
-  // TODO(ingestion): for each new accession number, fetch the Form 4 XML,
-  // normalize it with @insiderflow/core, and upsert via @insiderflow/db
-  // (Supabase transaction pooler; Workers free tier has no raw TCP, so use
-  // the Supabase REST endpoint or a pooler-compatible HTTP driver).
-  console.log(`edgar-worker: found ${accessionNumbers.length} recent Form 4 accession numbers`);
-  return accessionNumbers;
+  /** Optional override; keep the default well under the 50 subrequests/invocation free-tier cap. */
+  MAX_FILINGS_PER_RUN?: string;
 }
 
 export default {
-  async scheduled(event, env, ctx): Promise<void> {
-    console.log(`edgar-worker: cron ${event.cron} fired`);
-    ctx.waitUntil(ingestLatestForm4Filings(env));
+  // Runs every minute; a filing appearing in the EDGAR feed lands in the DB
+  // within one cron tick plus a few seconds of processing (< 2 min end to end).
+  async scheduled(event, env, _ctx): Promise<void> {
+    const started = Date.now();
+    const handle = createDbHandle(env.DATABASE_URL);
+    try {
+      const stats = await ingestFromFeed({
+        db: handle.db,
+        userAgent: env.EDGAR_USER_AGENT,
+        maxFilings: env.MAX_FILINGS_PER_RUN ? Number(env.MAX_FILINGS_PER_RUN) : undefined,
+      });
+      jsonLogger("cron_complete", { cron: event.cron, durationMs: Date.now() - started, ...stats });
+    } finally {
+      await handle.end();
+    }
   },
 
-  // Health check endpoint.
-  async fetch(): Promise<Response> {
-    return Response.json({ service: "insiderflow-edgar-worker", status: "ok" });
+  // Health check: reports the last ingestion cursor.
+  async fetch(_request, env): Promise<Response> {
+    const handle = createDbHandle(env.DATABASE_URL);
+    try {
+      const [cursor] = await handle.db
+        .select()
+        .from(ingestionState)
+        .where(eq(ingestionState.key, "edgar:cursor"));
+      return Response.json({
+        service: "insiderflow-edgar-worker",
+        status: "ok",
+        lastRun: cursor?.value ?? null,
+      });
+    } catch (error) {
+      return Response.json(
+        {
+          service: "insiderflow-edgar-worker",
+          status: "degraded",
+          error: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 },
+      );
+    } finally {
+      await handle.end();
+    }
   },
 } satisfies ExportedHandler<Env>;

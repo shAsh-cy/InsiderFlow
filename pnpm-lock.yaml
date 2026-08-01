@@ -81,10 +81,28 @@ importers:
       '@insiderflow/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@insiderflow/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(@cloudflare/workers-types@5.20260801.1)(@electric-sql/pglite@0.3.16)(postgres@3.4.9)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260730.1
         version: 5.20260801.1
+      '@electric-sql/pglite':
+        specifier: ^0.3.0
+        version: 0.3.16
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.1
+      drizzle-kit:
+        specifier: ^0.31.0
+        version: 0.31.10
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.1
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -96,6 +114,10 @@ importers:
         version: 4.118.0(@cloudflare/workers-types@5.20260801.1)
 
   packages/core:
+    dependencies:
+      fast-xml-parser:
+        specifier: ^4.5.0
+        version: 4.5.7
     devDependencies:
       typescript:
         specifier: ^5.9.0
@@ -111,7 +133,7 @@ importers:
         version: link:../core
       drizzle-orm:
         specifier: ^0.44.0
-        version: 0.44.7(@cloudflare/workers-types@5.20260801.1)(postgres@3.4.9)
+        version: 0.44.7(@cloudflare/workers-types@5.20260801.1)(@electric-sql/pglite@0.3.16)(postgres@3.4.9)
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -184,6 +206,9 @@ packages:
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
+
+  '@electric-sql/pglite@0.3.16':
+    resolution: {integrity: sha512-mZkZfOd9OqTMHsK+1cje8OSzfAQcpD7JmILXTl5ahdempjUDdmg4euf1biDex5/LfQIDJ3gvCu6qDgdnDxfJmA==}
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -2184,6 +2209,10 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
+  fast-xml-parser@4.5.7:
+    resolution: {integrity: sha512-a6Qh1RMCNbSrU1+sAyAAZH3rTe+OaWJbNZIq0S+ifZciUUOQtlVxBJwoTUE2bYhysmG/RYyI5WJFIKdBahJdrQ==}
+    hasBin: true
+
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
 
@@ -3023,6 +3052,9 @@ packages:
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
 
+  strnum@1.1.2:
+    resolution: {integrity: sha512-vrN+B7DBIoTTZjnPNewwhx6cBA/H+IS7rfW68n7XxC1y7uoiGQBxaKzqucGUgavX15dJgiGztLJ8vxuEzwqBdA==}
+
   styled-jsx@5.1.6:
     resolution: {integrity: sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==}
     engines: {node: '>= 12.0.0'}
@@ -3337,6 +3369,8 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.9
 
   '@drizzle-team/brocli@0.10.2': {}
+
+  '@electric-sql/pglite@0.3.16': {}
 
   '@emnapi/core@1.10.0':
     dependencies:
@@ -4595,9 +4629,10 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.1
 
-  drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260801.1)(postgres@3.4.9):
+  drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260801.1)(@electric-sql/pglite@0.3.16)(postgres@3.4.9):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260801.1
+      '@electric-sql/pglite': 0.3.16
       postgres: 3.4.9
 
   dunder-proto@1.0.1:
@@ -5036,6 +5071,10 @@ snapshots:
   fast-json-stable-stringify@2.1.0: {}
 
   fast-levenshtein@2.0.6: {}
+
+  fast-xml-parser@4.5.7:
+    dependencies:
+      strnum: 1.1.2
 
   fastq@1.20.1:
     dependencies:
@@ -5994,6 +6033,8 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
+
+  strnum@1.1.2: {}
 
   styled-jsx@5.1.6(react@19.2.8):
     dependencies:

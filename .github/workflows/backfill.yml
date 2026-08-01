@@ -1,0 +1,46 @@
+name: Backfill
+
+# Manual backfill of EDGAR ownership filings from the daily full-index.
+# Requires repo secrets: DATABASE_URL (Supabase pooler URL), EDGAR_USER_AGENT.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many days back to load"
+        required: false
+        default: "30"
+      forms:
+        description: "Comma-separated form types (4,3,5)"
+        required: false
+        default: "4"
+      max:
+        description: "Max filings to ingest this run"
+        required: false
+        default: "5000"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run backfill
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
+        run: >
+          pnpm backfill
+          --days=${{ github.event.inputs.days }}
+          --forms=${{ github.event.inputs.forms }}
+          --max=${{ github.event.inputs.max }}

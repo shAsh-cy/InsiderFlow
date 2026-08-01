@@ -9,6 +9,8 @@ import {
   normalizeInsiderName,
   parseFilingNumber,
   SEC_TRANSACTION_CODES,
+  signalWeight,
+  TRANSACTION_SIGNAL_WEIGHTS,
 } from "./index";
 
 describe("transaction codes", () => {
@@ -29,6 +31,34 @@ describe("transaction codes", () => {
     expect(classifyTransaction("G")).toBe("neutral");
     expect(classifyTransaction("??")).toBe("neutral");
     expect(classifyTransaction(" s ")).toBe("sell");
+  });
+});
+
+describe("signal weights", () => {
+  it("covers every transaction code", () => {
+    expect(Object.keys(TRANSACTION_SIGNAL_WEIGHTS).sort()).toEqual(
+      Object.keys(SEC_TRANSACTION_CODES).sort(),
+    );
+  });
+
+  it("anchors open-market trades at full weight", () => {
+    expect(signalWeight("P")).toBe(1);
+    expect(signalWeight("S")).toBe(-1);
+  });
+
+  it("stays within [-1, 1] and agrees in sign with classifyTransaction", () => {
+    for (const [code, weight] of Object.entries(TRANSACTION_SIGNAL_WEIGHTS)) {
+      expect(Math.abs(weight)).toBeLessThanOrEqual(1);
+      const direction = classifyTransaction(code);
+      if (direction === "buy") expect(weight).toBeGreaterThan(0);
+      if (direction === "sell") expect(weight).toBeLessThan(0);
+      if (direction === "neutral") expect(weight).toBe(0);
+    }
+  });
+
+  it("weighs unknown codes at 0", () => {
+    expect(signalWeight("Q")).toBe(0);
+    expect(signalWeight("")).toBe(0);
   });
 });
 

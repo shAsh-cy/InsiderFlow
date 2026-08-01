@@ -35,7 +35,7 @@ flowchart LR
     end
 
     subgraph ingestion["Ingestion — Cloudflare Workers (free)"]
-        WORKER["ingestion/edgar-worker<br/>cron every 10 min<br/>fetch → normalize (packages/core)"]
+        WORKER["ingestion/edgar-worker<br/>cron every minute<br/>fetch → parse → upsert (packages/core)"]
     end
 
     subgraph data["Data — Supabase (free)"]
@@ -78,8 +78,14 @@ insiderflow/
 ```bash
 pnpm install
 docker compose up -d   # local Postgres (or use a Supabase project)
-pnpm db:push           # apply the Drizzle schema
+pnpm db:migrate        # apply migrations (includes the pg_trgm extension)
 pnpm dev               # web app on http://localhost:3000
+
+# run the ingestion worker locally (1-min cron; use --test-scheduled trigger)
+pnpm --filter @insiderflow/edgar-worker dev
+
+# backfill the last 30 days of Form 4 filings from the EDGAR full-index
+pnpm backfill -- --days=30 --forms=4
 ```
 
 Copy `.env.example` → `.env` and `ingestion/edgar-worker/.dev.vars.example` → `.dev.vars` and

@@ -22,7 +22,7 @@ cp ingestion/edgar-worker/.dev.vars.example ingestion/edgar-worker/.dev.vars
 
 # local database
 docker compose up -d
-pnpm db:push          # apply the Drizzle schema to local Postgres
+pnpm db:migrate       # apply migrations (includes the pg_trgm extension)
 
 # run the web app
 pnpm dev              # http://localhost:3000
