@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "insiderflow-edgar-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  // Free plan: cron triggers are included (5 schedules max per worker).
+  "triggers": {
+    "crons": ["*/10 * * * *"],
+  },
+  "observability": {
+    "enabled": true,
+  },
+  // Secrets (set with `wrangler secret put <NAME>`, mirrored in .dev.vars for local dev):
+  //   EDGAR_USER_AGENT, SUPABASE_URL, SUPABASE_SERVICE_KEY
+}

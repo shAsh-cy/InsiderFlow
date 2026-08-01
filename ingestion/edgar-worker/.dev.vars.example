@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+EDGAR_USER_AGENT="InsiderFlow/0.1 (your-email@example.com)"
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=

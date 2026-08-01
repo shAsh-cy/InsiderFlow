@@ -1,0 +1,6 @@
+# Normalize to LF everywhere so Prettier's default (endOfLine: "lf") holds on all platforms.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

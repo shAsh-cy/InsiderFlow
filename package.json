@@ -1,0 +1,36 @@
+{
+  "name": "insiderflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source, real-time, multi-market insider-trading tracker",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @insiderflow/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @insiderflow/web test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @insiderflow/db db:generate",
+    "db:push": "pnpm --filter @insiderflow/db db:push",
+    "db:studio": "pnpm --filter @insiderflow/db db:studio",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "eslint": "^9.30.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.0",
+    "prettier": "^3.6.0",
+    "typescript-eslint": "^8.35.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs,json,md,css,yml,yaml}": "prettier --write"
+  }
+}

@@ -1,0 +1,24 @@
+# Local Postgres for development. Production uses Supabase (free tier).
+#   docker compose up -d
+#   pnpm db:push   # apply the Drizzle schema
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: insiderflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: insiderflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - insiderflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d insiderflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  insiderflow_pgdata:
