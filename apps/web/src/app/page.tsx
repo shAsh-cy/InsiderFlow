@@ -1,97 +1,146 @@
-import { classifyTransaction, SEC_TRANSACTION_CODES } from "@insiderflow/core";
+import { ArrowRight, Braces, Filter, Globe2, Zap } from "lucide-react";
+import Link from "next/link";
 
-const FEATURED_CODES = ["P", "S", "M", "A", "F", "G"] as const;
+import { LiveFeedStrip } from "@/components/landing/live-feed-strip";
+import { Button } from "@/components/ui/button";
+import { queryTrades } from "@/lib/api/queries";
+import { tradesQuerySchema } from "@/lib/api/schemas";
+import type { TradeRow } from "@/lib/api/queries";
+import { getDb } from "@/lib/db";
 
-const DIRECTION_STYLES = {
-  buy: "bg-emerald-500/10 text-emerald-400 ring-emerald-500/30",
-  sell: "bg-rose-500/10 text-rose-400 ring-rose-500/30",
-  neutral: "bg-zinc-500/10 text-zinc-400 ring-zinc-500/30",
-} as const;
+/**
+ * Statically rendered and regenerated every 60s: the tape is in the HTML
+ * (fast LCP, no layout shift), and the SSE stream keeps it current from
+ * there. A DB hiccup degrades to an empty tape rather than a broken page.
+ */
+export const revalidate = 60;
 
-export default function Home() {
+async function seedTrades(): Promise<TradeRow[]> {
+  try {
+    const query = tradesQuerySchema.parse({});
+    const { data } = await queryTrades(getDb(), {
+      ...query,
+      sort: "created_at",
+      order: "desc",
+      limit: 6,
+    });
+    return data;
+  } catch {
+    return [];
+  }
+}
+
+const FEATURES = [
+  {
+    icon: Zap,
+    title: "Real-time EDGAR tape",
+    body: "A 1-minute cron watches SEC filings; a Form 4 lands in the database — and on this page — within about a minute of hitting EDGAR.",
+  },
+  {
+    icon: Globe2,
+    title: "Multi-market, one schema",
+    body: "US and India today, adapter-ready for more. Every market normalizes into one taxonomy with native currency and USD side by side.",
+  },
+  {
+    icon: Filter,
+    title: "Signal over noise",
+    body: "Every trade is classified routine (grants, 10b5-1 plans, tax withholding) or opportunistic — the discretionary trades worth watching.",
+  },
+  {
+    icon: Braces,
+    title: "Free public API",
+    body: "Typed JSON, RSS feeds, and a live SSE stream. Rate-limited, cached, documented with OpenAPI. No key required to start.",
+  },
+];
+
+export default async function Home() {
+  const initialTrades = await seedTrades();
+
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-16 px-6 py-16">
-      <div
-        role="alert"
-        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300"
-      >
-        <strong className="font-semibold">Not investment advice.</strong> InsiderFlow republishes
-        public regulatory filings for research and education only. Filings can be late, amended, or
-        wrong. Do your own research.
+    <main id="main" className="relative min-h-screen overflow-x-clip pt-14">
+      {/* Ambient gradient field — pure CSS, paused under reduced motion */}
+      <div aria-hidden className="absolute inset-0 -z-10 overflow-hidden">
+        <div className="ambient-a -left-52 -top-56 h-[44rem] w-[44rem]" />
+        <div className="ambient-b -right-40 top-24 h-[38rem] w-[38rem]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       </div>
 
-      <section className="flex flex-col gap-4">
-        <p className="text-sm font-medium uppercase tracking-widest text-emerald-400">
-          Open source · AGPL-3.0
+      {/* Hero */}
+      <section className="mx-auto flex max-w-4xl flex-col items-center px-6 pb-20 pt-24 text-center">
+        <p className="glass mb-8 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs text-muted-foreground">
+          <span aria-hidden className="bg-gradient-accent size-1.5 rounded-full" />
+          Open source · AGPL-3.0 · Runs entirely on free tiers
         </p>
-        <h1 className="text-5xl font-bold tracking-tight">InsiderFlow</h1>
-        <p className="max-w-2xl text-lg text-zinc-400">
-          A real-time, multi-market insider-trading tracker. Watch what executives and directors
-          actually do with their own money — starting with SEC EDGAR Form 4 filings, normalized into
-          one clean schema.
+        <h1 className="text-6xl font-semibold tracking-tighter sm:text-7xl">
+          <span className="text-gradient">InsiderFlow</span>
+        </h1>
+        {/* No text-balance here: it is the LCP element and balanced
+            line-breaking measurably delays its paint. */}
+        <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+          The real-time insider-trading tape. When executives trade their own stock, it shows up
+          here — normalized across markets, classified for signal, and free to query.
+        </p>
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+          <Button
+            asChild
+            size="lg"
+            className="bg-gradient-accent border-0 text-[#06231f] shadow-glow hover:opacity-90"
+          >
+            <Link href="/docs">
+              Explore the API <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+          <Button asChild size="lg" variant="outline" className="glass border-white/10">
+            <Link href="/design">Design system</Link>
+          </Button>
+        </div>
+        <p
+          role="alert"
+          className="mt-10 max-w-xl rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-2.5 text-xs leading-relaxed text-amber-200/90"
+        >
+          <strong className="font-semibold">Not investment advice.</strong> Public regulatory
+          filings, republished for research and education. Filings can be late, amended, or wrong.
         </p>
       </section>
 
-      <section className="grid gap-6 sm:grid-cols-3">
-        {[
-          {
-            title: "Real-time ingestion",
-            body: "A Cloudflare Worker polls SEC EDGAR on a cron schedule and normalizes new Form 4 filings within minutes.",
-          },
-          {
-            title: "Multi-market schema",
-            body: "One canonical model for companies, insiders, filings, and transactions — designed to add more markets later.",
-          },
-          {
-            title: "Alerts",
-            body: "Email (Resend) and Telegram alerts for the insiders, tickers, and transaction types you follow.",
-          },
-        ].map((feature) => (
-          <div key={feature.title} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-            <h2 className="mb-2 font-semibold">{feature.title}</h2>
-            <p className="text-sm leading-relaxed text-zinc-400">{feature.body}</p>
-          </div>
-        ))}
-      </section>
+      {/* Live tape — the one data-connected element on this page */}
+      <LiveFeedStrip initialTrades={initialTrades} />
 
-      <section className="flex flex-col gap-4">
-        <h2 className="text-2xl font-semibold tracking-tight">Form 4 transaction codes</h2>
-        <p className="text-sm text-zinc-400">
-          Every transaction is classified from its SEC code. A few of the {""}
-          {Object.keys(SEC_TRANSACTION_CODES).length} codes we track:
-        </p>
-        <ul className="flex flex-col gap-2">
-          {FEATURED_CODES.map((code) => {
-            const direction = classifyTransaction(code);
+      {/* Features */}
+      <section aria-label="Features" className="mx-auto max-w-5xl px-6 py-24">
+        <div className="grid gap-5 sm:grid-cols-2">
+          {FEATURES.map((feature) => {
+            const Icon = feature.icon;
             return (
-              <li
-                key={code}
-                className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+              <article
+                key={feature.title}
+                className="glass group rounded-2xl p-6 transition-all duration-200 hover:-translate-y-1 hover:shadow-lift"
               >
-                <span className="w-6 text-center font-mono text-lg font-bold">{code}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${DIRECTION_STYLES[direction]}`}
-                >
-                  {direction}
-                </span>
-                <span className="text-sm text-zinc-400">{SEC_TRANSACTION_CODES[code]}</span>
-              </li>
+                <div className="bg-gradient-accent mb-4 inline-flex size-9 items-center justify-center rounded-lg text-[#06231f]">
+                  <Icon className="size-4.5" aria-hidden />
+                </div>
+                <h2 className="mb-2 font-semibold tracking-tight">{feature.title}</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">{feature.body}</p>
+              </article>
             );
           })}
-        </ul>
+        </div>
       </section>
 
-      <footer className="flex flex-col gap-3 border-t border-zinc-800 pt-8 text-xs leading-relaxed text-zinc-500">
-        <p>
-          <strong className="text-zinc-400">Data sources:</strong> US data is sourced from SEC
-          EDGAR, a US-government service whose filings are in the public domain; access follows the
-          SEC fair-access policy. NSE/BSE (India) data is subject to restrictive exchange terms and
-          is not redistributed by this project.
-        </p>
-        <p>
-          InsiderFlow is free software licensed under AGPL-3.0. Nothing on this site is investment
-          advice or a recommendation to buy or sell any security.
-        </p>
+      {/* Footer */}
+      <footer className="border-t border-white/6 px-6 py-10">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 text-xs leading-relaxed text-subtle-foreground">
+          <p>
+            <strong className="text-muted-foreground">Data sources:</strong> US data comes from SEC
+            EDGAR, a US-government service whose filings are in the public domain; access follows
+            the SEC fair-access policy. NSE/BSE (India) data is subject to restrictive exchange
+            terms and is not redistributed by this project.
+          </p>
+          <p>
+            InsiderFlow is free software licensed under AGPL-3.0. Nothing on this site is investment
+            advice or a recommendation to buy or sell any security.
+          </p>
+        </div>
       </footer>
     </main>
   );

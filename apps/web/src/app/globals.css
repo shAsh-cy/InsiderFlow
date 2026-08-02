@@ -1,20 +1,321 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* ─────────────────────────────────────────────────────────────────────────
+   InsiderFlow design tokens — dark-only, data-dense, "calm and expensive".
+   Base near-black #0A0B0F; one bold accent gradient: electric teal → violet.
+   ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  /* Surfaces */
+  --background: #0a0b0f;
+  --surface-1: #101218;
+  --surface-2: #151823;
+  --card: rgba(255, 255, 255, 0.03);
+  --card-foreground: #eef1f8;
+  --popover: #12141c;
+  --popover-foreground: #eef1f8;
+
+  /* Text */
+  --foreground: #eef1f8;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #96a0b5;
+  --subtle-foreground: #6b7386;
+
+  /* The one gradient accent */
+  --accent-teal: #2de0c8;
+  --accent-violet: #7c5cff;
+  --gradient-accent: linear-gradient(135deg, var(--accent-teal) 0%, var(--accent-violet) 100%);
+
+  /* shadcn semantic mapping */
+  --primary: #2de0c8;
+  --primary-foreground: #06231f;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #eef1f8;
+  --accent: rgba(45, 224, 200, 0.12);
+  --accent-foreground: #7ff0df;
+  --destructive: #fb7185;
+  --destructive-foreground: #2a0a10;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: rgba(45, 224, 200, 0.6);
+  --radius: 0.625rem;
+
+  /* Market semantics */
+  --buy: #34e3b0;
+  --buy-soft: rgba(52, 227, 176, 0.14);
+  --sell: #fb7185;
+  --sell-soft: rgba(251, 113, 133, 0.13);
+  --flat: #96a0b5;
+  --flat-soft: rgba(150, 160, 181, 0.12);
+
+  /* Depth — layered, soft, never muddy */
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.5),
+    0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-lift:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 6px rgba(0, 0, 0, 0.45),
+    0 16px 40px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-glow: 0 0 0 1px rgba(45, 224, 200, 0.18), 0 4px 32px -8px rgba(45, 224, 200, 0.25);
+
+  color-scheme: dark;
 }
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-teal: var(--accent-teal);
+  --color-violet: var(--accent-violet);
+  --color-buy: var(--buy);
+  --color-buy-soft: var(--buy-soft);
+  --color-sell: var(--sell);
+  --color-sell-soft: var(--sell-soft);
+  --color-flat: var(--flat);
+  --color-flat-soft: var(--flat-soft);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+  --shadow-glow: var(--shadow-glow);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Type scale — quiet body, confident display */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(45, 224, 200, 0.28);
+  color: #ffffff;
+}
+
+/* Visible, branded focus — keyboard users always know where they are */
+:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Tabular numbers everywhere data lives */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Glassmorphism ───────────────────────────────────────────────────────── */
+
+.glass {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.055) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.glass-strong {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow-lift);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+/* ── Grain — one subtle SVG noise layer over everything ─────────────────── */
+
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* ── Gradient utilities ──────────────────────────────────────────────────── */
+
+.text-gradient {
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-gradient-accent {
+  background: var(--gradient-accent);
+}
+
+.border-gradient {
+  position: relative;
+}
+.border-gradient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(45, 224, 200, 0.5), rgba(124, 92, 255, 0.5));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── Ambient hero: two slow-drifting gradient fields ─────────────────────── */
+
+@keyframes ambient-drift-a {
+  0% {
+    transform: translate3d(-6%, -4%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 6%, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(-6%, -4%, 0) scale(1);
+  }
+}
+
+@keyframes ambient-drift-b {
+  0% {
+    transform: translate3d(4%, 6%, 0) scale(1.1);
+  }
+  50% {
+    transform: translate3d(-5%, -5%, 0) scale(0.95);
+  }
+  100% {
+    transform: translate3d(4%, 6%, 0) scale(1.1);
+  }
+}
+
+/*
+ * No `filter: blur()` here on purpose: blurring 40rem+ elements creates
+ * huge compositor layers and measurably delays first paint. Multi-stop
+ * radial gradients give the same soft falloff for free.
+ */
+.ambient-a,
+.ambient-b {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform;
+  pointer-events: none;
+  contain: paint;
+}
+
+.ambient-a {
+  background: radial-gradient(
+    circle at 35% 35%,
+    rgba(45, 224, 200, 0.3) 0%,
+    rgba(45, 224, 200, 0.16) 28%,
+    rgba(45, 224, 200, 0.05) 52%,
+    transparent 72%
+  );
+  animation: ambient-drift-a 38s ease-in-out infinite;
+}
+
+.ambient-b {
+  background: radial-gradient(
+    circle at 65% 55%,
+    rgba(124, 92, 255, 0.28) 0%,
+    rgba(124, 92, 255, 0.15) 28%,
+    rgba(124, 92, 255, 0.05) 52%,
+    transparent 72%
+  );
+  animation: ambient-drift-b 46s ease-in-out infinite;
+}
+
+/* ── Live pulse ──────────────────────────────────────────────────────────── */
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 227, 176, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(52, 227, 176, 0);
+  }
+}
+
+.live-pulse {
+  animation: live-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Reduced motion: ambience and non-essential animation off ────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-a,
+  .ambient-b,
+  .live-pulse {
+    animation: none !important;
+  }
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Scrollbars that match the surface ───────────────────────────────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
