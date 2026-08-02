@@ -4,6 +4,11 @@
   "private": true,
   "description": "Cloudflare Worker that ingests SEC EDGAR ownership filings (Forms 3/4/5) on a 1-minute cron",
   "type": "module",
+  "exports": {
+    "./pipeline": "./src/pipeline.ts",
+    "./http": "./src/http.ts",
+    "./enrich": "./src/enrich.ts"
+  },
   "scripts": {
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",

@@ -41,7 +41,7 @@ export type {
   UnifiedInsider,
   UnifiedTransaction,
 } from "./unified";
-export { assignDedupKeys, transactionIdentity } from "./dedup";
+export { assignDedupKeys, assignOccurrenceKeys, transactionIdentity } from "./dedup";
 export { frankfurterUrl, parseFrankfurterRate, toUsd } from "./fx";
 export { parseStooqCsv, stooqDailyUrl } from "./prices";
 export type { DailyPriceRow } from "./prices";

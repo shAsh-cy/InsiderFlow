@@ -15,17 +15,24 @@ export function transactionIdentity(txn: UnifiedTransaction): string {
 }
 
 /**
- * Assign database dedup keys for a batch. Legitimate repeats WITHIN one
- * batch (e.g. two identical lots in one Form 4) get "#0", "#1"... suffixes;
- * the same trade arriving later from another source produces the same
- * "#0" key and is rejected by the unique index.
+ * Suffix identities with per-batch occurrence counters: repeats WITHIN one
+ * batch get "#0", "#1"... so legitimate duplicates survive, while the same
+ * identity arriving in a LATER batch reproduces "#0" and dies on the
+ * unique index. Used for transactions and the India disclosure tables.
  */
-export function assignDedupKeys(txns: readonly UnifiedTransaction[]): string[] {
+export function assignOccurrenceKeys(identities: readonly string[]): string[] {
   const seen = new Map<string, number>();
-  return txns.map((txn) => {
-    const identity = transactionIdentity(txn);
+  return identities.map((identity) => {
     const occurrence = seen.get(identity) ?? 0;
     seen.set(identity, occurrence + 1);
     return `${identity}#${occurrence}`;
   });
+}
+
+/**
+ * Assign database dedup keys for a transaction batch (see
+ * assignOccurrenceKeys for the occurrence-suffix semantics).
+ */
+export function assignDedupKeys(txns: readonly UnifiedTransaction[]): string[] {
+  return assignOccurrenceKeys(txns.map(transactionIdentity));
 }

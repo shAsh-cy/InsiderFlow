@@ -31,6 +31,38 @@ export { NSE_BSE_MARKET, indiaAdapter, mapIndiaMode, parseIndianDate } from "./i
 export type { IndiaDisclosureRecord, IndiaRawBatch } from "./india";
 export { euMarAdapter, sediAdapter } from "./stubs";
 export type { AggregatorRawBatch, AggregatorRecord } from "./stubs";
+export {
+  BSE_BASE,
+  BSE_ORIGIN,
+  BSE_REFERER,
+  NSE_BASE,
+  NSE_PIT_REFERER,
+  NSE_PRIME_URL,
+  bseAnnouncementsUrl,
+  bseScripSearchUrl,
+  filterBseInsiderAnnouncements,
+  mapNsePitToDisclosure,
+  normalizeBulkBlockRows,
+  normalizePledgeRows,
+  normalizeSastRows,
+  nseBulkBlockUrl,
+  nsePitUrl,
+  nsePledgeUrl,
+  nseSastUrl,
+  parseBseScripSearch,
+} from "./india-scrape";
+export type {
+  BseAnnouncementRow,
+  BseInsiderAnnouncement,
+  BseScripMatch,
+  BulkBlockRecord,
+  NseBulkBlockRawRow,
+  NsePitRawRow,
+  NsePledgeRawRow,
+  NseSastRawRow,
+  PledgeRecord,
+  SastRecord,
+} from "./india-scrape";
 
 /** Registry of every known source adapter. */
 export const SOURCE_ADAPTERS: Record<SourceId, SourceAdapter<unknown>> = {

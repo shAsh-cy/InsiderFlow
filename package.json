@@ -22,6 +22,7 @@
     "db:push": "pnpm --filter @insiderflow/db db:push",
     "db:studio": "pnpm --filter @insiderflow/db db:studio",
     "backfill": "pnpm --filter @insiderflow/edgar-worker backfill",
+    "india:ingest": "pnpm --filter @insiderflow/india-local ingest",
     "prepare": "husky"
   },
   "devDependencies": {

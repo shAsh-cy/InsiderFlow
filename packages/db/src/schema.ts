@@ -178,6 +178,105 @@ export const transactions = pgTable(
   ],
 );
 
+/**
+ * SEBI SAST (Reg. 29/31) disclosures — substantial acquisitions and takeover
+ * filings. Populated only by the optional, off-by-default India local-scrape
+ * runner (ingestion/india-local); the hosted deployment never writes here.
+ */
+export const sastDisclosures = pgTable(
+  "sast_disclosures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    country: text("country").notNull().default("IN"),
+    exchange: text("exchange").notNull().default("NSE"),
+    symbol: text("symbol").notNull(),
+    companyName: text("company_name").notNull(),
+    acquirerName: text("acquirer_name").notNull(),
+    /** e.g. "29(1)", "29(2)", "31(1)" */
+    regulation: text("regulation"),
+    /** Promoter / Promoter Group / Public ... */
+    category: text("category"),
+    acquisitionMode: text("acquisition_mode"),
+    side: text("side", { enum: ["acquisition", "disposal"] }),
+    shares: numeric("shares", { precision: 20, scale: 4 }),
+    sharesPctBefore: numeric("shares_pct_before", { precision: 9, scale: 4 }),
+    sharesPctAfter: numeric("shares_pct_after", { precision: 9, scale: 4 }),
+    value: numeric("value", { precision: 24, scale: 4 }),
+    currency: text("currency").notNull().default("INR"),
+    valueUsd: numeric("value_usd", { precision: 24, scale: 4 }),
+    txnDate: date("txn_date"),
+    intimatedAt: date("intimated_at"),
+    sourceUrl: text("source_url"),
+    dedupKey: text("dedup_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("sast_dedup_key_unique").on(t.dedupKey),
+    index("sast_symbol_idx").on(t.symbol),
+    index("sast_txn_date_idx").on(t.txnDate),
+  ],
+);
+
+/** Exchange bulk/block deals (India). Same off-by-default provenance as sast_disclosures. */
+export const bulkBlockDeals = pgTable(
+  "bulk_block_deals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    country: text("country").notNull().default("IN"),
+    exchange: text("exchange").notNull().default("NSE"),
+    dealType: text("deal_type", { enum: ["bulk", "block"] }).notNull(),
+    dealDate: date("deal_date").notNull(),
+    symbol: text("symbol").notNull(),
+    companyName: text("company_name"),
+    clientName: text("client_name").notNull(),
+    side: text("side", { enum: ["buy", "sell"] }).notNull(),
+    quantity: numeric("quantity", { precision: 20, scale: 4 }).notNull(),
+    /** Weighted average trade price. */
+    wap: numeric("wap", { precision: 20, scale: 4 }),
+    value: numeric("value", { precision: 24, scale: 4 }),
+    currency: text("currency").notNull().default("INR"),
+    valueUsd: numeric("value_usd", { precision: 24, scale: 4 }),
+    remarks: text("remarks"),
+    dedupKey: text("dedup_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("bulk_block_dedup_key_unique").on(t.dedupKey),
+    index("bulk_block_symbol_idx").on(t.symbol),
+    index("bulk_block_deal_date_idx").on(t.dealDate),
+  ],
+);
+
+/** Promoter pledge events (create/revoke/invoke). Same off-by-default provenance. */
+export const pledgeDisclosures = pgTable(
+  "pledge_disclosures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    country: text("country").notNull().default("IN"),
+    exchange: text("exchange").notNull().default("NSE"),
+    symbol: text("symbol").notNull(),
+    companyName: text("company_name"),
+    promoterName: text("promoter_name").notNull(),
+    /** "pledge" | "revoke" | "invoke" (invocation transfers the shares). */
+    eventType: text("event_type", { enum: ["pledge", "revoke", "invoke"] }),
+    shares: numeric("shares", { precision: 20, scale: 4 }),
+    sharesPct: numeric("shares_pct", { precision: 9, scale: 4 }),
+    value: numeric("value", { precision: 24, scale: 4 }),
+    currency: text("currency").notNull().default("INR"),
+    valueUsd: numeric("value_usd", { precision: 24, scale: 4 }),
+    eventDate: date("event_date"),
+    intimatedAt: date("intimated_at"),
+    sourceUrl: text("source_url"),
+    dedupKey: text("dedup_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("pledge_dedup_key_unique").on(t.dedupKey),
+    index("pledge_symbol_idx").on(t.symbol),
+    index("pledge_event_date_idx").on(t.eventDate),
+  ],
+);
+
 /** Daily FX rates to USD (Frankfurter/ECB), cached forever — historical rates never change. */
 export const fxRates = pgTable(
   "fx_rates",
@@ -234,3 +333,9 @@ export type FxRate = typeof fxRates.$inferSelect;
 export type DailyPrice = typeof dailyPrices.$inferSelect;
 export type ApiCacheEntry = typeof apiCache.$inferSelect;
 export type IngestionState = typeof ingestionState.$inferSelect;
+export type SastDisclosure = typeof sastDisclosures.$inferSelect;
+export type NewSastDisclosure = typeof sastDisclosures.$inferInsert;
+export type BulkBlockDeal = typeof bulkBlockDeals.$inferSelect;
+export type NewBulkBlockDeal = typeof bulkBlockDeals.$inferInsert;
+export type PledgeDisclosure = typeof pledgeDisclosures.$inferSelect;
+export type NewPledgeDisclosure = typeof pledgeDisclosures.$inferInsert;

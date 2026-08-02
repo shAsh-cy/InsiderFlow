@@ -159,10 +159,13 @@ via `wrangler secret put`.
   `User-Agent` (see `EDGAR_USER_AGENT` in `.env.example`) and no more than 10 requests/second.
 - **NSE / BSE (India)** — Indian exchange insider-disclosure data is published on exchange
   websites **under restrictive terms of use; bulk scraping and redistribution are generally not
-  permitted without a license.** InsiderFlow therefore does **not** ship NSE/BSE ingestion or
-  redistribute that data. The multi-market schema is ready, but India support is gated on
-  properly licensed or user-supplied data. If you deploy your own instance, complying with the
-  exchanges' terms is your responsibility.
+  permitted without a license.** The hosted InsiderFlow deployment does **not** scrape or
+  redistribute that data. India support has two operator-choice paths: a licensed/user-supplied
+  feed (`INDIA_FEED_URL`), or an **optional, off-by-default local scrape runner**
+  ([ingestion/india-local](ingestion/india-local/README.md)) for operators who hold a license or
+  knowingly accept the ToS risk on their own infrastructure. It requires an explicit
+  `ENABLE_INDIA_INGEST=true`; the hosted instance ships without it. If you deploy your own
+  instance, complying with the exchanges' terms is your responsibility.
 - Data is provided **as is**, with no warranty of accuracy, completeness, or timeliness.
 
 ## Contributing
