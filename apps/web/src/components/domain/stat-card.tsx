@@ -2,7 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { formatCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/**
+ * Serializable formatter presets — server components pass `preset` (a
+ * string survives the RSC boundary); client callers may still pass a
+ * custom `format` function.
+ */
+const FORMAT_PRESETS = {
+  count: (n: number) => Math.round(n).toLocaleString("en-US"),
+  usd: (n: number) => `$${formatCompact(n)}`,
+  "signed-usd": (n: number) => `${n < 0 ? "−" : ""}$${formatCompact(Math.abs(n))}`,
+} satisfies Record<string, (n: number) => string>;
+
+export type StatFormatPreset = keyof typeof FORMAT_PRESETS;
 
 /**
  * Count-up on rAF with an ease-out curve. Deliberately dependency-free —
@@ -49,18 +63,23 @@ function CountUp({ value, format }: { value: number; format: (n: number) => stri
 export function StatCard({
   label,
   value,
-  format = (n) => Math.round(n).toLocaleString("en-US"),
+  format,
+  preset = "count",
   hint,
   accent = false,
   className,
 }: {
   label: string;
   value: number;
+  /** Client callers only — functions cannot cross the RSC boundary. */
   format?: (n: number) => string;
+  /** Server-safe formatter choice. */
+  preset?: StatFormatPreset;
   hint?: string;
   accent?: boolean;
   className?: string;
 }) {
+  const formatFn = format ?? FORMAT_PRESETS[preset];
   return (
     <div
       className={cn(
@@ -73,7 +92,7 @@ export function StatCard({
         {label}
       </p>
       <p className={cn("mt-1.5 text-2xl font-semibold", accent && "text-gradient")}>
-        <CountUp value={value} format={format} />
+        <CountUp value={value} format={formatFn} />
       </p>
       {hint ? <p className="mt-1 text-xs text-subtle-foreground">{hint}</p> : null}
     </div>

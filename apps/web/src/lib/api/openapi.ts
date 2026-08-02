@@ -42,11 +42,16 @@ const TRADE_FILTERS: Param[] = [
     type: "string",
     enum: ["edgar", "nse-bse", "finnhub", "fmp", "eu-mar", "sedi"],
   }),
+  q("side", "Acquired (buy) vs disposed (sell)", { type: "string", enum: ["buy", "sell"] }),
+  q("sector", "Company sector (exact match)"),
+  q("near_low", "Trade-day close within 5% of the 52-week low (needs price context)", {
+    type: "boolean",
+  }),
   q("insider_id", "Filter to one insider (UUID)", { type: "string", format: "uuid" }),
   q("min_value", "Minimum transaction value in the native currency", { type: "number" }),
   q("min_value_usd", "Minimum transaction value in USD", { type: "number" }),
   q("cluster", "Only companies where 2+ insiders bought within 14 days", { type: "boolean" }),
-  q("dip", "Only purchases priced below that day's close", { type: "boolean" }),
+  q("dip", "Buys priced 5%+ below that day's close (needs price context)", { type: "boolean" }),
   q("exec_only", "Officers only", { type: "boolean" }),
   q("include_superseded", "Include rows from filings replaced by amendments", {
     type: "boolean",

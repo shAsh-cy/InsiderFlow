@@ -17,6 +17,11 @@ export const tradesQuerySchema = z.object({
   role: z.enum(["director", "officer", "ten_pct"]).optional(),
   relevance: z.enum(["routine", "opportunistic"]).optional(),
   source: z.enum(["edgar", "nse-bse", "finnhub", "fmp", "eu-mar", "sedi"]).optional(),
+  /** Acquired (buy) vs disposed (sell) side of the trade. */
+  side: z.enum(["buy", "sell"]).optional(),
+  sector: z.string().min(1).max(64).optional(),
+  /** Trades priced within 5% of the 52-week low — only where price context exists. */
+  near_low: boolish.optional(),
   insider_id: z.string().uuid().optional(),
   min_value: z.coerce.number().positive().optional(),
   min_value_usd: z.coerce.number().positive().optional(),

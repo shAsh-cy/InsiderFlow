@@ -27,6 +27,14 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
         valueUsd={trade.valueUsd}
         className="text-xs font-medium"
       />
+      {trade.is10b51 ? (
+        <span
+          title="Executed under a pre-scheduled Rule 10b5-1 trading plan"
+          className="text-2xs hidden items-center rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono uppercase tracking-wider text-amber-200/80 sm:inline-flex"
+        >
+          10b5-1
+        </span>
+      ) : null}
       <RelevanceBadge relevance={trade.relevance} className="hidden sm:inline-flex" />
       <SourceBadge source={trade.source} className="hidden md:inline-flex" />
       <span className="tnum hidden w-16 text-right text-2xs text-subtle-foreground lg:block">

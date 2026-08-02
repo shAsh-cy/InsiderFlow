@@ -86,12 +86,12 @@ export default async function Home() {
             size="lg"
             className="bg-gradient-accent border-0 text-[#06231f] shadow-glow hover:opacity-90"
           >
-            <Link href="/docs">
-              Explore the API <ArrowRight aria-hidden />
+            <Link href="/trades">
+              Watch the live tape <ArrowRight aria-hidden />
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline" className="glass border-white/10">
-            <Link href="/design">Design system</Link>
+            <Link href="/docs">Explore the API</Link>
           </Button>
         </div>
         <p

@@ -12,13 +12,15 @@ export function StaticFeedRow({
   trade,
   now,
   className,
+  style,
 }: {
   trade: TradeRow;
   now?: Date;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
-    <li className={cn(FEED_ROW_CLASS, className)}>
+    <li className={cn(FEED_ROW_CLASS, className)} style={style}>
       <FeedRowContent trade={trade} now={now} />
     </li>
   );

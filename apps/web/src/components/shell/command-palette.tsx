@@ -58,6 +58,20 @@ export default function CommandPalette({
           <CommandItem onSelect={() => navigate("/")}>
             <Activity aria-hidden /> Overview
           </CommandItem>
+          <CommandItem onSelect={() => navigate("/trades")}>
+            <Activity aria-hidden /> Live feed
+            <CommandShortcut>/trades</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/screener")}>
+            <LayoutGrid aria-hidden /> Screener
+            <CommandShortcut>/screener</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/companies")}>
+            <LayoutGrid aria-hidden /> Companies
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/watchlist")}>
+            <LayoutGrid aria-hidden /> Watchlist
+          </CommandItem>
           <CommandItem onSelect={() => navigate("/design")}>
             <LayoutGrid aria-hidden /> Design system
             <CommandShortcut>/design</CommandShortcut>

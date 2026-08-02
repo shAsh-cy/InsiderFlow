@@ -1,6 +1,15 @@
 "use client";
 
-import { Activity, BookOpen, Building2, Flame, LayoutGrid, ScanSearch, Table2 } from "lucide-react";
+import {
+  Activity,
+  BookOpen,
+  Building2,
+  Flame,
+  LayoutGrid,
+  ScanSearch,
+  Star,
+  Table2,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -13,16 +22,17 @@ interface NavItem {
   soon?: boolean;
 }
 
-/** Phase 6 product pages are declared now and land later — the shell is ready for them. */
 const NAV: Array<{ heading: string; items: NavItem[] }> = [
   {
     heading: "App",
     items: [
       { label: "Overview", href: "/", icon: Activity },
-      { label: "Trades", href: "/trades", icon: Table2, soon: true },
-      { label: "Screens", href: "/screens", icon: ScanSearch, soon: true },
+      { label: "Live feed", href: "/trades", icon: Table2 },
+      { label: "Screener", href: "/screener", icon: ScanSearch },
+      { label: "Companies", href: "/companies", icon: Building2 },
+      { label: "Watchlist", href: "/watchlist", icon: Star },
+      // Phase 8 ships the heatmap visualization.
       { label: "Heatmap", href: "/heatmap", icon: Flame, soon: true },
-      { label: "Companies", href: "/companies", icon: Building2, soon: true },
     ],
   },
   {

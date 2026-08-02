@@ -166,10 +166,53 @@ function cutoffIso(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/*
+ * ── Phase 8 swap points ────────────────────────────────────────────────────
+ * Cluster / dip / near-low are computed at query time today. Phase 8 will
+ * precompute them as flags during ingestion; only these three functions
+ * change — pages and routes stay untouched.
+ */
+
+/** Companies where ≥2 distinct insiders bought (code P) within a rolling 14-day window. */
+export function clusterCompaniesSubquery(db: Database, windowDays = 14) {
+  return db
+    .select({ companyId: transactions.companyId })
+    .from(transactions)
+    .where(and(eq(transactions.code, "P"), gte(transactions.txnDate, cutoffIso(windowDays))))
+    .groupBy(transactions.companyId)
+    .having(sql`count(distinct ${transactions.insiderId}) >= 2`);
+}
+
+/** Buys with a 5%+ drawdown vs that day's close (needs cached price context). */
+function dipCondition() {
+  return sql`exists (select 1 from daily_prices dp
+    where dp.symbol = ${companies.ticker}
+      and dp.market = ${transactions.country}
+      and dp.price_date = ${transactions.txnDate}
+      and ${transactions.price} <= dp.close * 0.95)`;
+}
+
+/** Trade-day close within 5% of the 52-week low of cached prices (≥5 points required). */
+function nearLowCondition() {
+  return sql`exists (select 1 from daily_prices dp
+    where dp.symbol = ${companies.ticker}
+      and dp.market = ${transactions.country}
+      and dp.price_date = ${transactions.txnDate}
+      and (select count(*) from daily_prices h
+             where h.symbol = dp.symbol and h.market = dp.market
+               and h.price_date >= current_date - 365) >= 5
+      and dp.close <= (select min(h.close) * 1.05 from daily_prices h
+             where h.symbol = dp.symbol and h.market = dp.market
+               and h.price_date >= current_date - 365))`;
+}
+
 function tradeConditions(q: TradesQuery) {
   const conds = [];
   if (q.market) conds.push(eq(transactions.country, q.market));
   if (q.ticker) conds.push(eq(companies.ticker, q.ticker));
+  if (q.side) conds.push(eq(transactions.acquiredDisposed, q.side === "buy" ? "A" : "D"));
+  if (q.sector) conds.push(eq(companies.sector, q.sector));
+  if (q.near_low) conds.push(nearLowCondition());
   if (q.code) conds.push(eq(transactions.code, q.code as typeof transactions.code._.data));
   if (q.relevance) conds.push(eq(transactions.relevance, q.relevance));
   if (q.source) conds.push(eq(transactions.source, q.source));
@@ -186,15 +229,7 @@ function tradeConditions(q: TradesQuery) {
   if (!q.include_superseded) {
     conds.push(or(isNull(transactions.filingId), isNull(filings.supersededByFilingId)));
   }
-  if (q.dip) {
-    conds.push(
-      sql`exists (select 1 from daily_prices dp
-        where dp.symbol = ${companies.ticker}
-          and dp.market = ${transactions.country}
-          and dp.price_date = ${transactions.txnDate}
-          and ${transactions.price} < dp.close)`,
-    );
-  }
+  if (q.dip) conds.push(dipCondition());
   return conds;
 }
 
@@ -205,13 +240,7 @@ export async function queryTrades(
   const conds = tradeConditions(q);
 
   if (q.cluster) {
-    const clusterCompanies = db
-      .select({ companyId: transactions.companyId })
-      .from(transactions)
-      .where(and(eq(transactions.code, "P"), gte(transactions.txnDate, cutoffIso(14))))
-      .groupBy(transactions.companyId)
-      .having(sql`count(distinct ${transactions.insiderId}) >= 2`);
-    conds.push(inArray(transactions.companyId, clusterCompanies));
+    conds.push(inArray(transactions.companyId, clusterCompaniesSubquery(db)));
   }
 
   const sortColumn = {

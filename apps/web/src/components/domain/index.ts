@@ -1,3 +1,4 @@
+export { CodeLegend } from "./code-legend";
 export { CountryFlag } from "./country-flag";
 export { CurrencyValue } from "./currency-value";
 export { DataTable } from "./data-table";
