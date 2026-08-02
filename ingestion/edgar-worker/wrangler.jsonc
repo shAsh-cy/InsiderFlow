@@ -5,9 +5,12 @@
   "compatibility_date": "2025-06-01",
   // nodejs_compat lets postgres.js use cloudflare:sockets + node built-ins.
   "compatibility_flags": ["nodejs_compat"],
-  // Free plan includes cron triggers; every minute keeps filing→DB latency < 2 min.
+  // Free plan includes cron triggers (5 per worker). Every minute keeps
+  // filing→DB latency < 2 min and drives the alert scanner; the hourly
+  // trigger flushes daily digests for users whose local digest hour has
+  // arrived. See docs/alerts.md for why the scanner rides this worker.
   "triggers": {
-    "crons": ["* * * * *"],
+    "crons": ["* * * * *", "0 * * * *"],
   },
   "vars": {
     // Keep well under the 50 subrequests/invocation free-tier cap.
@@ -23,4 +26,8 @@
   //   FMP_API_KEY        — optional; enables the FMP adapter (~250 calls/day free tier)
   //   WATCHLIST_SYMBOLS  — optional; comma-separated symbols for Finnhub/FMP
   //   INDIA_FEED_URL     — optional; licensed NSE/BSE feed (see IndiaAdapter legal note)
+  //   SITE_URL           — public origin used in alert email links
+  //   TELEGRAM_BOT_TOKEN — primary alert channel (free, unlimited)
+  //   RESEND_API_KEY     — digest + opted-in instant email (free tier: 100/day)
+  //   RESEND_FROM        — verified sender address for Resend
 }

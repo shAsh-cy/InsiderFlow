@@ -314,6 +314,138 @@ export const apiCache = pgTable("api_cache", {
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// User-scoped tables (Phase 7). `user_id` is the Supabase Auth user UUID
+// (the JWT `sub`). RLS policies live in the migration; the shared query
+// layer ALSO scopes every read/write by user_id — the server talks to
+// Postgres directly, so query-layer scoping is the primary enforcement and
+// RLS is defense in depth.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const watchlistKindEnum = pgEnum("watchlist_kind", ["company", "insider"]);
+export const alertModeEnum = pgEnum("alert_mode", ["instant", "digest"]);
+export const alertChannelEnum = pgEnum("alert_channel", ["telegram", "email", "webpush"]);
+
+export const userWatchlists = pgTable(
+  "user_watchlists",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    kind: watchlistKindEnum("kind").notNull(),
+    /** Ticker for companies, insider UUID for insiders. */
+    refId: text("ref_id").notNull(),
+    label: text("label").notNull(),
+    market: text("market").notNull().default("US"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("user_watchlists_unique").on(t.userId, t.kind, t.refId),
+    index("user_watchlists_user_idx").on(t.userId),
+  ],
+);
+
+export const alertRules = pgTable(
+  "alert_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    name: text("name").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /**
+     * Saved screen filters, in the same shape the trades query layer
+     * accepts (market/code/relevance/min_value_usd/...). Null for rules
+     * that only track a watchlist entity.
+     */
+    filters: jsonb("filters").$type<Record<string, unknown>>(),
+    /** Restrict to one ticker (companies) — null means "any". */
+    trackedTicker: text("tracked_ticker"),
+    /** Restrict to one insider id — null means "any". */
+    trackedInsiderId: uuid("tracked_insider_id"),
+    /** Fire immediately, or roll into the daily digest. */
+    mode: alertModeEnum("mode").notNull().default("digest"),
+    channels: jsonb("channels").$type<string[]>().notNull().default(["telegram"]),
+    /** Local-time quiet window; instant alerts inside it fall back to the digest. */
+    quietHoursStart: text("quiet_hours_start"),
+    quietHoursEnd: text("quiet_hours_end"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("alert_rules_user_idx").on(t.userId),
+    index("alert_rules_enabled_idx").on(t.enabled),
+  ],
+);
+
+export const alertChannels = pgTable(
+  "alert_channels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    channel: alertChannelEnum("channel").notNull(),
+    /** Email address, Telegram chat id, or push endpoint. */
+    destination: text("destination"),
+    verified: boolean("verified").notNull().default(false),
+    /** One-time token for Telegram's `/start <token>` deep link. */
+    linkToken: text("link_token"),
+    /** Opaque token for one-click email unsubscribe. */
+    unsubscribeToken: text("unsubscribe_token"),
+    /** Local HH:MM the daily digest is sent. */
+    digestHour: text("digest_hour").notNull().default("08:00"),
+    timezone: text("timezone").notNull().default("UTC"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("alert_channels_user_channel_unique").on(t.userId, t.channel),
+    uniqueIndex("alert_channels_link_token_unique").on(t.linkToken),
+    index("alert_channels_user_idx").on(t.userId),
+  ],
+);
+
+/**
+ * Every alert ever matched. The (rule_id, dedup_key) unique index is the
+ * idempotency guarantee: re-runs, overlapping scanners, and amendment
+ * re-homes (same dedup_key, new filing id) can never double-fire.
+ */
+export const alertsLog = pgTable(
+  "alerts_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => alertRules.id, { onDelete: "cascade" }),
+    /** The transaction's cross-source dedup key — stable across re-homes. */
+    dedupKey: text("dedup_key").notNull(),
+    transactionId: uuid("transaction_id"),
+    mode: alertModeEnum("mode").notNull(),
+    /** null until dispatched — digest rows sit here until the digest cron runs. */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deliveredChannels: jsonb("delivered_channels").$type<string[]>().notNull().default([]),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("alerts_log_rule_dedup_unique").on(t.ruleId, t.dedupKey),
+    index("alerts_log_user_idx").on(t.userId),
+    index("alerts_log_pending_idx").on(t.deliveredAt),
+  ],
+);
+
+/**
+ * Lease-based lock + cursor for the alert scanner. A lease (rather than a
+ * session advisory lock) survives transaction-mode connection pooling,
+ * where session state is not guaranteed between statements.
+ */
+export const scannerState = pgTable("scanner_state", {
+  name: text("name").primaryKey(),
+  /** Last transaction created_at/id processed — the scan cursor. */
+  cursorCreatedAt: timestamp("cursor_created_at", { withTimezone: true }),
+  cursorId: uuid("cursor_id"),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  lockOwner: text("lock_owner"),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Small key/value store for ingestion cursors and heartbeats. */
 export const ingestionState = pgTable("ingestion_state", {
   key: text("key").primaryKey(),
@@ -333,6 +465,15 @@ export type FxRate = typeof fxRates.$inferSelect;
 export type DailyPrice = typeof dailyPrices.$inferSelect;
 export type ApiCacheEntry = typeof apiCache.$inferSelect;
 export type IngestionState = typeof ingestionState.$inferSelect;
+export type UserWatchlist = typeof userWatchlists.$inferSelect;
+export type NewUserWatchlist = typeof userWatchlists.$inferInsert;
+export type AlertRule = typeof alertRules.$inferSelect;
+export type NewAlertRule = typeof alertRules.$inferInsert;
+export type AlertChannelRow = typeof alertChannels.$inferSelect;
+export type NewAlertChannel = typeof alertChannels.$inferInsert;
+export type AlertLogRow = typeof alertsLog.$inferSelect;
+export type NewAlertLog = typeof alertsLog.$inferInsert;
+export type ScannerState = typeof scannerState.$inferSelect;
 export type SastDisclosure = typeof sastDisclosures.$inferSelect;
 export type NewSastDisclosure = typeof sastDisclosures.$inferInsert;
 export type BulkBlockDeal = typeof bulkBlockDeals.$inferSelect;

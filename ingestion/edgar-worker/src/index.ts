@@ -1,3 +1,4 @@
+import { dispatchDigest, dispatchInstant, scanForMatches } from "@insiderflow/alerts";
 import { createDbHandle, eq, ingestionState } from "@insiderflow/db";
 
 import { enrichRecentPrices } from "./enrich";
@@ -18,7 +19,48 @@ export interface Env {
   WATCHLIST_SYMBOLS?: string;
   /** Licensed NSE/BSE disclosure feed — see the IndiaAdapter legal note. */
   INDIA_FEED_URL?: string;
+
+  // ── Alerting (Phase 7) ──────────────────────────────────────────────────
+  /** Public site origin, used in email links. */
+  SITE_URL?: string;
+  /** Primary alert channel — free and unlimited. */
+  TELEGRAM_BOT_TOKEN?: string;
+  /** Email is capped (Resend free tier: 100/day), so it batches into digests. */
+  RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
 }
+
+/**
+ * Alert scanning rides the existing 1-minute cron (see the runtime choice
+ * in docs/alerts.md): the worker already has a DB handle open, and a
+ * second Cloudflare cron trigger costs nothing on the free plan.
+ */
+async function runAlertPipeline(
+  db: Parameters<typeof scanForMatches>[0]["db"],
+  env: Env,
+): Promise<void> {
+  try {
+    const scan = await scanForMatches({ db, owner: "cf-worker", log: jsonLogger });
+    if (!scan.acquired) return; // another runner holds the lease
+    if (scan.logged === 0) return;
+
+    await dispatchInstant({
+      db,
+      siteUrl: env.SITE_URL ?? "https://insiderflow.dev",
+      telegramBotToken: env.TELEGRAM_BOT_TOKEN,
+      resendApiKey: env.RESEND_API_KEY,
+      resendFrom: env.RESEND_FROM,
+      log: jsonLogger,
+    });
+  } catch (error) {
+    jsonLogger("alert_pipeline_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Must match the second entry in wrangler.jsonc `triggers.crons`. */
+const DIGEST_CRON = "0 * * * *";
 
 export default {
   // Runs every minute; a filing appearing in the EDGAR feed lands in the DB
@@ -27,6 +69,20 @@ export default {
     const started = Date.now();
     const handle = createDbHandle(env.DATABASE_URL);
     try {
+      // Daily digest runs on its own cron; it must not re-run ingestion.
+      if (event.cron === DIGEST_CRON) {
+        const stats = await dispatchDigest({
+          db: handle.db,
+          siteUrl: env.SITE_URL ?? "https://insiderflow.dev",
+          telegramBotToken: env.TELEGRAM_BOT_TOKEN,
+          resendApiKey: env.RESEND_API_KEY,
+          resendFrom: env.RESEND_FROM,
+          log: jsonLogger,
+        });
+        jsonLogger("digest_complete", { cron: event.cron, ...stats });
+        return;
+      }
+
       // Primary source: EDGAR. A failure here must not block the others.
       try {
         const stats = await ingestFromFeed({
@@ -44,6 +100,9 @@ export default {
           message: error instanceof Error ? error.message : String(error),
         });
       }
+
+      // Alerts: scan everything new (from ANY writer) and dispatch instants.
+      await runAlertPipeline(handle.db, env);
 
       // Secondary sources (Finnhub / FMP / India) — interval-gated internally.
       await runSecondarySources(handle.db, env, jsonLogger);

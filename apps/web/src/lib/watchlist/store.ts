@@ -95,10 +95,33 @@ class LocalStorageWatchlistStore implements WatchlistStore {
   }
 }
 
-let store: WatchlistStore | null = null;
+let localStore: LocalStorageWatchlistStore | null = null;
+let remoteStore: WatchlistStore | null = null;
+const swapListeners = new Set<() => void>();
 
-/** Phase 7 swap point: return a Supabase-backed store here once auth exists. */
+/** The signed-out store. Also the source for the first-login import. */
+export function getLocalWatchlistStore(): LocalStorageWatchlistStore {
+  localStore ??= new LocalStorageWatchlistStore();
+  return localStore;
+}
+
+/**
+ * Phase 7 swap point (now wired): a signed-in session installs the
+ * account-backed store here and every consumer of getWatchlistStore()
+ * follows — no page or component changes.
+ */
+export function setRemoteWatchlistStore(store: WatchlistStore | null): void {
+  if (remoteStore === store) return;
+  remoteStore = store;
+  for (const listener of swapListeners) listener();
+}
+
+/** Notifies when the active store is swapped (sign-in / sign-out). */
+export function subscribeToStoreSwap(listener: () => void): () => void {
+  swapListeners.add(listener);
+  return () => swapListeners.delete(listener);
+}
+
 export function getWatchlistStore(): WatchlistStore {
-  store ??= new LocalStorageWatchlistStore();
-  return store;
+  return remoteStore ?? getLocalWatchlistStore();
 }

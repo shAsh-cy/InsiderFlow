@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/search-params";
 import type { NextSearchParams } from "@/lib/api/search-params";
 import { isScreenerPreset, SCREENER_PRESETS } from "@/lib/api/schemas";
+import { getSessionUser } from "@/lib/auth/supabase-server";
 import { getDb } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,10 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
   // The preset's canned params win over URL filters (same rule as the API).
   const merged = { ...parsed, ...(preset?.params ?? {}), limit: 50 };
 
-  const initial = await queryTrades(getDb(), merged).catch(() => null);
+  const [initial, user] = await Promise.all([
+    queryTrades(getDb(), merged).catch(() => null),
+    getSessionUser(),
+  ]);
   const clientParams = { ...toClientParams(parsed), ...(preset?.params ?? {}), limit: 50 };
 
   return (
@@ -72,6 +76,7 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
           initialPage={initial}
           params={clientParams}
           preset={presetName}
+          canSaveAlert={Boolean(user)}
         />
       ) : (
         <p className="glass rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">

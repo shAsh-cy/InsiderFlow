@@ -21,15 +21,50 @@ export function ScreenerResults({
   initialPage,
   params,
   preset,
+  canSaveAlert = false,
 }: {
   initialPage: Paged<TradeRow>;
   params: TradesParams;
   preset: string | null;
+  /** True when a signed-in session exists — enables "Save as alert". */
+  canSaveAlert?: boolean;
 }) {
   const [rows, setRows] = useState<TradeRow[]>(initialPage.data);
   const [meta, setMeta] = useState<PageMeta>(initialPage.meta);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  /** Persists the CURRENT screen (preset params included) as an alert rule. */
+  const saveAsAlert = async () => {
+    setSaving(true);
+    try {
+      const { limit: _limit, offset: _offset, ...filters } = params;
+      const response = await fetch("/api/me/alert-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: preset ? `Screen: ${preset}` : "Saved screen",
+          filters,
+          mode: "digest",
+          channels: ["telegram"],
+        }),
+      });
+      if (response.ok) {
+        toast.success("Saved as alert", {
+          description: "Tune delivery and quiet hours in Settings.",
+        });
+      } else if (response.status === 401) {
+        toast.error("Sign in to save alerts");
+      } else {
+        toast.error("Could not save this screen");
+      }
+    } catch {
+      toast.error("Could not save this screen");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const fetcher = (p: TradesParams) => (preset ? fetchScreener(preset, { ...p }) : fetchTrades(p));
 
@@ -129,16 +164,30 @@ export function ScreenerResults({
             <TooltipContent>RSS feeds are available for presets</TooltipContent>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span tabIndex={0} data-testid="save-alert">
-              <Button variant="outline" size="sm" className="glass border-white/10" disabled>
-                <BellPlus aria-hidden /> Save as alert
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Sign-in and alerts arrive in Phase 7</TooltipContent>
-        </Tooltip>
+        {canSaveAlert ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="glass border-white/10"
+            data-testid="save-alert"
+            onClick={() => void saveAsAlert()}
+            disabled={saving}
+          >
+            {saving ? <Loader2 className="animate-spin" aria-hidden /> : <BellPlus aria-hidden />}
+            Save as alert
+          </Button>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} data-testid="save-alert">
+                <Button variant="outline" size="sm" className="glass border-white/10" disabled>
+                  <BellPlus aria-hidden /> Save as alert
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Sign in to save this screen as an alert</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       {rows.length === 0 ? (

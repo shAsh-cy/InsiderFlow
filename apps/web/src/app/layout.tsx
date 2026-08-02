@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 
 import { ShellChrome } from "@/components/shell/chrome";
 import { Providers } from "@/components/shell/providers";
+import { SessionProvider } from "@/components/shell/session-provider";
+import { getSessionUser, isAuthConfigured } from "@/lib/auth/supabase-server";
 
 import "./globals.css";
 
@@ -19,11 +21,18 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const user = await getSessionUser();
+  const session = {
+    userId: user?.id ?? null,
+    email: user?.email ?? null,
+    authConfigured: isAuthConfigured(),
+  };
+
   return (
     <html lang="en" className="dark">
       <body className="grain min-h-screen antialiased">
@@ -34,8 +43,10 @@ export default function RootLayout({
           Skip to content
         </a>
         <Providers>
-          <ShellChrome />
-          {children}
+          <SessionProvider session={session}>
+            <ShellChrome session={session} />
+            {children}
+          </SessionProvider>
         </Providers>
       </body>
     </html>

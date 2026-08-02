@@ -1,32 +1,14 @@
-import { execFileSync } from "node:child_process";
-
 import { expect, test } from "@playwright/test";
+
+import { psql } from "./fixtures";
 
 /**
  * Phase 6 page acceptance. Run against a production build on :3100 with
  * the docker Postgres:
  *   PLAYWRIGHT_BASE_URL=http://localhost:3100 pnpm exec playwright test e2e/pages.spec.ts
+ *
+ * Fixtures use the reserved ZZ* namespace — see e2e/fixtures.ts.
  */
-
-function psql(sql: string): string {
-  return execFileSync(
-    "docker",
-    [
-      "exec",
-      "insiderflow-postgres",
-      "psql",
-      "-U",
-      "postgres",
-      "-d",
-      "insiderflow",
-      "-t",
-      "-A",
-      "-c",
-      sql,
-    ],
-    { encoding: "utf8" },
-  ).trim();
-}
 
 test.describe("live feed (/trades)", () => {
   test("renders live fold + history, filters update the URL and back works", async ({ page }) => {
@@ -87,12 +69,12 @@ test.describe("stock page", () => {
     // transaction belongs to a filing that an amendment superseded, and the
     // table is virtualized (asserting on text inside a busy table would be
     // window-dependent).
-    const ticker = `E2EAMD${Date.now() % 100000}`;
+    const ticker = `ZZAMEND${Date.now() % 100000}`;
     psql(
       `WITH co AS (INSERT INTO companies (external_key, ticker, name, country)
-          VALUES ('ticker:US:${ticker}', '${ticker}', 'E2E Amendment Test Corp', 'US') RETURNING id, country),
+          VALUES ('ticker:US:${ticker}', '${ticker}', 'ZZ Amendment Test Corp', 'US') RETURNING id, country),
         ins AS (INSERT INTO insiders (external_key, name, is_officer)
-          VALUES ('name:US:E2E AMEND TESTER ${ticker}', 'E2E AMEND TESTER', true) RETURNING id),
+          VALUES ('name:US:ZZ AMEND TESTER ${ticker}', 'ZZ AMEND TESTER', true) RETURNING id),
         orig AS (INSERT INTO filings (accession_no, form_type, filed_at, issuer_company_id)
           SELECT 'e2e-orig-${ticker}', '4', now() - interval '2 day', co.id FROM co RETURNING id),
         amend AS (INSERT INTO filings (accession_no, form_type, filed_at, issuer_company_id)
@@ -134,7 +116,7 @@ test.describe("stock page", () => {
          UPDATE filings SET superseded_by_filing_id = NULL WHERE accession_no = 'e2e-orig-${ticker}';
          DELETE FROM filings WHERE accession_no IN ('e2e-orig-${ticker}', 'e2e-amend-${ticker}');
          DELETE FROM companies WHERE ticker = '${ticker}';
-         DELETE FROM insiders WHERE external_key = 'name:US:E2E AMEND TESTER ${ticker}';`,
+         DELETE FROM insiders WHERE external_key = 'name:US:ZZ AMEND TESTER ${ticker}';`,
       );
     }
   });

@@ -10,9 +10,11 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import type { SessionInfo } from "./session-provider";
+
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
 
-export function ShellChrome() {
+export function ShellChrome({ session }: { session?: SessionInfo }) {
   const [open, setOpen] = useState(false);
   /** Stays true after first open so the chunk isn't re-requested. */
   const [paletteLoaded, setPaletteLoaded] = useState(false);
@@ -70,6 +72,23 @@ export function ShellChrome() {
               ⌘K
             </kbd>
           </button>
+          {session?.authConfigured ? (
+            session.userId ? (
+              <Link
+                href="/settings"
+                className="glass inline-flex h-8 items-center rounded-lg px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Settings
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="glass inline-flex h-8 items-center rounded-lg px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Sign in
+              </Link>
+            )
+          ) : null}
         </div>
       </header>
 

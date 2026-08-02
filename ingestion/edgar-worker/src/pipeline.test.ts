@@ -267,6 +267,16 @@ describe("ingestion pipeline (PGlite integration)", () => {
     )!;
     expect(supersededOriginal.supersededByFilingId).toBe(amendment.id);
 
+    // Regression guard for the CTE-snapshot trap: linkAmendment must mark
+    // the original superseded in a statement SEPARATE from the inserts. If
+    // anyone folds these into one data-modifying CTE chain, the UPDATE
+    // silently sees no rows and this assertion fails.
+    const [freshlyLinked] = await db
+      .select({ superseded: dbExports.filings.supersededByFilingId })
+      .from(dbExports.filings)
+      .where(dbExports.eq(dbExports.filings.accessionNo, "0000320193-26-000123"));
+    expect(freshlyLinked?.superseded).not.toBeNull();
+
     // Smith's same-day filing against the same issuer must NOT be superseded.
     const smithFiling = filingsAfterAmend.find((f) => f.accessionNo === "0000320193-26-000124")!;
     expect(smithFiling.supersededByFilingId).toBeNull();

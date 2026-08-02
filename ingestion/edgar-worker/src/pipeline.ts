@@ -310,6 +310,13 @@ export async function persistFilingOnly(
  * originals superseded, and re-home rows the amendment re-reported
  * unchanged (they deduped against the original) so they stay visible when
  * APIs hide superseded filings by default.
+ *
+ * ⚠ DO NOT collapse these steps into a single data-modifying CTE chain.
+ * Statements inside one WITH share a snapshot, so an UPDATE cannot see
+ * rows a sibling CTE just inserted — the mark-superseded step would
+ * silently no-op. This exact trap produced a fixture that looked broken
+ * while the product was correct. Keep them as separate statements (the
+ * alert scanner's cursor CAS follows the same rule).
  */
 export async function linkAmendment(
   db: Database,

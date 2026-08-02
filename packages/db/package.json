@@ -12,6 +12,7 @@
   "scripts": {
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -23,8 +24,10 @@
     "postgres": "^3.4.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0",
     "@types/node": "^22.15.0",
     "drizzle-kit": "^0.31.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
   }
 }

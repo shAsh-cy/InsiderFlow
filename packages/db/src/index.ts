@@ -1,6 +1,14 @@
 export { createDb, createDbHandle } from "./client";
 export type { Database, DatabaseHandle } from "./client";
 export * from "./schema";
+export {
+  buildTradeConditions,
+  clusterCompaniesSubquery,
+  cutoffIso,
+  dipCondition,
+  nearLowCondition,
+} from "./trade-filters";
+export type { TradeFilterInput } from "./trade-filters";
 // Re-export the query operators so consumers use a single drizzle-orm instance.
 export {
   and,
