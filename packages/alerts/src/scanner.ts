@@ -34,6 +34,7 @@ import {
   inArray,
   insiders,
   isNull,
+  lt,
   or,
   scannerState,
   sql,
@@ -90,7 +91,11 @@ export async function acquireLease(
     .where(
       and(
         eq(scannerState.name, SCANNER_NAME),
-        or(isNull(scannerState.lockedUntil), sql`${scannerState.lockedUntil} < ${now}`),
+        // lt() (not a raw sql template) so Drizzle binds `now` using the
+        // column's timestamptz type. A bare `sql` template sends the Date
+        // as its JS toString(), which postgres.js rejects — PGlite is more
+        // forgiving, so this only shows up against real Postgres.
+        or(isNull(scannerState.lockedUntil), lt(scannerState.lockedUntil, now)),
       ),
     )
     .returning({

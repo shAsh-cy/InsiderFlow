@@ -23,6 +23,7 @@
     "db:studio": "pnpm --filter @insiderflow/db db:studio",
     "backfill": "pnpm --filter @insiderflow/edgar-worker backfill",
     "india:ingest": "pnpm --filter @insiderflow/india-local ingest",
+    "smoke:alert-insert": "node packages/db/scripts/smoke-alert-insert.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
