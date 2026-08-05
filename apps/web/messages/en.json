@@ -1,0 +1,68 @@
+{
+  "brand": {
+    "name": "InsiderFlow"
+  },
+  "nav": {
+    "primary": "Primary",
+    "design": "Design",
+    "apiDocs": "API docs",
+    "search": "Search…",
+    "openPalette": "Open command palette",
+    "settings": "Settings",
+    "signIn": "Sign in",
+    "skipToContent": "Skip to content",
+    "language": "Language",
+    "sections": {
+      "app": "App",
+      "analytics": "Analytics",
+      "reference": "Reference"
+    },
+    "items": {
+      "overview": "Overview",
+      "liveFeed": "Live feed",
+      "screener": "Screener",
+      "companies": "Companies",
+      "watchlist": "Watchlist",
+      "heatmap": "Heatmap",
+      "leaderboard": "Leaderboard",
+      "politicians": "Politicians",
+      "methodology": "Methodology",
+      "designSystem": "Design system"
+    }
+  },
+  "landing": {
+    "badge": "Open source · AGPL-3.0 · Runs entirely on free tiers",
+    "subhead": "The real-time insider-trading tape. When executives trade their own stock, it shows up here — normalized across markets, classified for signal, and free to query.",
+    "ctaPrimary": "Watch the live tape",
+    "ctaSecondary": "Explore the API",
+    "disclaimerLead": "Not investment advice.",
+    "disclaimerBody": "Public regulatory filings, republished for research and education. Filings can be late, amended, or wrong.",
+    "featuresLabel": "Features",
+    "features": {
+      "realtime": {
+        "title": "Real-time EDGAR tape",
+        "body": "A 1-minute cron watches SEC filings; a Form 4 lands in the database — and on this page — within about a minute of hitting EDGAR."
+      },
+      "multiMarket": {
+        "title": "Multi-market, one schema",
+        "body": "US and India today, adapter-ready for more. Every market normalizes into one taxonomy with native currency and USD side by side."
+      },
+      "signal": {
+        "title": "Signal over noise",
+        "body": "Every trade is classified routine (grants, 10b5-1 plans, tax withholding) or opportunistic — the discretionary trades worth watching."
+      },
+      "api": {
+        "title": "Free public API",
+        "body": "Typed JSON, RSS feeds, and a live SSE stream. Rate-limited, cached, documented with OpenAPI. No key required to start."
+      }
+    },
+    "footer": {
+      "sourcesLead": "Data sources:",
+      "sourcesBody": "US data comes from SEC EDGAR, a US-government service whose filings are in the public domain; access follows the SEC fair-access policy. NSE/BSE (India) data is subject to restrictive exchange terms and is not redistributed by this project.",
+      "licence": "InsiderFlow is free software licensed under AGPL-3.0. Nothing on this site is investment advice or a recommendation to buy or sell any security."
+    }
+  },
+  "common": {
+    "notAdvice": "Not investment advice."
+  }
+}

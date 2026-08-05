@@ -1,3 +1,6 @@
+import { formatAmountBracket } from "@insiderflow/core";
+
+import type { PoliticianTradeRow } from "./analytics-queries";
 import type { TradeRow } from "./queries";
 
 export function escapeXml(value: string): string {
@@ -34,6 +37,49 @@ export function tradeToRssItem(trade: TradeRow): { title: string; description: s
   return { title, description: `${bits.join(" ")}. Not investment advice.` };
 }
 
+/**
+ * A disclosed AMOUNT BRACKET, rendered honestly — delegates to the single
+ * formatter in @insiderflow/core so the feed can never drift from the UI.
+ */
+export function formatAmountRange(min: number | null, max: number | null): string {
+  return formatAmountBracket(min, max);
+}
+
+export function politicianTradeToRssItem(trade: PoliticianTradeRow): {
+  title: string;
+  description: string;
+} {
+  const verb =
+    trade.direction === "buy" ? "bought" : trade.direction === "sell" ? "sold" : "exchanged";
+  const symbol = trade.ticker ?? trade.assetDescription;
+  const amount = trade.amountRange ?? formatAmountRange(trade.amountMin, trade.amountMax);
+  const who = `${trade.politician.name} (${trade.politician.chamber}${
+    trade.politician.party ? `-${trade.politician.party}` : ""
+  }${trade.politician.state ? `, ${trade.politician.state}` : ""})`;
+
+  const bits = [
+    `${who} ${verb} ${symbol} on ${trade.txnDate}`,
+    `Disclosed ${trade.disclosedAt ?? "date unknown"}`,
+    trade.disclosureLagDays !== null ? `${trade.disclosureLagDays} days after the trade` : null,
+    trade.late ? "— past the 45-day STOCK Act deadline" : null,
+    `Amount: ${amount} (disclosed as a range; filings contain no exact figure)`,
+    trade.owner ? `Held: ${trade.owner}` : null,
+  ].filter(Boolean);
+
+  return {
+    title: `[${trade.politician.chamber}] ${symbol} — ${trade.politician.name} ${verb} (${amount})`,
+    description: `${bits.join(". ")}. Not investment advice.`,
+  };
+}
+
+export interface RssItem {
+  id: string;
+  title: string;
+  description: string;
+  link: string;
+  pubDate: string;
+}
+
 export interface RssFeedOptions {
   title: string;
   description: string;
@@ -42,30 +88,27 @@ export interface RssFeedOptions {
   items: TradeRow[];
 }
 
-/** RSS 2.0 with the atom:link self reference required by validators. */
-export function buildRssFeed({
+function renderFeed({
   title,
   description,
   siteUrl,
   selfUrl,
   items,
-}: RssFeedOptions): string {
-  const lastBuildDate = new Date(items.length > 0 ? items[0]!.createdAt : Date.now()).toUTCString();
+}: Omit<RssFeedOptions, "items"> & { items: RssItem[] }): string {
+  const lastBuildDate = new Date(items.length > 0 ? items[0]!.pubDate : Date.now()).toUTCString();
 
   const itemXml = items
-    .map((trade) => {
-      const { title: itemTitle, description: itemDescription } = tradeToRssItem(trade);
-      const link = trade.filing?.sourceUrl ?? siteUrl;
-      return [
+    .map((item) =>
+      [
         "    <item>",
-        `      <title>${escapeXml(itemTitle)}</title>`,
-        `      <link>${escapeXml(link)}</link>`,
-        `      <guid isPermaLink="false">${escapeXml(trade.id)}</guid>`,
-        `      <pubDate>${new Date(trade.createdAt).toUTCString()}</pubDate>`,
-        `      <description>${escapeXml(itemDescription)}</description>`,
+        `      <title>${escapeXml(item.title)}</title>`,
+        `      <link>${escapeXml(item.link)}</link>`,
+        `      <guid isPermaLink="false">${escapeXml(item.id)}</guid>`,
+        `      <pubDate>${new Date(item.pubDate).toUTCString()}</pubDate>`,
+        `      <description>${escapeXml(item.description)}</description>`,
         "    </item>",
-      ].join("\n");
-    })
+      ].join("\n"),
+    )
     .join("\n");
 
   return [
@@ -84,4 +127,40 @@ export function buildRssFeed({
     "</rss>",
     "",
   ].join("\n");
+}
+
+/** RSS 2.0 with the atom:link self reference required by validators. */
+export function buildRssFeed(options: RssFeedOptions): string {
+  return renderFeed({
+    ...options,
+    items: options.items.map((trade) => {
+      const { title, description } = tradeToRssItem(trade);
+      return {
+        id: trade.id,
+        title,
+        description,
+        link: trade.filing?.sourceUrl ?? options.siteUrl,
+        pubDate: trade.createdAt,
+      };
+    }),
+  });
+}
+
+/** The congressional-disclosure feed. Links straight to the filed PTR PDF. */
+export function buildPoliticianRssFeed(
+  options: Omit<RssFeedOptions, "items"> & { items: PoliticianTradeRow[] },
+): string {
+  return renderFeed({
+    ...options,
+    items: options.items.map((trade) => {
+      const { title, description } = politicianTradeToRssItem(trade);
+      return {
+        id: trade.id,
+        title,
+        description,
+        link: trade.sourceUrl ?? `${options.siteUrl}/politicians`,
+        pubDate: trade.createdAt,
+      };
+    }),
+  });
 }

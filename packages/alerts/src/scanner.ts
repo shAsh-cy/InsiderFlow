@@ -43,11 +43,17 @@ import {
 import type { Database, TradeFilterInput } from "@insiderflow/db";
 
 import { effectiveMode, ruleMatches } from "./match";
-import type { AlertCandidate, AlertMatch, Logger, MatchableRule } from "./types";
+import type { AlertCandidate, AlertKind, AlertMatch, Logger, MatchableRule } from "./types";
 
 const SCANNER_NAME = "alerts";
 const DEFAULT_LEASE_SECONDS = 300;
 const DEFAULT_BATCH = 500;
+/**
+ * How old an event may be and still qualify for instant delivery. A cursor
+ * reset, a backfill, or a replay re-presents historical rows as "new"; without
+ * this guard every one of them would fire a push as if it had just happened.
+ */
+const DEFAULT_INSTANT_MAX_AGE_MINUTES = 60;
 
 const noopLog: Logger = () => {};
 
@@ -57,6 +63,8 @@ export interface ScanOptions {
   owner?: string;
   leaseSeconds?: number;
   batchSize?: number;
+  /** Instant-delivery freshness window; older matches route to the digest. */
+  instantMaxAgeMinutes?: number;
   now?: Date;
   log?: Logger;
 }
@@ -70,7 +78,24 @@ export interface ScanResult {
   logged: number;
   instant: number;
   digest: number;
+  /** Instant matches downgraded because the event was already old. */
+  stale: number;
   cursorAdvanced: boolean;
+}
+
+/**
+ * Age of the underlying EVENT, not of our row. Filing acceptance time is the
+ * real clock; sources with no filing fall back to when we first saw the row,
+ * which is equally old on a replay and equally fresh on a live insert.
+ */
+export function isStaleForInstant(
+  candidate: Pick<AlertCandidate, "filedAt" | "createdAt">,
+  now: Date,
+  maxAgeMinutes: number,
+): boolean {
+  const eventAt = candidate.filedAt ?? candidate.createdAt;
+  if (!eventAt) return false;
+  return now.getTime() - eventAt.getTime() > maxAgeMinutes * 60_000;
 }
 
 /**
@@ -167,6 +192,7 @@ export async function fetchCandidates(
       insiderId: insiders.id,
       insiderName: insiders.name,
       insiderTitle: insiders.officerTitle,
+      filedAt: filings.filedAt,
     })
     .from(transactions)
     .innerJoin(companies, eq(transactions.companyId, companies.id))
@@ -183,6 +209,7 @@ export async function fetchCandidates(
     price: num(r.price),
     value: num(r.value),
     valueUsd: num(r.valueUsd),
+    kind: "transaction" as const,
   }));
 }
 
@@ -191,7 +218,15 @@ export async function fetchCandidates(
  * aggregates, or price history. These MUST go through the shared SQL
  * builder so a saved screen alerts exactly as it screens.
  */
-const SQL_ONLY_FILTERS = ["cluster", "dip", "near_low", "sector", "role", "exec_only"] as const;
+const SQL_ONLY_FILTERS = [
+  "cluster",
+  "dip",
+  "near_low",
+  "sector",
+  "role",
+  "exec_only",
+  "min_anomaly_z",
+] as const;
 
 function needsSqlEvaluation(filters: TradeFilterInput | null): boolean {
   if (!filters) return false;
@@ -234,8 +269,11 @@ async function idsMatchingInSql(
   return ids;
 }
 
-async function loadRules(db: Database): Promise<MatchableRule[]> {
-  const rows = await db.select().from(alertRules).where(eq(alertRules.enabled, true));
+async function loadRules(db: Database, kind: AlertKind = "transaction"): Promise<MatchableRule[]> {
+  const rows = await db
+    .select()
+    .from(alertRules)
+    .where(and(eq(alertRules.enabled, true), eq(alertRules.kind, kind)));
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
@@ -244,6 +282,7 @@ async function loadRules(db: Database): Promise<MatchableRule[]> {
     filters: (r.filters ?? null) as MatchableRule["filters"],
     trackedTicker: r.trackedTicker,
     trackedInsiderId: r.trackedInsiderId,
+    kind: r.kind,
     mode: r.mode,
     channels: r.channels,
     quietHoursStart: r.quietHoursStart,
@@ -262,6 +301,8 @@ export async function scanForMatches(options: ScanOptions): Promise<ScanResult> 
   const log = options.log ?? noopLog;
   const owner = options.owner ?? "scanner";
 
+  const maxAgeMinutes = options.instantMaxAgeMinutes ?? DEFAULT_INSTANT_MAX_AGE_MINUTES;
+
   const lease = await acquireLease(db, owner, options.leaseSeconds ?? DEFAULT_LEASE_SECONDS, now);
   if (!lease.acquired) {
     log("alert_scan_skipped", { reason: "lease_held" });
@@ -272,6 +313,7 @@ export async function scanForMatches(options: ScanOptions): Promise<ScanResult> 
       logged: 0,
       instant: 0,
       digest: 0,
+      stale: 0,
       cursorAdvanced: false,
     };
   }
@@ -283,6 +325,7 @@ export async function scanForMatches(options: ScanOptions): Promise<ScanResult> 
     logged: 0,
     instant: 0,
     digest: 0,
+    stale: 0,
     cursorAdvanced: false,
   };
   let newCursor: { createdAt: Date; id: string } | null = null;
@@ -316,8 +359,17 @@ export async function scanForMatches(options: ScanOptions): Promise<ScanResult> 
 
       for (const candidate of shortlist) {
         if (allowed && !allowed.has(candidate.id)) continue;
-        const mode = effectiveMode(rule, timezones.get(rule.userId) ?? "UTC", now);
-        matches.push({ rule, candidate, mode });
+
+        let mode = effectiveMode(rule, timezones.get(rule.userId) ?? "UTC", now);
+        let deferReason: AlertMatch["deferReason"] = mode !== rule.mode ? "quiet_hours" : null;
+
+        // Freshness is checked AFTER quiet hours so a downgrade is attributed
+        // to whichever rule actually caused it.
+        if (mode === "instant" && isStaleForInstant(candidate, now, maxAgeMinutes)) {
+          mode = "digest";
+          deferReason = "stale";
+        }
+        matches.push({ rule, candidate, mode, deferReason });
       }
     }
     result.matched = matches.length;
@@ -332,15 +384,22 @@ export async function scanForMatches(options: ScanOptions): Promise<ScanResult> 
             userId: m.rule.userId,
             ruleId: m.rule.id,
             dedupKey: m.candidate.dedupKey,
+            kind: "transaction" as const,
             transactionId: m.candidate.id,
             mode: m.mode,
+            deferReason: m.deferReason ?? null,
           })),
         )
         .onConflictDoNothing({ target: [alertsLog.ruleId, alertsLog.dedupKey] })
-        .returning({ id: alertsLog.id, mode: alertsLog.mode });
+        .returning({
+          id: alertsLog.id,
+          mode: alertsLog.mode,
+          deferReason: alertsLog.deferReason,
+        });
       result.logged = inserted.length;
       result.instant = inserted.filter((r) => r.mode === "instant").length;
       result.digest = inserted.filter((r) => r.mode === "digest").length;
+      result.stale = inserted.filter((r) => r.deferReason === "stale").length;
     }
 
     const last = candidates[candidates.length - 1]!;

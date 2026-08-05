@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { defaultAlertMode } from "@/lib/alerts/policy";
 import {
   createAlertRule,
   deleteAlertRule,
@@ -18,7 +19,9 @@ const createSchema = z.object({
   filters: z.record(z.unknown()).optional(),
   trackedTicker: z.string().min(1).max(12).optional(),
   trackedInsiderId: z.string().uuid().optional(),
-  mode: z.enum(["instant", "digest"]).default("digest"),
+  kind: z.enum(["transaction", "cluster", "politician"]).default("transaction"),
+  /** Omitted → derived from the channels by defaultAlertMode. */
+  mode: z.enum(["instant", "digest"]).optional(),
   channels: z
     .array(z.enum(["telegram", "email", "webpush"]))
     .min(1)
@@ -77,7 +80,12 @@ export async function POST(req: Request): Promise<Response> {
     filters = rest as Record<string, unknown>;
   }
 
-  const rule = await createAlertRule(getDb(), user.id, { ...parsed.data, filters });
+  const rule = await createAlertRule(getDb(), user.id, {
+    ...parsed.data,
+    // Digest only protects the metered email channel; anything else fires now.
+    mode: parsed.data.mode ?? defaultAlertMode(parsed.data.channels),
+    filters,
+  });
   return Response.json({ data: rule }, { status: 201, headers: noStore });
 }
 

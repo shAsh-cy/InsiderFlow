@@ -1,6 +1,19 @@
-# Local Postgres for development. Production uses Supabase (free tier).
-#   docker compose up -d
-#   pnpm db:push   # apply the Drizzle schema
+# Full local stack. `docker compose up` gives you a working product with data.
+#
+#   docker compose up            # Postgres + migrations + seed + web + ingest loop
+#   open http://localhost:3000
+#
+# The `db` profile is the lighter option for day-to-day development, where you
+# run the web app and the worker on the host with hot reload:
+#
+#   docker compose up -d postgres
+#   pnpm db:migrate && pnpm seed && pnpm dev
+#
+# WHY THE INGEST LOOP IS A PLAIN SLEEP LOOP, not wrangler: the production
+# runtime is a Cloudflare Worker on a cron trigger, and `wrangler dev` needs
+# Cloudflare's workerd sandbox, which is awkward and heavy inside Docker. The
+# same pipeline code runs either way — this just calls it on an interval from
+# Node. Anything you verify here holds on the worker.
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,6 +33,76 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Runs migrations, then seeds sample data, then exits. Everything else waits
+  # for it to complete successfully, so there is no race between "Postgres is
+  # accepting connections" and "the schema exists".
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: insiderflow-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+      # Seeded data is entirely synthetic and lives in the reserved ZZ*
+      # namespace. Set SEED=0 to migrate only.
+      SEED: ${SEED:-1}
+    command: >
+      sh -c "pnpm --filter @insiderflow/db exec drizzle-kit migrate &&
+             if [ \"$$SEED\" = \"1\" ]; then pnpm --filter @insiderflow/db seed; fi"
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    container_name: insiderflow-web
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+      SITE_URL: http://localhost:3000
+      NODE_ENV: production
+      # Aggregate surfaces (heatmap, leaderboard, anomaly rankings) normally
+      # exclude the reserved ZZ* fixture namespace so fabricated trades can
+      # never be shown as market data. A seeded local stack contains nothing
+      # BUT fixtures, so opt in here — otherwise those pages are empty and the
+      # first run looks broken. The UI labels itself whenever this is on, and
+      # the default everywhere else is off.
+      INSIDERFLOW_SHOW_SYNTHETIC: ${INSIDERFLOW_SHOW_SYNTHETIC:-true}
+      # Auth, alerts and secondary sources are all optional — the app runs as
+      # a fully public read-only site without any of them.
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # The EDGAR ingest + alert + cluster pipeline on a loop. Disabled by default
+  # because it makes live requests to sec.gov: opt in with
+  #   docker compose --profile live up
+  # and set EDGAR_USER_AGENT to something identifying you (SEC requires it).
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: insiderflow-ingest
+    profiles: ["live"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+      EDGAR_USER_AGENT: ${EDGAR_USER_AGENT:-InsiderFlow/0.1 (set-your-email@example.com)}
+      INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-60}
+      MAX_FILINGS_PER_RUN: ${MAX_FILINGS_PER_RUN:-25}
+    command: pnpm --filter @insiderflow/edgar-worker ingest:loop
+    restart: unless-stopped
 
 volumes:
   insiderflow_pgdata:

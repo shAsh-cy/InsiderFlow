@@ -190,14 +190,21 @@ test.describe("watchlist", () => {
 });
 
 test.describe("insider profile", () => {
-  test("renders roles, stats, and the honest coming-soon score", async ({ page }) => {
+  test("renders roles, stats, and the performance panel", async ({ page }) => {
     const insiderId = psql(
       "SELECT insider_id FROM transactions GROUP BY insider_id ORDER BY count(*) DESC LIMIT 1;",
     );
     await page.goto(`/insider/${insiderId}`);
-    await expect(page.getByLabel("Performance score (coming soon)")).toContainText(
-      "Coming in Phase 8",
-    );
+
+    // Phase 8 filled the "coming soon" slot with real scoring. Either state is
+    // correct — what must never happen is a fabricated number, so an insider
+    // with no scored trades has to say so rather than render a zero.
+    // The heading carries the sample size, so the accessible name is
+    // "Performance · N scored trades" when there is anything to show.
+    const panel = page.getByRole("region", { name: /^Performance/ });
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(/scored trade|Not enough scored trades yet/);
+
     await expect(page.getByLabel("Trade history")).toBeVisible();
     await expect(page.getByText("Cross-company trade history")).toBeVisible();
   });

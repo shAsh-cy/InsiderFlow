@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 
 import { CountryFlag } from "@/components/domain/country-flag";
 import { StatCard } from "@/components/domain/stat-card";
+import { PoliticianTradeTable } from "@/components/politicians/politician-trade-table";
 import { ChartsPanel } from "@/components/stock/charts-panel";
 import { BulkBlockPanel, PledgePanel, SastPanel } from "@/components/stock/india-panels";
 import { TradeTable } from "@/components/trades/trade-table";
 import { WatchlistButton } from "@/components/watchlist/watchlist-button";
+import { queryCompanyAnomaly, queryPoliticianTradesForTicker } from "@/lib/api/analytics-queries";
 import {
   queryCompanyStats,
   queryPriceContext,
@@ -60,6 +62,8 @@ export default async function StockPage({
     ownership,
     cluster,
     sentiment,
+    anomaly,
+    politicianTrades,
     sast,
     bulkBlock,
     pledges,
@@ -74,8 +78,13 @@ export default async function StockPage({
     queryPriceContext(db, company.id).catch(() => []),
     queryNetFlow(db, company.id).catch(() => []),
     queryOwnershipTimeline(db, company.id).catch(() => []),
-    queryClusterInfo(db, company.id).catch(() => ({ distinctBuyers: 0, windowDays: 14 })),
+    queryClusterInfo(db, company.id).catch(() => null),
     company.ticker ? querySentiment(db, company.ticker).catch(() => []) : Promise.resolve([]),
+    queryCompanyAnomaly(db, company.id).catch(() => null),
+    // Congressional overlay — US equities only; the STOCK Act covers no others.
+    company.country === "US"
+      ? queryPoliticianTradesForTicker(db, ticker).catch(() => [])
+      : Promise.resolve([]),
     isIndia ? querySastForSymbol(db, ticker).catch(() => []) : Promise.resolve([]),
     isIndia ? queryBulkBlockForSymbol(db, ticker).catch(() => []) : Promise.resolve([]),
     isIndia ? queryPledgesForSymbol(db, ticker).catch(() => []) : Promise.resolve([]),
@@ -95,12 +104,26 @@ export default async function StockPage({
           <h1 className="flex flex-wrap items-center gap-2.5 text-2xl font-semibold tracking-tight">
             <span className="font-mono">{ticker}</span>
             <CountryFlag country={company.country} className="text-lg" />
-            {cluster.distinctBuyers >= 2 ? (
+            {cluster && cluster.distinctBuyers >= 2 ? (
               <span
                 className="text-2xs rounded-full bg-buy-soft px-2 py-0.5 font-medium uppercase tracking-wide text-buy ring-1 ring-inset ring-buy/30"
-                title={`${cluster.distinctBuyers} distinct insiders bought within ${cluster.windowDays} days`}
+                title={
+                  cluster.windowStart && cluster.windowEnd
+                    ? `${cluster.distinctBuyers} distinct insiders bought across ${cluster.tradeCount} trades between ${cluster.windowStart} and ${cluster.windowEnd}`
+                    : `${cluster.distinctBuyers} distinct insiders bought within ${cluster.windowDays} days`
+                }
               >
                 cluster buying · {cluster.distinctBuyers} insiders
+              </span>
+            ) : null}
+            {/* Only shown when the baseline is deep enough to support one. */}
+            {anomaly?.zScore !== null && anomaly && Math.abs(anomaly.zScore!) >= 2 ? (
+              <span
+                className="text-2xs rounded-full bg-white/6 px-2 py-0.5 font-medium uppercase tracking-wide text-amber-200 ring-1 ring-inset ring-amber-300/25"
+                title={`Net insider flow over the last ${anomaly.windowDays} days is ${anomaly.zScore!.toFixed(1)} standard deviations from this company's own trailing average, across ${anomaly.sampleSize} prior windows`}
+              >
+                unusual flow · {anomaly.zScore! > 0 ? "+" : "−"}
+                {Math.abs(anomaly.zScore!).toFixed(1)}σ
               </span>
             ) : null}
           </h1>
@@ -170,6 +193,39 @@ export default async function StockPage({
           />
         )}
       </section>
+
+      {/* Congressional overlay — a separate disclosure regime, kept visually
+          separate from Section 16 insider filings rather than merged into them. */}
+      {politicianTrades.length > 0 ? (
+        <section
+          aria-labelledby="congress-heading"
+          className="flex flex-col gap-3"
+          data-testid="politician-overlay"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2
+              id="congress-heading"
+              className="text-sm font-semibold uppercase tracking-widest text-muted-foreground"
+            >
+              Congressional disclosures
+            </h2>
+            <Link
+              href={`/politicians?ticker=${ticker}`}
+              className="text-2xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              All {ticker} disclosures
+            </Link>
+          </div>
+          <p className="text-2xs text-subtle-foreground">
+            STOCK Act filings by members of Congress. Amounts are disclosed brackets, never exact
+            figures, and a PTR may be filed up to 45 days after the trade.
+          </p>
+          <PoliticianTradeTable
+            rows={politicianTrades}
+            caption={`Congressional disclosures involving ${ticker}`}
+          />
+        </section>
+      ) : null}
 
       {/* Ownership timeline */}
       {ownership.length > 0 ? (

@@ -1,4 +1,11 @@
-import { dispatchDigest, dispatchInstant, scanForMatches } from "@insiderflow/alerts";
+import {
+  dispatchDigestExclusive,
+  dispatchInstant,
+  scanClusterAlerts,
+  scanForMatches,
+  scanPoliticianAlerts,
+} from "@insiderflow/alerts";
+import { maintainClusterFlags } from "@insiderflow/analytics";
 import { createDbHandle, eq, ingestionState } from "@insiderflow/db";
 
 import { enrichRecentPrices } from "./enrich";
@@ -28,6 +35,12 @@ export interface Env {
   /** Email is capped (Resend free tier: 100/day), so it batches into digests. */
   RESEND_API_KEY?: string;
   RESEND_FROM?: string;
+  /**
+   * Minutes an event may be old and still fire instantly (default 60).
+   * Anything older routes to the digest, so a cursor reset or a backfill
+   * cannot push a month of historical trades as breaking news.
+   */
+  ALERT_INSTANT_MAX_AGE?: string;
 }
 
 /**
@@ -40,10 +53,24 @@ async function runAlertPipeline(
   env: Env,
 ): Promise<void> {
   try {
-    const scan = await scanForMatches({ db, owner: "cf-worker", log: jsonLogger });
+    const scan = await scanForMatches({
+      db,
+      owner: "cf-worker",
+      instantMaxAgeMinutes: env.ALERT_INSTANT_MAX_AGE
+        ? Number(env.ALERT_INSTANT_MAX_AGE)
+        : undefined,
+      log: jsonLogger,
+    });
     if (!scan.acquired) return; // another runner holds the lease
-    if (scan.logged === 0) return;
 
+    // Derived feeds ride the same lease, so they cannot overlap either.
+    const maxAge = env.ALERT_INSTANT_MAX_AGE ? Number(env.ALERT_INSTANT_MAX_AGE) : undefined;
+    await scanClusterAlerts({ db, instantMaxAgeMinutes: maxAge, log: jsonLogger });
+    await scanPoliticianAlerts({ db, instantMaxAgeMinutes: maxAge, log: jsonLogger });
+
+    // Always dispatch, even when this scan logged nothing: earlier runs can
+    // leave rows pending (a channel outage, a retry), and this pass is also
+    // what retires alerts whose subject has since been deleted.
     await dispatchInstant({
       db,
       siteUrl: env.SITE_URL ?? "https://insiderflow.dev",
@@ -71,8 +98,11 @@ export default {
     try {
       // Daily digest runs on its own cron; it must not re-run ingestion.
       if (event.cron === DIGEST_CRON) {
-        const stats = await dispatchDigest({
+        // Exclusive: a GitHub Actions backstop can flush digests too, and two
+        // runners without a lease would send the same batch twice.
+        const stats = await dispatchDigestExclusive({
           db: handle.db,
+          owner: "cf-worker",
           siteUrl: env.SITE_URL ?? "https://insiderflow.dev",
           telegramBotToken: env.TELEGRAM_BOT_TOKEN,
           resendApiKey: env.RESEND_API_KEY,
@@ -97,6 +127,20 @@ export default {
         });
       } catch (error) {
         jsonLogger("edgar_ingest_failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Cluster flags, incrementally. Folded into this cron rather than given
+      // a third trigger: it is O(rows created since the cursor), so it costs
+      // nothing on a quiet minute, and cluster alerts below need it fresh.
+      // The nightly GitHub Actions sweep repairs flags that aged out without
+      // new trades to trigger a recompute.
+      try {
+        const clusters = await maintainClusterFlags(handle.db);
+        if (clusters.cursorAdvanced) jsonLogger("cluster_flags_updated", { ...clusters });
+      } catch (error) {
+        jsonLogger("cluster_flags_failed", {
           message: error instanceof Error ? error.message : String(error),
         });
       }

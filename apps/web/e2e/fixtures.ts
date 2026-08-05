@@ -73,10 +73,68 @@ export function insertSyntheticTrade(
   return dedupKey;
 }
 
+/**
+ * A synthetic congressional disclosure.
+ *
+ * The filer name is OBVIOUSLY FICTIONAL. A fabricated STOCK Act filing
+ * attributed to a real member of Congress would be defamatory the moment it
+ * appeared in a screenshot, so the fixture never uses a real person.
+ */
+export function insertSyntheticPoliticianTrade(
+  target: SyntheticCompany,
+  options: { txnType?: string; amountRange?: string; tag?: string } = {},
+): { politicianId: string; dedupKey: string; name: string } {
+  const name = `ZZ Representative Fictional ${target.ticker}`;
+  const externalKey = `house:zz representative fictional ${target.ticker.toLowerCase()}`;
+  const dedupKey = `e2e-pol-${options.tag ?? target.ticker}#0`;
+  const txnType = options.txnType ?? "purchase";
+  const amountRange = options.amountRange ?? "$15,001 - $50,000";
+
+  // psql prints the INSERT command tag on its own line alongside the RETURNING
+  // row, so take the first line rather than the whole output.
+  const politicianId = psql(
+    `INSERT INTO politicians (external_key, name, chamber, party, state, district)
+       VALUES ('${externalKey}', '${name}', 'house', 'IND', 'ZZ', 'ZZ01')
+     ON CONFLICT (external_key) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id;`,
+  )
+    .split("\n")[0]!
+    .trim();
+
+  psql(
+    `INSERT INTO politician_trades (politician_id, company_id, ticker, asset_description,
+        asset_type, txn_type, txn_date, disclosed_at, amount_min, amount_max, amount_range,
+        owner, source, source_url, dedup_key)
+      VALUES ('${politicianId}', '${target.companyId}', '${target.ticker}',
+        'ZZ Synthetic Test Corp', 'Stock', '${txnType}', CURRENT_DATE - 20, CURRENT_DATE,
+        15001, 50000, '${amountRange}', 'self', 'e2e-fixture',
+        'https://example.invalid/ptr/${target.ticker}.pdf', '${dedupKey}')
+      ON CONFLICT (dedup_key) DO NOTHING;`,
+  );
+  return { politicianId, dedupKey, name };
+}
+
+/** A cluster flag for the synthetic company, as the analytics cron would write it. */
+export function insertSyntheticClusterFlag(target: SyntheticCompany, insiderCount = 3): void {
+  psql(
+    `INSERT INTO cluster_flags (company_id, direction, window_start, window_end,
+        insider_count, trade_count, total_usd)
+      VALUES ('${target.companyId}', 'buy', CURRENT_DATE - 5, CURRENT_DATE,
+        ${insiderCount}, ${insiderCount}, ${insiderCount * 500000})
+      ON CONFLICT (company_id, direction, window_start)
+      DO UPDATE SET insider_count = EXCLUDED.insider_count;`,
+  );
+}
+
 /** Remove everything created for a synthetic company. */
 export function cleanupSyntheticCompany(target: SyntheticCompany): void {
   psql(
-    `DELETE FROM transactions WHERE company_id = '${target.companyId}';
+    `DELETE FROM politician_trades WHERE company_id = '${target.companyId}';
+     DELETE FROM politicians WHERE external_key = 'house:zz representative fictional ${target.ticker.toLowerCase()}';
+     DELETE FROM cluster_flags WHERE company_id = '${target.companyId}';
+     DELETE FROM company_anomalies WHERE company_id = '${target.companyId}';
+     DELETE FROM trade_returns WHERE company_id = '${target.companyId}';
+     DELETE FROM transactions WHERE company_id = '${target.companyId}';
      UPDATE filings SET superseded_by_filing_id = NULL WHERE issuer_company_id = '${target.companyId}';
      DELETE FROM filings WHERE issuer_company_id = '${target.companyId}';
      DELETE FROM companies WHERE id = '${target.companyId}';

@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getTranslations } from "next-intl/server";
 
 import { ShellChrome } from "@/components/shell/chrome";
 import { Providers } from "@/components/shell/providers";
@@ -26,7 +28,11 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const user = await getSessionUser();
+  const [user, locale, t] = await Promise.all([
+    getSessionUser(),
+    getLocale(),
+    getTranslations("nav"),
+  ]);
   const session = {
     userId: user?.id ?? null,
     email: user?.email ?? null,
@@ -34,20 +40,22 @@ export default async function RootLayout({
   };
 
   return (
-    <html lang="en" className="dark">
+    <html lang={locale} className="dark">
       <body className="grain min-h-screen antialiased">
         <a
           href="#main"
           className="sr-only z-[100] rounded-md bg-surface-2 px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
         >
-          Skip to content
+          {t("skipToContent")}
         </a>
-        <Providers>
-          <SessionProvider session={session}>
-            <ShellChrome session={session} />
-            {children}
-          </SessionProvider>
-        </Providers>
+        <NextIntlClientProvider>
+          <Providers>
+            <SessionProvider session={session}>
+              <ShellChrome session={session} />
+              {children}
+            </SessionProvider>
+          </Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

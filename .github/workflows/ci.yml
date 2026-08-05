@@ -41,3 +41,50 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # A required check, not a nicety. `.dockerignore` once used bare `.env` /
+  # `.env.*` patterns, which match only the build-context root — so
+  # `apps/web/.env.local` was copied into the image and auto-loaded by Next at
+  # runtime, shipping a live bot token and silently overriding the container's
+  # config. Reviewing the ignore file is what failed; scanning the artefact is
+  # what catches it. See docs/security.md.
+  image-secret-scan:
+    name: No secrets in the built image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Plant the exact files the leak shipped. If .dockerignore regresses, the
+      # scan below fails on a real path rather than on a hypothetical one — a
+      # clean checkout has no env files, so without this the test proves
+      # nothing.
+      - name: Plant decoy secret files
+        run: |
+          printf 'TELEGRAM_BOT_TOKEN=ci-decoy-must-not-ship\n' > apps/web/.env.local
+          printf 'TELEGRAM_BOT_TOKEN=ci-decoy-must-not-ship\n' > .env
+          printf 'TELEGRAM_BOT_TOKEN=ci-decoy-must-not-ship\n' > ingestion/edgar-worker/.dev.vars
+
+      - name: Build image
+        run: docker build --target web -t insiderflow-web:ci .
+
+      - name: Assert no env or secret files inside the image
+        run: |
+          found=$(docker run --rm --entrypoint sh insiderflow-web:ci -c \
+            'find /app -name ".env" -o -name ".env.*" ! -name ".env.example" -o -name ".dev.vars" 2>/dev/null')
+          if [ -n "$found" ]; then
+            echo "::error::Secret-bearing files found inside the image:"
+            echo "$found"
+            exit 1
+          fi
+          echo "OK: no .env / .dev.vars files in the image"
+
+      # Belt and braces: the decoy value must not appear anywhere in the
+      # filesystem, even under a name the find above does not cover.
+      - name: Assert the decoy value is absent from the image filesystem
+        run: |
+          if docker run --rm --entrypoint sh insiderflow-web:ci -c \
+              'grep -rl "ci-decoy-must-not-ship" /app 2>/dev/null | head -5' | grep -q .; then
+            echo "::error::Decoy secret value present inside the image"
+            exit 1
+          fi
+          echo "OK: decoy value absent"

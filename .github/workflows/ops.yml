@@ -1,0 +1,82 @@
+name: Ops
+
+# Two scheduled safety nets that do NOT belong on the Cloudflare worker:
+#
+#  - digest backstop: the worker's hourly cron is the primary digest runner
+#    (it is what makes per-user local digest hours work). This catches the case
+#    where the worker was down, over quota, or mid-deploy at someone's digest
+#    hour. Safe to run alongside it because both take the same lease — without
+#    that they would send the same batch twice.
+#
+#  - ops check: pushes a message to an ops Telegram chat when a background job
+#    is behind. Separate from /api/health's status code on purpose: an uptime
+#    monitor should page when the SITE is down; this nudges when a JOB is
+#    behind. Conflating the two is how pagers get muted.
+#
+# GitHub Actions schedules are per-workflow, so both crons live here and each
+# job filters on which one fired.
+#
+# Requires repo secrets: DATABASE_URL. Optional: TELEGRAM_BOT_TOKEN,
+# OPS_TELEGRAM_CHAT_ID, RESEND_API_KEY, RESEND_FROM, SITE_URL.
+on:
+  schedule:
+    # Digest backstop — after the US market close has settled.
+    - cron: "40 23 * * *"
+    # Ops check — every 6 hours. Frequent enough to catch a stuck cron the
+    # same day, rare enough that a healthy week is silent.
+    - cron: "5 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run"
+        required: true
+        default: "ops-check"
+        type: choice
+        options: [ops-check, digest]
+
+concurrency:
+  group: insiderflow-ops
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    if: github.event.schedule == '40 23 * * *' || github.event.inputs.job == 'digest'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Flush any pending digests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+        run: pnpm --filter @insiderflow/analytics run digest
+
+  ops-check:
+    if: github.event.schedule == '5 */6 * * *' || github.event.inputs.job == 'ops-check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check pipeline health
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPS_TELEGRAM_CHAT_ID: ${{ secrets.OPS_TELEGRAM_CHAT_ID }}
+        # Exits 0 even when degraded — a red run for "EDGAR was quiet
+        # overnight" is noise, and the Telegram message is the real signal.
+        run: pnpm --filter @insiderflow/analytics run ops-check

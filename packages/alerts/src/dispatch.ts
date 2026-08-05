@@ -20,11 +20,23 @@ import type { Database } from "@insiderflow/db";
 
 import { sendEmail, sendTelegram } from "./channels";
 import type { FetchLike } from "./channels";
-import { digestEmail, instantEmail, telegramMessage } from "./format";
+import { DIGEST_LEASE, withLease } from "./lease";
+import { digestEmail, digestTelegram, instantEmail, telegramMessage } from "./format";
 import type { DigestGroup } from "./format";
-import type { AlertCandidate, Logger } from "./types";
+import type { AlertCandidate, DispatchResult, Logger } from "./types";
 
 const noopLog: Logger = () => {};
+
+/**
+ * How many times a transient failure is retried before the row is retired.
+ *
+ * Some failures are neither permanent nor self-healing — a chat id that now
+ * 404s, a bot token an operator mistyped, a destination host that never comes
+ * back. Without a ceiling those rows are reloaded, re-attempted, and re-failed
+ * on every run forever: the dispatch batch fills with corpses, the pending
+ * count never falls, and live alerts queue behind dead ones.
+ */
+export const MAX_DELIVERY_ATTEMPTS = 5;
 
 export interface DispatchConfig {
   db: Database;
@@ -39,10 +51,29 @@ export interface DispatchConfig {
 
 export interface DispatchStats {
   delivered: number;
+  /** Rows that failed this run — includes the ones retired below. */
   failed: number;
   telegramSent: number;
   emailsSent: number;
+  /** Pending rows retired because their subject no longer exists. */
+  orphaned: number;
+  /**
+   * Rows retired as undeliverable: the channel rejected them in a repeatable
+   * way, or they exhausted MAX_DELIVERY_ATTEMPTS. Counted separately from
+   * `failed` so a stuck destination is visible rather than blended into
+   * ordinary retry noise.
+   */
+  failedPermanent: number;
 }
+
+const zeroStats = (): DispatchStats => ({
+  delivered: 0,
+  failed: 0,
+  telegramSent: 0,
+  emailsSent: 0,
+  orphaned: 0,
+  failedPermanent: 0,
+});
 
 interface PendingRow {
   logId: string;
@@ -51,20 +82,51 @@ interface PendingRow {
   ruleName: string;
   ruleChannels: string[];
   mode: "instant" | "digest";
+  attempts: number;
   candidate: AlertCandidate;
+}
+
+interface PendingBatch {
+  rows: PendingRow[];
+  /** log ids whose subject row is gone — terminally undeliverable. */
+  orphans: Array<{ logId: string; dedupKey: string; transactionId: string | null }>;
 }
 
 const num = (v: string | null): number | null => (v === null ? null : Number(v));
 
+/** Revive a candidate persisted in alerts_log.payload (JSON has no Date type). */
+function candidateFromPayload(payload: Record<string, unknown> | null): AlertCandidate | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Partial<AlertCandidate> & { createdAt?: string | Date };
+  if (!p.dedupKey || !p.companyName) return null;
+  return {
+    ...(p as AlertCandidate),
+    createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+  };
+}
+
+/**
+ * Pending alerts for one mode, plus the ones that can never be delivered.
+ *
+ * The subject joins are LEFT joins on purpose. An inner join silently drops
+ * alerts whose transaction was deleted (a fixture purge, a hard delete) —
+ * they stay pending forever, invisible in every count, retried every run.
+ * Surfacing them here is what lets dispatch retire them.
+ */
 async function loadPending(
   db: Database,
   mode: "instant" | "digest",
   limit: number,
-): Promise<PendingRow[]> {
+): Promise<PendingBatch> {
   const rows = await db
     .select({
       logId: alertsLog.id,
       userId: alertsLog.userId,
+      logKind: alertsLog.kind,
+      logDedupKey: alertsLog.dedupKey,
+      logTransactionId: alertsLog.transactionId,
+      payload: alertsLog.payload,
+      attempts: alertsLog.attempts,
       ruleId: alertRules.id,
       ruleName: alertRules.name,
       ruleChannels: alertRules.channels,
@@ -93,43 +155,109 @@ async function loadPending(
     })
     .from(alertsLog)
     .innerJoin(alertRules, eq(alertsLog.ruleId, alertRules.id))
-    .innerJoin(transactions, eq(alertsLog.transactionId, transactions.id))
-    .innerJoin(companies, eq(transactions.companyId, companies.id))
-    .innerJoin(insiders, eq(transactions.insiderId, insiders.id))
-    .where(and(isNull(alertsLog.deliveredAt), eq(alertsLog.mode, mode)))
+    .leftJoin(transactions, eq(alertsLog.transactionId, transactions.id))
+    .leftJoin(companies, eq(transactions.companyId, companies.id))
+    .leftJoin(insiders, eq(transactions.insiderId, insiders.id))
+    .where(
+      and(eq(alertsLog.status, "pending"), isNull(alertsLog.deliveredAt), eq(alertsLog.mode, mode)),
+    )
     .limit(limit);
 
-  return rows.map((r) => ({
-    logId: r.logId,
-    userId: r.userId,
-    ruleId: r.ruleId,
-    ruleName: r.ruleName,
-    ruleChannels: r.ruleChannels,
-    mode: r.mode,
-    candidate: {
-      id: r.id,
-      dedupKey: r.dedupKey,
-      createdAt: r.createdAt,
-      txnDate: r.txnDate,
-      code: r.code,
-      shares: num(r.shares),
-      price: num(r.price),
-      value: num(r.value),
-      valueUsd: num(r.valueUsd),
-      currency: r.currency,
-      acquiredDisposed: r.acquiredDisposed,
-      relevance: r.relevance,
-      source: r.source,
-      country: r.country,
-      is10b51: r.is10b51,
-      companyId: r.companyId,
-      ticker: r.ticker,
-      companyName: r.companyName,
-      insiderId: r.insiderId,
-      insiderName: r.insiderName,
-      insiderTitle: r.insiderTitle,
-    },
-  }));
+  const batch: PendingBatch = { rows: [], orphans: [] };
+
+  for (const r of rows) {
+    const base = {
+      logId: r.logId,
+      userId: r.userId,
+      ruleId: r.ruleId,
+      ruleName: r.ruleName,
+      ruleChannels: r.ruleChannels,
+      mode: r.mode,
+      attempts: r.attempts,
+    };
+
+    // Cluster/politician alerts have no transaction — they render from payload.
+    if (r.logKind !== "transaction") {
+      const candidate = candidateFromPayload(r.payload);
+      if (!candidate) {
+        batch.orphans.push({
+          logId: r.logId,
+          dedupKey: r.logDedupKey,
+          transactionId: r.logTransactionId,
+        });
+        continue;
+      }
+      batch.rows.push({ ...base, candidate: { ...candidate, kind: r.logKind } });
+      continue;
+    }
+
+    if (r.id === null || r.companyName === null || r.insiderName === null) {
+      batch.orphans.push({
+        logId: r.logId,
+        dedupKey: r.logDedupKey,
+        transactionId: r.logTransactionId,
+      });
+      continue;
+    }
+
+    batch.rows.push({
+      ...base,
+      candidate: {
+        id: r.id,
+        dedupKey: r.dedupKey!,
+        createdAt: r.createdAt!,
+        txnDate: r.txnDate!,
+        code: r.code!,
+        shares: num(r.shares),
+        price: num(r.price),
+        value: num(r.value),
+        valueUsd: num(r.valueUsd),
+        currency: r.currency!,
+        acquiredDisposed: r.acquiredDisposed,
+        relevance: r.relevance!,
+        source: r.source!,
+        country: r.country!,
+        is10b51: r.is10b51!,
+        companyId: r.companyId!,
+        ticker: r.ticker,
+        companyName: r.companyName,
+        insiderId: r.insiderId!,
+        insiderName: r.insiderName,
+        insiderTitle: r.insiderTitle,
+        kind: "transaction",
+      },
+    });
+  }
+
+  return batch;
+}
+
+/**
+ * Retire alerts whose subject is gone. Terminal, and loud: an alert that can
+ * never be delivered is an operational fact, not something to swallow.
+ */
+async function retireOrphans(
+  db: Database,
+  orphans: PendingBatch["orphans"],
+  mode: "instant" | "digest",
+  log: Logger,
+): Promise<number> {
+  if (orphans.length === 0) return 0;
+  await db
+    .update(alertsLog)
+    .set({ status: "orphaned", error: "subject row no longer exists" })
+    .where(
+      inArray(
+        alertsLog.id,
+        orphans.map((o) => o.logId),
+      ),
+    );
+  log("alert_orphaned", {
+    mode,
+    count: orphans.length,
+    dedupKeys: orphans.map((o) => o.dedupKey).slice(0, 20),
+  });
+  return orphans.length;
 }
 
 async function loadChannelsFor(db: Database, userIds: string[]) {
@@ -155,8 +283,80 @@ async function markDelivered(
   if (logIds.length === 0) return;
   await db
     .update(alertsLog)
-    .set({ deliveredAt: now, deliveredChannels: channels, error: error ?? null })
+    .set({
+      status: "delivered",
+      deliveredAt: now,
+      deliveredChannels: channels,
+      error: error ?? null,
+    })
     .where(inArray(alertsLog.id, logIds));
+}
+
+/**
+ * Is this batch of channel results worth trying again?
+ *
+ * Permanent only when EVERY channel we actually attempted said so. A rule on
+ * both Telegram and email whose Telegram send is permanently rejected but
+ * whose email hit a 500 still has a live path — retiring it would silently
+ * drop a deliverable alert.
+ *
+ * No attempted channels at all (nothing verified yet) is treated as transient:
+ * the user may finish verifying. The attempt cap stops that waiting forever.
+ */
+function isPermanentFailure(results: DispatchResult[]): boolean {
+  const attempted = results.filter((r) => !r.ok);
+  return attempted.length > 0 && attempted.every((r) => r.permanent === true);
+}
+
+/**
+ * Record a failed delivery: bump the attempt counter, and retire the rows that
+ * can never succeed instead of leaving them pending for the next run.
+ */
+async function recordFailure(
+  db: Database,
+  rows: Array<{ logId: string; attempts: number }>,
+  errors: string[],
+  permanent: boolean,
+  now: Date,
+  log: Logger,
+  context: Record<string, unknown>,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const error = errors.join("; ") || "no verified channel";
+
+  const retire: string[] = [];
+  const retry: string[] = [];
+  for (const row of rows) {
+    (permanent || row.attempts + 1 >= MAX_DELIVERY_ATTEMPTS ? retire : retry).push(row.logId);
+  }
+
+  if (retry.length > 0) {
+    // Stays `pending` with delivered_at NULL, so the next run picks it up.
+    await db
+      .update(alertsLog)
+      .set({ error, attempts: sql`${alertsLog.attempts} + 1` })
+      .where(inArray(alertsLog.id, retry));
+  }
+
+  if (retire.length > 0) {
+    await db
+      .update(alertsLog)
+      .set({
+        status: "failed_permanent",
+        error,
+        attempts: sql`${alertsLog.attempts} + 1`,
+        deliveredAt: now,
+      })
+      .where(inArray(alertsLog.id, retire));
+    log("alert_delivery_retired", {
+      ...context,
+      count: retire.length,
+      reason: permanent ? "channel_rejected" : "attempts_exhausted",
+      error,
+    });
+  }
+
+  return retire.length;
 }
 
 const unsubscribeUrl = (siteUrl: string, token: string | null): string =>
@@ -170,9 +370,11 @@ export async function dispatchInstant(config: DispatchConfig, limit = 100): Prom
   const { db } = config;
   const now = config.now ?? new Date();
   const log = config.log ?? noopLog;
-  const stats: DispatchStats = { delivered: 0, failed: 0, telegramSent: 0, emailsSent: 0 };
+  const stats = zeroStats();
 
-  const pending = await loadPending(db, "instant", limit);
+  const batch = await loadPending(db, "instant", limit);
+  stats.orphaned = await retireOrphans(db, batch.orphans, "instant", log);
+  const pending = batch.rows;
   if (pending.length === 0) return stats;
 
   const byUser = await loadChannelsFor(db, [...new Set(pending.map((p) => p.userId))]);
@@ -181,6 +383,7 @@ export async function dispatchInstant(config: DispatchConfig, limit = 100): Prom
     const channels = byUser.get(row.userId);
     const delivered: string[] = [];
     const errors: string[] = [];
+    const results: DispatchResult[] = [];
 
     const telegram = channels?.get("telegram");
     if (
@@ -194,6 +397,7 @@ export async function dispatchInstant(config: DispatchConfig, limit = 100): Prom
         telegram.destination,
         telegramMessage(row.ruleName, row.candidate),
       );
+      results.push(result);
       if (result.ok) {
         delivered.push("telegram");
         stats.telegramSent++;
@@ -220,6 +424,7 @@ export async function dispatchInstant(config: DispatchConfig, limit = 100): Prom
         instantEmail(row.ruleName, row.candidate, { siteUrl: config.siteUrl, unsubscribeUrl: url }),
         url,
       );
+      results.push(result);
       if (result.ok) {
         delivered.push("email");
         stats.emailsSent++;
@@ -233,11 +438,15 @@ export async function dispatchInstant(config: DispatchConfig, limit = 100): Prom
       await markDelivered(db, [row.logId], delivered, now);
     } else {
       stats.failed++;
-      // Leave delivered_at NULL so the next run retries; record why.
-      await db
-        .update(alertsLog)
-        .set({ error: errors.join("; ") || "no verified channel" })
-        .where(eq(alertsLog.id, row.logId));
+      stats.failedPermanent += await recordFailure(
+        db,
+        [{ logId: row.logId, attempts: row.attempts }],
+        errors,
+        isPermanentFailure(results),
+        now,
+        log,
+        { mode: "instant", dedupKey: row.candidate.dedupKey },
+      );
     }
   }
 
@@ -246,17 +455,59 @@ export async function dispatchInstant(config: DispatchConfig, limit = 100): Prom
 }
 
 /**
+ * Daily digest under a lease — safe to run from more than one place.
+ *
+ * The worker's hourly cron is the primary runner; a GitHub Actions job is the
+ * backstop for when the worker was down. Without a lease those two can load
+ * the same pending rows and send them both: `alerts_log` idempotency prevents
+ * a duplicate ROW, not a duplicate SEND of an already-logged row.
+ *
+ * Returns `acquired: false` (and zeroed stats) when another runner holds it.
+ */
+export async function dispatchDigestExclusive(
+  config: DispatchConfig & { owner?: string; leaseSeconds?: number },
+  limit = 2000,
+): Promise<DispatchStats & { acquired: boolean }> {
+  const log = config.log ?? noopLog;
+  const zero = zeroStats();
+
+  const { acquired, result } = await withLease(
+    config.db,
+    DIGEST_LEASE,
+    {
+      owner: config.owner ?? "digest",
+      leaseSeconds: config.leaseSeconds ?? 600,
+      now: config.now,
+    },
+    () => dispatchDigest(config, limit),
+  );
+
+  if (!acquired) {
+    log("alert_digest_skipped", { reason: "lease_held" });
+    return { ...zero, acquired: false };
+  }
+  return { ...(result ?? zero), acquired: true };
+}
+
+/**
  * Daily digest: every pending digest alert for a user collapses into ONE
  * Resend send — the free tier's 100/day cap is the binding constraint.
+ *
+ * Prefer `dispatchDigestExclusive` anywhere more than one runner exists.
  */
 export async function dispatchDigest(config: DispatchConfig, limit = 2000): Promise<DispatchStats> {
   const { db } = config;
   const now = config.now ?? new Date();
   const log = config.log ?? noopLog;
-  const stats: DispatchStats = { delivered: 0, failed: 0, telegramSent: 0, emailsSent: 0 };
+  const stats = zeroStats();
 
-  const pending = await loadPending(db, "digest", limit);
-  if (pending.length === 0) return stats;
+  const batch = await loadPending(db, "digest", limit);
+  stats.orphaned = await retireOrphans(db, batch.orphans, "digest", log);
+  const pending = batch.rows;
+  if (pending.length === 0) {
+    if (stats.orphaned > 0) log("alert_dispatch_digest", { ...stats, users: 0 });
+    return stats;
+  }
 
   const byUser = await loadChannelsFor(db, [...new Set(pending.map((p) => p.userId))]);
   const grouped = new Map<string, PendingRow[]>();
@@ -268,6 +519,8 @@ export async function dispatchDigest(config: DispatchConfig, limit = 2000): Prom
     const channels = byUser.get(userId);
     const logIds = rows.map((r) => r.logId);
     const delivered: string[] = [];
+    const errors: string[] = [];
+    const results: DispatchResult[] = [];
 
     // One group per rule, so the digest reads as "what fired, and why".
     const groups: DigestGroup[] = [];
@@ -290,9 +543,12 @@ export async function dispatchDigest(config: DispatchConfig, limit = 2000): Prom
         digestEmail(groups, { siteUrl: config.siteUrl, unsubscribeUrl: url }),
         url,
       );
+      results.push(result);
       if (result.ok) {
         delivered.push("email");
         stats.emailsSent++; // one send for the whole digest
+      } else if (result.error) {
+        errors.push(result.error);
       }
     }
 
@@ -304,20 +560,19 @@ export async function dispatchDigest(config: DispatchConfig, limit = 2000): Prom
       config.telegramBotToken
     ) {
       // No email configured — deliver the digest over Telegram instead.
-      const summary = groups
-        .map(
-          (g) =>
-            `<b>${g.ruleName}</b>\n${g.candidates.map((c) => `• ${c.ticker ?? c.companyName} ${c.code}`).join("\n")}`,
-        )
-        .join("\n\n");
+      // digestTelegram escapes every interpolation; building the markup here
+      // is exactly how the unescaped version got in.
       const result = await sendTelegram(
         { botToken: config.telegramBotToken, fetchFn: config.fetchFn },
         telegram.destination,
-        `📰 <b>InsiderFlow digest</b> — ${rows.length} alerts\n\n${summary}\n\n<i>Not investment advice.</i>`,
+        digestTelegram(groups),
       );
+      results.push(result);
       if (result.ok) {
         delivered.push("telegram");
         stats.telegramSent++;
+      } else if (result.error) {
+        errors.push(result.error);
       }
     }
 
@@ -326,6 +581,15 @@ export async function dispatchDigest(config: DispatchConfig, limit = 2000): Prom
       await markDelivered(db, logIds, delivered, now);
     } else {
       stats.failed += rows.length;
+      stats.failedPermanent += await recordFailure(
+        db,
+        rows.map((r) => ({ logId: r.logId, attempts: r.attempts })),
+        errors,
+        isPermanentFailure(results),
+        now,
+        log,
+        { mode: "digest", userId },
+      );
     }
   }
 
@@ -338,6 +602,12 @@ export async function pendingCount(db: Database, userId: string): Promise<number
   const [row] = await db
     .select({ count: sql`count(*)`.mapWith(Number) })
     .from(alertsLog)
-    .where(and(eq(alertsLog.userId, userId), isNull(alertsLog.deliveredAt)));
+    .where(
+      and(
+        eq(alertsLog.userId, userId),
+        eq(alertsLog.status, "pending"),
+        isNull(alertsLog.deliveredAt),
+      ),
+    );
   return row?.count ?? 0;
 }

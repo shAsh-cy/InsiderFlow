@@ -7,3 +7,16 @@ FINNHUB_API_KEY=
 FMP_API_KEY=
 WATCHLIST_SYMBOLS=AAPL,MSFT,NVDA
 INDIA_FEED_URL=
+
+# ── Alerts ──────────────────────────────────────────────────────────────────
+# Public origin used in alert email links.
+SITE_URL=http://localhost:3000
+# Telegram is the primary channel: free, unlimited, real-time.
+TELEGRAM_BOT_TOKEN=
+# Resend is capped (100/day free), so email batches into the daily digest.
+RESEND_API_KEY=
+RESEND_FROM=
+# Minutes an event may be old and still fire instantly (default 60). Older
+# matches route to the digest, so a cursor reset or a backfill cannot spam
+# channels with historical trades as if they were new.
+ALERT_INSTANT_MAX_AGE=60

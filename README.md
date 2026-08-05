@@ -22,42 +22,56 @@ regulatory filings that most people never read. InsiderFlow watches those filing
 normalizes them into one clean multi-market schema, and makes them searchable, followable, and
 alertable. Open source (AGPL-3.0), free-tier deployable end to end, and owned by nobody.
 
-**Today**: SEC EDGAR Form 4 ingestion (US). **Planned**: more filing types (Forms 3/5, 13D/G),
-more markets (see the legal notes below), watchlists, and email/Telegram alerts.
+**Today**: SEC EDGAR Forms 3/4/5 ingestion (US), congressional STOCK Act disclosures, watchlists,
+Telegram/email alerts, and a published-methodology analytics layer — insider clusters, forward-return
+scoring, sector classification, and net-flow anomaly detection. **Planned**: more filing types
+(13D/G) and more markets (see the legal notes below).
+
+Every derived number is computed by a formula published at [`/docs/methodology`](/docs/methodology).
+There is no proprietary model, and none of it is investment advice.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph sources["Data sources"]
-        EDGAR["SEC EDGAR<br/>Form 4 filings (public domain)"]
-        NSE["NSE / BSE insider disclosures<br/>(planned — licensing constraints)"]
+        EDGAR["SEC EDGAR<br/>Forms 3/4/5 · public domain"]
+        PTR["STOCK Act PTRs<br/>congressional disclosures"]
+        MKT["Stooq closes · ECB FX<br/>keyless, cached"]
+        NSE["NSE / BSE<br/>off by default · licence-restricted"]
     end
 
-    subgraph ingestion["Ingestion — Cloudflare Workers (free)"]
-        WORKER["ingestion/edgar-worker<br/>cron every minute<br/>fetch → parse → upsert (packages/core)"]
+    subgraph ingestion["Ingestion — free tiers"]
+        WORKER["Cloudflare Worker<br/>cron 1 min: ingest → clusters<br/>→ alert scan → dispatch"]
+        GHA["GitHub Actions<br/>nightly: SIC · PTR · prices<br/>· scoring · anomalies"]
     end
 
     subgraph data["Data — Supabase (free)"]
-        PG[("Postgres<br/>packages/db (Drizzle ORM)")]
+        PG[("Postgres · Drizzle<br/>core + derived + user tables<br/><i>RLS on user data</i>")]
     end
 
     subgraph app["App — Vercel (free)"]
-        WEB["apps/web<br/>Next.js 15 · RSC · Tailwind"]
+        WEB["apps/web<br/>Next.js 15 · RSC · Tailwind<br/>pages · API · SSE · /status"]
     end
 
-    subgraph alerts["Alerts (free tiers)"]
-        RESEND["Resend email"]
-        TG["Telegram bot"]
+    subgraph alerts["Delivery"]
+        TG["Telegram — primary<br/>free, unlimited"]
+        RESEND["Resend email<br/>100/day → daily digest"]
     end
 
     EDGAR -->|poll Atom feed| WORKER
-    NSE -.->|planned| WORKER
+    MKT --> WORKER
+    PTR --> GHA
+    MKT --> GHA
+    NSE -.->|self-host only| PG
     WORKER -->|upsert| PG
-    PG -->|queries| WEB
-    PG -->|new-filing triggers| RESEND
-    PG --> TG
+    GHA -->|derived tables| PG
+    PG -->|shared query layer| WEB
+    WORKER --> TG
+    WORKER --> RESEND
 ```
+
+Full diagram and the invariants behind it: **[docs/architecture.md](docs/architecture.md)**.
 
 ### Source adapters
 
@@ -94,62 +108,130 @@ Free and rate-limited: 60 requests/min per IP, or 600/min with an `x-api-key`
 | `/api/companies/:ticker`           | Profile, 90-day aggregates, insider sentiment (MSPR), trade-vs-close price context                                             |
 | `/api/companies/:ticker/sentiment` | MSPR time series                                                                                                               |
 | `/api/insiders/:id`                | Insider profile + recent trades                                                                                                |
-| `/api/screener/:preset`            | Canned screens: big-buys, cluster-buys, exec-buys, dip-buys, ...                                                               |
-| `/api/heatmap`                     | Per-company USD buy/sell aggregates for treemaps                                                                               |
-| `/api/politicians`                 | Placeholder (congressional trading ingestion planned)                                                                          |
-| `/api/rss/:screen`                 | RSS 2.0 feed of any screen                                                                                                     |
+| `/api/screener/:preset`            | Canned screens: big-buys, cluster-buys, exec-buys, dip-buys, unusual-flow, ...                                                 |
+| `/api/heatmap`                     | Net USD flow, grouped by company / sector / country, with a timeframe                                                          |
+| `/api/leaderboard`                 | Insider performance vs SPY — informational, formulas at `/docs/methodology`                                                    |
+| `/api/politicians`                 | Congressional STOCK Act disclosures — amounts are ranges, never point values                                                   |
+| `/api/rss/:screen`                 | RSS 2.0 feed of any screen (every preset has one)                                                                              |
+| `/api/rss/politicians`             | RSS 2.0 feed of congressional disclosures, same filters as the JSON endpoint                                                   |
 | `/api/stream`                      | SSE live feed — ~25s serverless windows, Last-Event-ID resume, `?mode=poll` fallback                                           |
 
 Form 4/A amendments supersede their originals and are hidden by default
 (`include_superseded=true` to opt back in).
+
+### Analytics
+
+Derived tables are rebuilt from `transactions` + `daily_prices` and can be dropped at any time. All
+formulas are published at [`/docs/methodology`](/docs/methodology).
+
+| Signal            | What it is                                                                                        | Maintained by                     |
+| ----------------- | ------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Insider clusters  | ≥2 distinct insiders trading the same way in a rolling 14-day window, anchored to the first trade | 1-min ingest cron + nightly sweep |
+| Sectors           | Derived from EDGAR SIC codes; unmapped codes stay _unclassified_ rather than guessed              | Nightly (rate-limited, ≤5 req/s)  |
+| Performance score | 30/90/180-day excess return vs SPY, signed by direction, shrunk toward zero by sample size        | Nightly                           |
+| Anomaly score     | Net flow vs a company's OWN trailing baseline (z-score); withheld when the baseline is too thin   | Nightly                           |
+
+Cluster detection reads precomputed flags by default. Self-hosters running only the web app can set
+`INSIDERFLOW_CLUSTER_SOURCE=sql` to compute the same set at query time — a parity test asserts the
+two paths agree on labelled fixtures.
+
+Congressional disclosures come from the open house/senate-stock-watcher datasets, with a link to the
+original PTR on every row. STOCK Act amounts are **ranges**, so the schema models `amountMin`/
+`amountMax` and never synthesises a midpoint — see [`docs/politicians.md`](docs/politicians.md).
 
 ### Monorepo layout
 
 ```
 insiderflow/
 ├── apps/
-│   └── web/                 # Next.js 15 (App Router, RSC, Tailwind CSS)
+│   └── web/                 # Next.js 15 (App Router, RSC, Tailwind CSS, next-intl en/hi)
 ├── packages/
-│   ├── core/                # Shared types, normalization, SEC transaction-code enums
-│   └── db/                  # Drizzle ORM schema + Postgres client
+│   ├── core/                # Shared types, normalization, SEC codes, SIC→sector, PTR parsing
+│   ├── db/                  # Drizzle ORM schema + Postgres client + shared trade filters
+│   ├── alerts/              # Cursor-driven scanner, matcher, Telegram/Resend dispatch
+│   └── analytics/           # Clusters, scoring, anomalies, sector + PTR ingestion jobs
 ├── ingestion/
-│   └── edgar-worker/        # Cloudflare Worker: EDGAR cron ingestion
-└── .github/workflows/       # CI: typecheck, lint, test, build
+│   ├── edgar-worker/        # Cloudflare Worker: EDGAR cron ingestion + alert pipeline
+│   └── india-local/         # Optional, off-by-default NSE/BSE scrape runner
+└── .github/workflows/       # CI + nightly analytics
 ```
+
+Cron budget: the worker's two free triggers are already spent (1-minute ingest + alert scan,
+hourly digest), so cluster maintenance rides the 1-minute run — it is O(rows since the cursor) —
+and everything without a 60-second SLA runs on a nightly GitHub Actions schedule.
 
 ## Getting started
 
+**One command, working product with data:**
+
+```bash
+git clone https://github.com/insiderflow/insiderflow.git && cd insiderflow
+docker compose up          # Postgres + migrations + seed + web on :3000
+```
+
+Seeded data is entirely synthetic and lives in the reserved `ZZ*` ticker
+namespace — no fabricated filing is ever attributed to a real company or person.
+To ingest real SEC data, set `EDGAR_USER_AGENT` and run
+`docker compose --profile live up`.
+
+**Developing on the host** (hot reload):
+
 ```bash
 pnpm install
-docker compose up -d   # local Postgres (or use a Supabase project)
-pnpm db:migrate        # apply migrations (includes the pg_trgm extension)
-pnpm dev               # web app on http://localhost:3000
+docker compose up -d postgres
+export DATABASE_URL='postgres://postgres:postgres@localhost:5433/insiderflow'
+pnpm db:migrate && pnpm seed && pnpm dev
 
-# run the ingestion worker locally (1-min cron; use --test-scheduled trigger)
+# ingestion worker, in another terminal (1-min cron via --test-scheduled)
 pnpm --filter @insiderflow/edgar-worker dev
 
 # backfill the last 30 days of Form 4 filings from the EDGAR full-index
 pnpm backfill -- --days=30 --forms=4
 ```
 
-Copy `.env.example` → `.env` and `ingestion/edgar-worker/.dev.vars.example` → `.dev.vars` and
-fill in your values. Quality gates: `pnpm typecheck && pnpm lint && pnpm test && pnpm build`.
+Copy `.env.example` → `.env` and `ingestion/edgar-worker/.dev.vars.example` → `.dev.vars`.
+Only `DATABASE_URL` and `EDGAR_USER_AGENT` are required; `.env.example` documents every other
+variable, its default, and which runtime consumes it.
+
+Quality gates: `pnpm typecheck && pnpm lint && pnpm test && pnpm build`.
 
 ## Free-tier deployment
 
-The entire stack runs on free tiers — **no paid services required**:
+The entire stack runs on free tiers — **no paid services required, no credit card**:
 
-| Piece           | Service            | Free tier that matters                         |
-| --------------- | ------------------ | ---------------------------------------------- |
-| Web app         | Vercel Hobby       | Next.js hosting, RSC, edge network             |
-| Database        | Supabase Free      | 500 MB Postgres + REST API + connection pooler |
-| Ingestion       | Cloudflare Workers | 100k requests/day + cron triggers              |
-| Email alerts    | Resend             | 100 emails/day                                 |
-| Telegram alerts | Telegram Bot API   | Free, unlimited for this scale                 |
+| Piece           | Service            | Free tier that matters                          |
+| --------------- | ------------------ | ----------------------------------------------- |
+| Web app         | Vercel Hobby       | 100 GB bandwidth/month, Next.js + RSC           |
+| Database        | Supabase Free      | 500 MB Postgres + transaction pooler + auth     |
+| Ingestion       | Cloudflare Workers | 100k requests/day, 5 cron triggers (we use 2)   |
+| Scheduled jobs  | GitHub Actions     | Nightly analytics, digests, Supabase keep-alive |
+| Email alerts    | Resend             | 100 emails/day → batched into one daily digest  |
+| Telegram alerts | Telegram Bot API   | Free and unlimited — the primary channel        |
 
-Deploy: point Vercel at `apps/web`, create a Supabase project and set `DATABASE_URL`
-(transaction-pooler URL), then `pnpm --filter @insiderflow/edgar-worker deploy` with secrets set
-via `wrangler secret put`.
+**→ [docs/quickstart.md](docs/quickstart.md) walks the whole deploy, step by step.**
+
+> ⚠️ Supabase pauses free projects after **7 idle days** (HTTP 540, manual restore).
+> `.github/workflows/keepalive.yml` prevents that and is the most load-bearing
+> workflow in the repo for a free deployment — do not disable it.
+
+When each free tier stops being enough, what it costs, and what to do instead:
+**[SCALING.md](SCALING.md)**.
+
+## Documentation
+
+| Doc                                     | What it covers                                                         |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| [quickstart.md](docs/quickstart.md)     | Run locally in one command; deploy free, step by step                  |
+| [architecture.md](docs/architecture.md) | How the pieces fit, and the invariants that hold it together           |
+| [adapters.md](docs/adapters.md)         | **How to add a market** — one adapter, no schema change                |
+| [api.md](docs/api.md)                   | API conventions, caching, and the null/range rules clients must handle |
+| [alerts.md](docs/alerts.md)             | Telegram bot setup, delivery contract, idempotency                     |
+| [auth.md](docs/auth.md)                 | Supabase Auth, RLS, and the dev/prod story                             |
+| [politicians.md](docs/politicians.md)   | STOCK Act data model and source provenance                             |
+| [SCALING.md](SCALING.md)                | Free-tier limits, upgrade triggers, monthly costs                      |
+| `/docs/methodology`                     | Every derived-analytics formula, published in full                     |
+| `/legal`                                | Data sources, licences, and the disclaimers that apply                 |
+| `/status`                               | Live ingestion lag and per-source freshness                            |
 
 ## Legal / data-source notice
 

@@ -96,6 +96,7 @@ export async function createAlertRule(
     filters?: Record<string, unknown> | null;
     trackedTicker?: string | null;
     trackedInsiderId?: string | null;
+    kind?: "transaction" | "cluster" | "politician";
     mode?: "instant" | "digest";
     channels?: string[];
     quietHoursStart?: string | null;
@@ -110,6 +111,7 @@ export async function createAlertRule(
       filters: rule.filters ?? null,
       trackedTicker: rule.trackedTicker ?? null,
       trackedInsiderId: rule.trackedInsiderId ?? null,
+      kind: rule.kind ?? "transaction",
       mode: rule.mode ?? "digest",
       channels: rule.channels ?? ["telegram"],
       quietHoursStart: rule.quietHoursStart ?? null,
