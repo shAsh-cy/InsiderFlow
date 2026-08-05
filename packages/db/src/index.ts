@@ -7,6 +7,8 @@ export {
   clusterCompaniesFromFlags,
   clusterCompaniesSubquery,
   clusterCondition,
+  clusterFallbackActive,
+  clusterFlagStatus,
   cutoffIso,
   dipCondition,
   excludeSynthetic,

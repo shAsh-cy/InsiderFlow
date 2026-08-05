@@ -27,9 +27,17 @@ docker compose up
 Open <http://localhost:3000>.
 
 That builds the app, starts Postgres, runs every migration, seeds sample data,
-and serves the site. You get a working product immediately: trades, a screener
-with all six presets, company and insider pages, a heatmap, congressional
+**runs the offline analytics pass**, and serves the site. You get a working
+product immediately: trades, a screener with all seven presets returning rows,
+company and insider pages, the leaderboard, a heatmap, congressional
 disclosures, and a status page.
+
+The analytics step is a one-shot container between the seed and the web app.
+It is not optional: `cluster_flags`, `insider_scores`, and `company_anomalies`
+are derived tables that migrations and the seed leave empty, and three surfaces
+— the `cluster-buys` and `unusual-flow` presets, and the leaderboard — read
+nothing else. It runs only the steps that need no network, so a first run never
+depends on EDGAR, Stooq, or the congressional feeds being reachable.
 
 **Everything seeded is synthetic** and lives in the reserved `ZZ*` ticker
 namespace, with obviously fictional people. No fabricated filing is ever

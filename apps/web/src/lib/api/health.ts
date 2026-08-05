@@ -16,6 +16,7 @@
  * minutes.
  */
 import {
+  clusterFlagStatus,
   companies,
   desc,
   eq,
@@ -131,30 +132,39 @@ const describeAge = (seconds: number | null): string => {
 export async function buildHealthReport(db: Database): Promise<HealthReport> {
   const now = Date.now();
 
-  const [latestFiling, edgarState, sourceRows, scanner, clusterCursor, counts, alertQueue] =
-    await Promise.all([
-      db.select({ filedAt: filings.filedAt }).from(filings).orderBy(desc(filings.filedAt)).limit(1),
-      db.select().from(ingestionState).where(eq(ingestionState.key, "edgar:cursor")),
-      db
-        .select({
-          source: transactions.source,
-          lastRowAt: sql<Date | null>`max(${transactions.createdAt})`,
-          rows: sql`count(*)`.mapWith(Number),
-        })
-        .from(transactions)
-        .groupBy(transactions.source),
-      db.select().from(scannerState).where(eq(scannerState.name, "alerts")),
-      db.select().from(ingestionState).where(eq(ingestionState.key, "cluster:cursor")),
-      db
-        .select({
-          transactions: sql`(select count(*) from transactions)`.mapWith(Number),
-          companies: sql`(select count(*) from ${companies})`.mapWith(Number),
-          filings: sql`(select count(*) from ${filings})`.mapWith(Number),
-          politicianTrades: sql`(select count(*) from ${politicianTrades})`.mapWith(Number),
-        })
-        .from(sql`(select 1) as _`),
-      readAlertQueueDepth(db),
-    ]);
+  const [
+    latestFiling,
+    edgarState,
+    sourceRows,
+    scanner,
+    clusterCursor,
+    counts,
+    alertQueue,
+    clusterFallback,
+  ] = await Promise.all([
+    db.select({ filedAt: filings.filedAt }).from(filings).orderBy(desc(filings.filedAt)).limit(1),
+    db.select().from(ingestionState).where(eq(ingestionState.key, "edgar:cursor")),
+    db
+      .select({
+        source: transactions.source,
+        lastRowAt: sql<Date | null>`max(${transactions.createdAt})`,
+        rows: sql`count(*)`.mapWith(Number),
+      })
+      .from(transactions)
+      .groupBy(transactions.source),
+    db.select().from(scannerState).where(eq(scannerState.name, "alerts")),
+    db.select().from(ingestionState).where(eq(ingestionState.key, "cluster:cursor")),
+    db
+      .select({
+        transactions: sql`(select count(*) from transactions)`.mapWith(Number),
+        companies: sql`(select count(*) from ${companies})`.mapWith(Number),
+        filings: sql`(select count(*) from ${filings})`.mapWith(Number),
+        politicianTrades: sql`(select count(*) from ${politicianTrades})`.mapWith(Number),
+      })
+      .from(sql`(select 1) as _`),
+    readAlertQueueDepth(db),
+    clusterFlagStatus(db),
+  ]);
 
   const filingAgeSeconds = ageOf(latestFiling[0]?.filedAt ?? null, now);
   const edgarLastRun = (edgarState[0]?.value as { lastRunAt?: string } | undefined)?.lastRunAt;
@@ -165,6 +175,9 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     (clusterCursor[0]?.value as { createdAt?: string } | undefined)?.createdAt ?? null,
     now,
   );
+  const clusterFlags = clusterFallback[0]?.flags ?? 0;
+  const clusterQualifying = clusterFallback[0]?.qualifying ?? 0;
+  const clusterFallbackOn = clusterFlags === 0 && clusterQualifying > 0;
 
   const checks: HealthCheck[] = [
     {
@@ -212,11 +225,18 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     },
     {
       name: "cluster_flags",
-      level: clusterCursorAge === null ? "unknown" : "ok",
-      detail:
-        clusterCursorAge === null
-          ? "Cluster maintenance has not run yet."
-          : `Cluster cursor at ${describeAge(clusterCursorAge)}.`,
+      // Three distinguishable states, not two. The old check reported
+      // "maintenance has not run yet" purely from the cursor, which stayed
+      // null even after the analytics sweep had written flags — so the one
+      // signal it gave was wrong in the healthy case and silent in the broken
+      // one. Degraded is reserved for the case that actually matters: the
+      // preset is being served by its fallback because nothing has ever run.
+      level: clusterFallbackOn ? "degraded" : clusterFlags > 0 ? "ok" : "unknown",
+      detail: clusterFallbackOn
+        ? `cluster_flags is empty while ${clusterQualifying} compan${clusterQualifying === 1 ? "y" : "ies"} currently qualify, so the screener is answering from the query-time definition. Correct, but unmaintained and slower — run the analytics job (docker compose up analytics, or the analytics workflow).`
+        : clusterFlags > 0
+          ? `${clusterFlags} cluster flag${clusterFlags === 1 ? "" : "s"} maintained${clusterCursorAge === null ? "" : `; cursor at ${describeAge(clusterCursorAge)}`}.`
+          : "No cluster flags, and no company currently qualifies — nothing to maintain.",
       ageSeconds: clusterCursorAge,
     },
   ];

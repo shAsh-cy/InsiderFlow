@@ -97,17 +97,86 @@ export function clusterCompaniesFromFlags(db: Database, windowDays = 14, directi
     );
 }
 
+/**
+ * Companies with a cluster of insider buying.
+ *
+ * COLD-STATE FALLBACK. The flags path is correct once maintenance has run and
+ * WRONG before it ever has: an empty `cluster_flags` returns nothing while the
+ * query-time definition returns real companies. That is not a missing feature,
+ * it is a wrong answer, and it is exactly what a contributor meets on their
+ * first `docker compose up` — the preset renders empty and reads as broken
+ * software.
+ *
+ * So the flags branch carries its own fallback, expressed IN the SQL rather
+ * than as a separate probe: the query-time definition contributes only while
+ * `cluster_flags` is entirely empty, i.e. only before maintenance has ever
+ * run. One statement, no extra round trip, correct in both states.
+ *
+ * Deliberately keyed on "has maintenance EVER run", not on "are the flags
+ * fresh". A stale flag set is a different failure with a different remedy, and
+ * silently papering over it would hide a broken cron behind correct-looking
+ * results. `/api/health` reports the cold state as `degraded` so the fallback
+ * is visible rather than merely convenient.
+ *
+ * `INSIDERFLOW_CLUSTER_SOURCE=sql` still forces the query-time path outright,
+ * for self-hosters running only the web app with no cron at all.
+ */
 export function clusterCondition(
   db: Database,
   source: ClusterSource = resolveClusterSource(),
   windowDays = 14,
 ): SQL {
-  return inArray(
-    transactions.companyId,
-    source === "sql"
-      ? clusterCompaniesSubquery(db, windowDays)
-      : clusterCompaniesFromFlags(db, windowDays),
-  );
+  if (source === "sql") {
+    return inArray(transactions.companyId, clusterCompaniesSubquery(db, windowDays));
+  }
+  const cutoff = cutoffIso(windowDays);
+  return sql`${transactions.companyId} in (
+    select cf.company_id from cluster_flags cf
+      where cf.direction = 'buy'
+        and cf.window_start >= ${cutoff}::date
+        and cf.insider_count >= 2
+    union
+    select t.company_id from transactions t
+      where t.code = 'P'
+        and t.txn_date >= ${cutoff}::date
+        and not exists (select 1 from cluster_flags)
+      group by t.company_id
+      having count(distinct t.insider_id) >= 2
+  )`;
+}
+
+/**
+ * State of the precomputed cluster flags, for /api/health.
+ *
+ * Three distinguishable situations, which the previous check collapsed into
+ * one unhelpful "maintenance has not run yet":
+ *
+ *   flags > 0                      — the designed path is serving
+ *   flags = 0, qualifying = 0      — nothing to flag; not a fault
+ *   flags = 0, qualifying > 0      — maintenance has never run and
+ *                                    clusterCondition is on its fallback
+ */
+export function clusterFlagStatus(db: Database, windowDays = 14) {
+  const cutoff = cutoffIso(windowDays);
+  return db
+    .select({
+      flags: sql<number>`(select count(*) from cluster_flags)`.mapWith(Number),
+      qualifying: sql<number>`(
+        select count(*) from (
+          select 1 from transactions t
+          where t.code = 'P' and t.txn_date >= ${cutoff}::date
+          group by t.company_id
+          having count(distinct t.insider_id) >= 2
+        ) q
+      )`.mapWith(Number),
+    })
+    .from(sql`(select 1) as _`);
+}
+
+/** True when `clusterCondition` is answering from its cold-state fallback. */
+export async function clusterFallbackActive(db: Database, windowDays = 14): Promise<boolean> {
+  const [row] = await clusterFlagStatus(db, windowDays);
+  return (row?.flags ?? 0) === 0 && (row?.qualifying ?? 0) > 0;
 }
 
 /** Buys priced 5%+ below that day's close (needs cached price context). */

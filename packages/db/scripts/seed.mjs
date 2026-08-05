@@ -17,7 +17,9 @@
  * REFUSES TO RUN against anything that looks like production (see guard below).
  *
  *   DATABASE_URL=... pnpm --filter @insiderflow/db seed
- *   DATABASE_URL=... pnpm --filter @insiderflow/db seed -- --reset
+ *   DATABASE_URL=... pnpm --filter @insiderflow/db run seed -- --reset
+ *
+ * (`run` is required: with the implicit form pnpm swallows the flag.)
  */
 import postgres from "postgres";
 
@@ -176,6 +178,40 @@ const TRADES = [
     price: 1380,
     ccy: "INR",
   },
+
+  // ── A track record, so the LEADERBOARD is not empty ──────────────────────
+  //
+  // The leaderboard defaults to min_trades=5, which is not an arbitrary cutoff:
+  // the composite score shrinks toward zero by sample size, and ranking someone
+  // on one lucky trade is exactly the kind of false precision this project
+  // refuses to publish. So the honest way to make the page render on a seeded
+  // stack is to seed insiders who have actually traded enough — not to lower
+  // the threshold for the demo.
+  //
+  // Every row here is opportunistic P/S, at least 30 days old (scoring's
+  // minimum holding age), on a ticker with seeded price history, so the
+  // computed returns are real arithmetic over real fixtures rather than
+  // decoration.
+  ...[
+    { who: "ZZ AVERY STONE", days: [75, 120, 165, 210, 255, 300] },
+    { who: "ZZ DESMOND HALE", days: [90, 135, 180, 225, 270, 315] },
+  ].flatMap(({ who, days }) =>
+    days.map((day, i) => {
+      const co = ["ZZNOVA", "ZZHELIO", "ZZORCA", "ZZMERID"][i % 4];
+      const base = { ZZNOVA: 19.8, ZZHELIO: 40, ZZORCA: 12.4, ZZMERID: 61 }[co];
+      return {
+        co,
+        who,
+        // Alternating direction: excess return is SIGNED by direction, so a
+        // well-timed sale has to be able to score as a win here too.
+        code: i % 2 === 0 ? "P" : "S",
+        day,
+        shares: 4_000 + i * 1_500,
+        // Slightly off the seeded close so the return is not trivially zero.
+        price: Number((base * (1 + ((i % 3) - 1) * 0.04)).toFixed(2)),
+      };
+    }),
+  ),
 ];
 
 const INR_USD = 0.0117;
@@ -194,7 +230,11 @@ try {
     await sql`delete from filings where accession_no like 'e2e-seed-%'`;
     await sql`delete from companies where ticker like 'ZZ%'`;
     await sql`delete from insiders where external_key like 'name:%:ZZ %'`;
-    await sql`delete from daily_prices where symbol like 'ZZ%'`;
+    // Every row this script writes carries source='seed', including the SPY
+    // benchmark series. Deleting only ZZ* left SPY frozen at whatever the
+    // first run wrote, so a change to the price model silently did not apply
+    // to the benchmark — and scoring measures excess OVER that benchmark.
+    await sql`delete from daily_prices where source = 'seed'`;
     log("reset_ok");
   }
 
@@ -268,20 +308,30 @@ try {
   // ── Daily prices ──────────────────────────────────────────────────────────
   // Enough history for the dip / near-low screens and for forward-return
   // scoring, plus a SPY benchmark series.
+  //
+  // Each symbol gets its own drift, amplitude and phase. That is not cosmetic:
+  // scoring measures EXCESS return over SPY, so a set of series that all move
+  // identically produces an excess of ~0 for every trade and a leaderboard of
+  // zeroes — arithmetic that is technically honest and demonstrates nothing.
+  // Distinct paths make the seeded scores real numbers with real signs, while
+  // staying fully deterministic (no Math.random, identical on every run).
+  //
+  //                symbol      market  base   drift  amp   phase
   const priceSeries = [
-    ["ZZNOVA", "US", 19.8],
-    ["ZZHELIO", "US", 40.0],
-    ["ZZORCA", "US", 12.4],
-    ["ZZMERID", "US", 61.0],
-    ["SPY", "US", 560.0],
+    ["ZZNOVA", "US", 19.8, 1.9, 1.6, 0],
+    ["ZZHELIO", "US", 40.0, 0.4, 1.1, 13],
+    ["ZZORCA", "US", 12.4, 1.3, 2.2, 7],
+    ["ZZMERID", "US", 61.0, -0.6, 0.9, 21],
+    ["SPY", "US", 560.0, 1.0, 0.3, 5],
   ];
   let priceRows = 0;
-  for (const [symbol, market, base] of priceSeries) {
+  for (const [symbol, market, base, driftMul, amp, phase] of priceSeries) {
     const values = [];
     for (let d = 400; d >= 0; d--) {
       // Deterministic pseudo-wave: reproducible across runs, no Math.random.
-      const drift = 1 + (400 - d) * 0.0006;
-      const wave = 1 + Math.sin(d / 11) * 0.035 + Math.cos(d / 29) * 0.02;
+      const drift = 1 + (400 - d) * 0.0006 * driftMul;
+      const wave =
+        1 + Math.sin((d + phase) / 11) * 0.035 * amp + Math.cos((d + phase) / 29) * 0.02 * amp;
       values.push({
         symbol,
         market,

@@ -63,6 +63,36 @@ services:
              if [ \"$$SEED\" = \"1\" ]; then pnpm --filter @insiderflow/db seed; fi"
     restart: "no"
 
+  # Derived analytics: cluster flags, insider scores, company anomalies.
+  #
+  # WHY THIS IS NOT OPTIONAL. Migrations and the seed leave every derived table
+  # empty, and three product surfaces read only those tables: the `cluster-buys`
+  # and `unusual-flow` presets, and the whole leaderboard. Without this step a
+  # fresh `docker compose up` renders two blank screens and an empty
+  # leaderboard, which reads as broken software rather than as an unfinished
+  # pipeline — a pre-release audit called it exactly that.
+  #
+  # Runs only the OFFLINE steps. `sectors` calls EDGAR, `politicians` fetches
+  # congressional feeds, and `prices` pulls Stooq; a first run of the local
+  # stack must not depend on three third-party services being reachable. The
+  # seed ships enough price history for scoring to compute real numbers.
+  analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: insiderflow-analytics
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+    # `run` is required, not stylistic: with the implicit form
+    # (`pnpm --filter X nightly -- --only=...`) pnpm swallows the flag and the
+    # network steps run anyway.
+    command: pnpm --filter @insiderflow/analytics run nightly -- --only=clusters,scoring,anomalies
+    restart: "no"
+
   web:
     build:
       context: .
@@ -71,6 +101,9 @@ services:
     container_name: insiderflow-web
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      # So the first page a contributor opens already has the derived data.
+      analytics:
         condition: service_completed_successfully
     environment:
       # NOT the postgres superuser. The web app connects as insiderflow_app,
