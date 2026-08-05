@@ -502,13 +502,13 @@ resolved rows is exactly the kind of check this audit was written about.
 
 ## Verification baseline
 
-|                    |                                                                                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Unit + integration | **267 passed, 0 failed** across 28 files (`pnpm test`, exit 0)                                                                      |
-| End-to-end         | **90 passed, 0 failed, 6 skipped** against the clean compose stack                                                                  |
-| The 6 skips        | Cross-user isolation. They print `SKIPPED — … cross-user isolation is therefore UNVERIFIED` and the reason. See "Still unverified". |
-| Migrations         | 11 (`0009_rls_enforced` and `0010_pending_filings_queue` are new)                                                                   |
-| Typecheck / lint   | clean — 6 pre-existing unused-var warnings, 0 errors                                                                                |
+|                    |                                                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit + integration | **267 passed, 0 failed** across 28 files (`pnpm test`, exit 0)                                                                                                                                         |
+| End-to-end         | **90 passed, 0 failed, 6 skipped** against the clean compose stack                                                                                                                                     |
+| The 6 skips        | Cross-user isolation. They print `SKIPPED — … cross-user isolation is therefore UNVERIFIED` and the reason. **Superseded:** they now run. See [the closeout](#closeout-cross-user-isolation-verified). |
+| Migrations         | 11 (`0009_rls_enforced` and `0010_pending_filings_queue` are new)                                                                                                                                      |
+| Typecheck / lint   | clean — 6 pre-existing unused-var warnings, 0 errors                                                                                                                                                   |
 
 ---
 
@@ -835,23 +835,13 @@ ordering invariant, rather than an accident of nothing else running.
 Unchanged from the audit unless noted. These are not fixed, and saying so is
 the point.
 
-- **Cross-user exploitation is still UNVERIFIED on this machine.** The suite
-  now exists — `e2e/auth-isolation.spec.ts` signs up two users, captures real
-  sessions through `@supabase/ssr`'s own cookie encoding, and attacks in both
-  directions: reads, a delete aimed at the other user's row, a rename and a
-  delete using the other user's **real rule id**, absent / tampered / expired
-  cookies, sign-out, and a DB-layer check that A's context sees zero of B's
-  rows while seeing its own. It **skips**, loudly, because the dev Supabase
-  project returns no session for password sign-up:
-
-  ```
-  [auth-isolation] SKIPPED — Password sign-up returned no session, so cross-user
-  isolation is UNVERIFIED. Enable email+password and disable email confirmation
-  on the dev Supabase project.
-  ```
-
-  Enable those two settings and the six cases run. Until then the claim rests
-  on the query layer, the RLS proof above, and inspection.
+- ~~**Cross-user exploitation is still UNVERIFIED on this machine.**~~
+  **CLOSED — now verified and executed.** The suite ran, in both directions,
+  against real Supabase sessions. See
+  [Closeout: cross-user isolation, verified](#closeout-cross-user-isolation-verified)
+  at the end of this document for the run output and a mutation test proving
+  the assertions are not vacuous. The original text of this item is preserved
+  in the section below.
 
 - **No production deployment was performed.** Vercel, Supabase and Cloudflare
   Worker deploys remain documented but untested. Free-tier behaviour, real CDN
@@ -886,12 +876,146 @@ Two conditions before publishing:
    cannot do this. Anything else that ever sat in `apps/web/.env.local` should
    be treated as burned. `NEXT_PUBLIC_*` values are public by design and need
    no rotation — `docs/security.md` says which is which.
-2. **Enable email + password on the dev Supabase project and run
-   `e2e/auth-isolation.spec.ts`.** Cross-user isolation is the one security
-   claim still resting on inspection, and inspection is the method that missed
-   the inert RLS.
+2. ~~**Enable email + password on the dev Supabase project and run
+   `e2e/auth-isolation.spec.ts`.**~~ **DONE** — see the closeout section below.
+   Cross-user isolation no longer rests on inspection.
 
 The independence notice at the top of this document applies in full to this
 section as well. The same agent wrote the code, the audit, and this
 remediation; the evidence here is reproducible, and someone else should re-run
 it.
+
+---
+
+<a id="closeout-cross-user-isolation-verified"></a>
+
+## Closeout: cross-user isolation, verified
+
+**Date:** 2026-08-05 · **Branch:** `audit-remediation` · **Status:** the last
+"not verified" security item in this document is closed.
+
+### What it used to say
+
+> **Not verified:** actual cross-user access could not be attempted — the
+> Docker deployment has no configured Supabase project, so no session could be
+> minted. `A cannot read B's data` therefore rests on code inspection.
+
+Inspection is the method that certified the inert RLS as working, which is why
+this item was never allowed to close on a second reading of the same code.
+
+### The suite that now runs
+
+Email + password sign-up was enabled (confirmation off) on the development
+Supabase project, so `signUp` returns a session and the suite mints two real
+users per run. It was then **extended** from six cases to twelve, because the
+original six covered one direction and one route:
+
+| Added                                 | Why it was not enough before                                                                                                                                                                                         |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Both directions** (A→B _and_ B→A)   | An isolation bug can be asymmetric — first-created user, a warm connection still carrying the previous GUC. Testing one way and inferring the other is the same reasoning that certified the inert RLS.              |
+| **`/api/me/channels`**                | The third user-scoped table had no cross-user coverage at all. Now: the attacker cannot see the victim's timezone, cannot alter it, and the response never contains `linkToken` / `unsubscribeToken`.                |
+| **All 10 routes × 3 token shapes**    | Absent / tampered / expired were checked against `/api/me/watchlist` only. One route that checks the session late is the whole boundary, so all ten `/api/me` route+method pairs are now asserted 401 for all three. |
+| **A real signature tamper**           | The old test flipped a character inside the cookie, which mostly produced a parse failure — a 401 that proves nothing. It now decodes the session, alters the **JWT signature**, and re-encodes.                     |
+| **A control assertion**               | The re-encoded but **untampered** session must still return 200. Without it, a mistake in the test's own cookie surgery reads as a security pass.                                                                    |
+| **`withUserContext` at the DB layer** | The old check ran raw SQL. It now calls the application's own helper, over the `insiderflow_app` role, with the `user_id` predicate **removed** — the one query shape that has nothing left but row-level security.  |
+
+The control assertion earned its place immediately: it failed on the first run
+because the cookie reader was picking up a PKCE `…-code-verifier` cookie, which
+is also `base64-` JSON. Every token test would have "passed" against a context
+that had no session in it at all.
+
+### Evidence
+
+```
+$ cd apps/web && PLAYWRIGHT_BASE_URL=http://localhost:3000 \
+    pnpm exec playwright test e2e/auth-isolation.spec.ts --reporter=list
+
+Running 12 tests using 1 worker
+  ok  1 … a signed-in user sees their own data and nobody else's (494ms)
+  ok  2 … B attacks A › B cannot see or delete A's watchlist row (385ms)
+  ok  3 … B attacks A › B cannot read, rename, or delete A's alert rule (540ms)
+  ok  4 … B attacks A › B cannot see or alter A's alert channel (446ms)
+  ok  5 … A attacks B › A cannot see or delete B's watchlist row (420ms)
+  ok  6 … A attacks B › A cannot read, rename, or delete B's alert rule (418ms)
+  ok  7 … A attacks B › A cannot see or alter B's alert channel (503ms)
+  ok  8 … the database refuses cross-user reads even below the query layer (133ms)
+  ok  9 … every /api/me route rejects an absent token (86ms)
+  ok 10 … every /api/me route rejects a tampered token (793ms)
+  ok 11 … every /api/me route rejects an expired token (695ms)
+  ok 12 … signing out restores the signed-out contract (474ms)
+
+  12 passed (10.3s)          exit=0
+```
+
+In the full suite, against a stack rebuilt from `docker compose down -v`:
+
+```
+$ PLAYWRIGHT_BASE_URL=http://localhost:3000 pnpm exec playwright test
+  102 passed (52.3s)         exit=0
+skips: 0   loud-skip notices: 0
+```
+
+The previous run of this suite was `90 passed, 6 skipped`. There are now no
+skipped tests at all.
+
+Unit and integration, same commit:
+
+```
+$ pnpm test
+files=28 tests_passed=272 tests_failed=0 tests_skipped=0     exit=0
+```
+
+(The remediation baseline above records 267. Nothing that `pnpm test` reads
+changed between the two runs — `@insiderflow/web`'s unit script is
+`vitest run src`, and the only files touched at closeout are an e2e spec, the
+Dockerfile, `docker-compose.yml` and docs — so 267 was a mis-tally of the same
+suite, not lost coverage. It is left in place rather than quietly corrected;
+the per-package breakdown is 105 + 18 + 32 + 84 + 18 + 8 + 7 = 272.)
+
+Product promise from the same clean-room stack:
+
+```
+latest 25 · big-buys 4 · cluster-buys 7 · exec-buys 6 · dip-buys 11 ·
+big-discretionary-sales 2 · unusual-flow 17 · leaderboard 2 rows
+cluster_flags=1 insider_scores=3 company_anomalies=5
+rows with price=0 or value=0: 0        A price=NULL value=NULL
+```
+
+### Mutation test — the assertions are not vacuous
+
+A passing security test is only worth what it would catch. `BYPASSRLS` was
+granted to the application role and the suite re-run:
+
+```
+$ psql -c "alter role insiderflow_app bypassrls;"
+  ok  1–7  (the seven API-level attacks still pass)
+  x   8    the database refuses cross-user reads even below the query layer
+      Error: with no user context the app role must see no user rows at all
+      Expected: 0
+      Received: 2
+  1 failed, 7 passed
+$ psql -c "alter role insiderflow_app nobypassrls;"     # reverted
+```
+
+That is exactly the intended shape. Layer 1 — the `user_id` predicate on every
+statement — holds on its own, which is why the seven API attacks still fail to
+cross the boundary. Layer 2 is what the DB-layer test measures, and it detected
+the loss immediately. The two layers are independent, and the suite can tell
+them apart.
+
+### One defect found while closing this out
+
+The Docker image resolves `NEXT_PUBLIC_*` **at build time** for the browser
+bundle, while server code reads `process.env` per request. Supplying the
+Supabase values only at run time therefore produced a login page that rendered
+the sign-in button on the server and removed it on hydration — a silent
+server/client disagreement. `docker-compose.yml` now feeds the same two
+variables to `build.args` and to `environment` so they cannot diverge, and
+`.env.example` and `docs/quickstart.md` say so. Vercel is unaffected: it
+supplies project env to the build.
+
+### What this does not prove
+
+The users are minted by password sign-up, not by the GitHub OAuth flow, and the
+run is against the local reference stack rather than production behind Vercel's
+proxy. Production auth is validated separately in `DEPLOYMENT_REPORT.md`.

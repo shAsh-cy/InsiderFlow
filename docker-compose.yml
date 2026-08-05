@@ -98,6 +98,13 @@ services:
       context: .
       dockerfile: Dockerfile
       target: web
+      # The browser bundle resolves NEXT_PUBLIC_* at BUILD time; the server
+      # reads them at run time. Both are fed from the same shell variables
+      # below so they can never disagree — see the Dockerfile's `web` stage.
+      # Unset (the default) = the supported public read-only mode.
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
     container_name: insiderflow-web
     depends_on:
       migrate:
@@ -126,7 +133,15 @@ services:
       # the default everywhere else is off.
       INSIDERFLOW_SHOW_SYNTHETIC: ${INSIDERFLOW_SHOW_SYNTHETIC:-true}
       # Auth, alerts and secondary sources are all optional — the app runs as
-      # a fully public read-only site without any of them.
+      # a fully public read-only site without any of them. Export these before
+      # `docker compose up` and the reference stack gains real sign-in, which
+      # is what e2e/auth-isolation.spec.ts needs in order to run instead of
+      # skipping. See docs/quickstart.md → "Running the auth E2E".
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      # Only used to build the `/start <token>` deep link. Not a secret: it is
+      # the bot's public @name.
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
     ports:
       - "3000:3000"
     restart: unless-stopped

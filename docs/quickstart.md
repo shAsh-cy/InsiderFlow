@@ -88,6 +88,31 @@ pnpm dev --test-scheduled
 curl "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*"   # fire one tick
 ```
 
+### Running the auth E2E
+
+`e2e/auth-isolation.spec.ts` mints two real users and tries to cross the
+boundary between them in both directions. It needs a stack that has auth
+configured **and** connects as the RLS-bound role, so it skips loudly on the
+default read-only stack rather than passing without asserting anything.
+
+```bash
+export NEXT_PUBLIC_SUPABASE_URL='https://<ref>.supabase.co'
+export NEXT_PUBLIC_SUPABASE_ANON_KEY='<anon key>'
+docker compose up --build -d          # both values reach the build AND the runtime
+
+cd apps/web
+PLAYWRIGHT_BASE_URL=http://localhost:3000 pnpm exec playwright test e2e/auth-isolation.spec.ts
+```
+
+The Supabase project needs **email + password sign-up enabled with email
+confirmation off** (Authentication → Providers → Email), otherwise `signUp`
+returns no session and the suite skips with that reason on stdout. Use a
+development project: the suite creates users.
+
+`--build` is not optional the first time. `NEXT_PUBLIC_*` values are compiled
+into the browser bundle, so an image built without them serves a page that
+claims auth is configured on the server and unconfigured after hydration.
+
 Useful commands:
 
 | Command                        | What it does                                              |

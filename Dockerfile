@@ -53,6 +53,26 @@ FROM runner AS web
 # fail while prerendering the error page with the misleading
 # "<Html> should not be imported outside of pages/_document".
 ENV NODE_ENV=production
+
+# NEXT_PUBLIC_* must be present at BUILD time, not just at run time.
+#
+# Server code reads process.env at request time, so setting these only with
+# `docker run -e` does give a working session layer — which is why the API
+# behaves correctly and hides the problem. The BROWSER bundle is different:
+# Next resolves these when it compiles the client chunks, so a runtime-only
+# value produces a page whose server render says "auth is configured" and
+# whose hydrated render says it is not. The sign-in button appears and then
+# vanishes. docker-compose feeds the same two variables to `build.args` and to
+# `environment` so the two halves cannot disagree.
+#
+# Neither is a secret: the anon key is public by design and is safe to bake
+# into an image (docs/security.md). Both default to empty, which is the
+# supported "public, read-only, no sign-in chrome" mode.
+ARG NEXT_PUBLIC_SUPABASE_URL=""
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=""
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 RUN pnpm --filter @insiderflow/web build
 EXPOSE 3000
 # `pnpm exec next` rather than `pnpm --filter web start -- -p 3000`: pnpm's
