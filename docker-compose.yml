@@ -51,8 +51,15 @@ services:
       # Seeded data is entirely synthetic and lives in the reserved ZZ*
       # namespace. Set SEED=0 to migrate only.
       SEED: ${SEED:-1}
+      # Login password for the RLS-bound application role the web service
+      # connects as. A LOCAL DEVELOPMENT value, on a database that also accepts
+      # postgres/postgres — no more secret than the line above it. Production
+      # generates one and stores it in the platform's secret manager; see
+      # docs/security.md.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-insiderflow_local_dev}
     command: >
       sh -c "pnpm --filter @insiderflow/db exec drizzle-kit migrate &&
+             pnpm --filter @insiderflow/db app-role &&
              if [ \"$$SEED\" = \"1\" ]; then pnpm --filter @insiderflow/db seed; fi"
     restart: "no"
 
@@ -66,7 +73,16 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+      # NOT the postgres superuser. The web app connects as insiderflow_app,
+      # which has NOBYPASSRLS, so the row-level-security policies on the four
+      # user tables actually apply to every request this container makes.
+      #
+      # This is deliberate friction: if a query layer function ever forgets to
+      # open a user context, it returns zero rows HERE — in the reference
+      # stack a contributor runs — instead of quietly working in development
+      # and leaking in production. Connecting this service as `postgres` would
+      # restore the exact configuration the pre-release audit found inert.
+      APP_DATABASE_URL: postgres://insiderflow_app:${APP_DB_PASSWORD:-insiderflow_local_dev}@postgres:5432/insiderflow
       SITE_URL: http://localhost:3000
       NODE_ENV: production
       # Aggregate surfaces (heatmap, leaderboard, anomaly rankings) normally

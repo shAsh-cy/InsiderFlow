@@ -36,6 +36,7 @@ export interface OpsStatus {
     transactions: number;
     alertsPending: number;
     alertsOrphaned: number;
+    alertsFailedPermanent: number;
   };
   ingestRunAgeSeconds: number | null;
   scannerRunAgeSeconds: number | null;
@@ -57,10 +58,14 @@ export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
     db.select().from(scannerState).where(eq(scannerState.name, "alerts")),
     db.select({ filedAt: filings.filedAt }).from(filings).orderBy(desc(filings.filedAt)).limit(1),
     db.select({ n: sql`count(*)`.mapWith(Number) }).from(transactions),
+    // Counted directly, unlike apps/web: ops-check runs from GitHub Actions on
+    // the ADMIN connection, which is not bound by the user-table RLS policies.
     db
       .select({
         pending: sql`count(*) filter (where ${alertsLog.status} = 'pending')`.mapWith(Number),
         orphaned: sql`count(*) filter (where ${alertsLog.status} = 'orphaned')`.mapWith(Number),
+        failedPermanent:
+          sql`count(*) filter (where ${alertsLog.status} = 'failed_permanent')`.mapWith(Number),
       })
       .from(alertsLog),
   ]);
@@ -93,6 +98,14 @@ export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
     problems.push(`${orphaned} orphaned alert${orphaned === 1 ? "" : "s"} (subject row deleted).`);
   }
 
+  const failedPermanent = alertCounts[0]?.failedPermanent ?? 0;
+  if (failedPermanent > 0) {
+    problems.push(
+      `${failedPermanent} alert${failedPermanent === 1 ? "" : "s"} undeliverable — channel rejected them ` +
+        "or they exhausted their retries. Check the destination.",
+    );
+  }
+
   return {
     degraded: problems.length > 0,
     problems,
@@ -101,6 +114,7 @@ export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
       transactions: txnCount[0]?.n ?? 0,
       alertsPending: alertCounts[0]?.pending ?? 0,
       alertsOrphaned: orphaned,
+      alertsFailedPermanent: failedPermanent,
     },
     ingestRunAgeSeconds,
     scannerRunAgeSeconds,

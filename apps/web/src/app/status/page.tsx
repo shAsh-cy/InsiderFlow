@@ -176,12 +176,21 @@ export default async function StatusPage() {
               ["Filings", report.counts.filings],
               ["Congressional", report.counts.politicianTrades],
               ["Alerts pending", report.counts.alertsPending],
+              ["Alerts undeliverable", report.counts.alertsFailedPermanent],
               ["Alerts orphaned", report.counts.alertsOrphaned],
             ] as const
           ).map(([label, value]) => (
             <div key={label}>
               <dt className="text-2xs uppercase tracking-widest text-subtle-foreground">{label}</dt>
-              <dd className="tnum text-lg font-semibold">{value.toLocaleString("en-US")}</dd>
+              {/* null means the metric could not be read. Printing 0 would
+                  turn a broken monitor into a reassuring dashboard. */}
+              <dd className="tnum text-lg font-semibold">
+                {value === null ? (
+                  <span className="text-subtle-foreground">unknown</span>
+                ) : (
+                  value.toLocaleString("en-US")
+                )}
+              </dd>
             </div>
           ))}
         </dl>

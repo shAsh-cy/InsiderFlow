@@ -28,6 +28,14 @@ if (!databaseUrl) {
 }
 
 const checkOnly = process.argv.includes("--check");
+/**
+ * Acknowledge that RLS enforcement is being taken on trust. There is exactly
+ * one legitimate use: a database that has no separate application role yet,
+ * mid-migration. It is a flag rather than a default because the failure this
+ * check exists to catch — a control that looks enabled and enforces nothing —
+ * is invisible without it.
+ */
+const skipRlsProof = process.argv.includes("--skip-rls-proof");
 
 const log = (event, data = {}) =>
   console.log(JSON.stringify({ event, at: new Date().toISOString(), ...data }));
@@ -97,11 +105,18 @@ try {
   log("check_ok", { check: "migrations", applied: applied[0]?.n ?? 0 });
 
   // ── RLS ──────────────────────────────────────────────────────────────────
-  // Query-layer scoping is the primary enforcement (the server connects as the
-  // app role), but RLS is the backstop for anything arriving with an end-user
-  // JWT. Shipping without it in production is a data-leak waiting to happen.
+  // This block used to report `check_ok: rls` on the strength of
+  // pg_class.relrowsecurity alone. That flag was true while RLS was doing
+  // nothing at all: FORCE was off and the app connected as a superuser. A
+  // check that certifies an inert control is worse than no check, because it
+  // stops anyone from looking again.
+  //
+  // So the flags below are necessary conditions, and the probe at the end is
+  // the actual verdict.
   const rls = await sql`
-    select c.relname as table_name, c.relrowsecurity as enabled
+    select c.relname as table_name,
+           c.relrowsecurity as enabled,
+           c.relforcerowsecurity as forced
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relname = any(${RLS_TABLES})`;
   const rlsOff = RLS_TABLES.filter(
@@ -110,6 +125,13 @@ try {
   if (rlsOff.length > 0) fail("rls", `row-level security is OFF for: ${rlsOff.join(", ")}`);
   else log("check_ok", { check: "rls", tables: RLS_TABLES.length });
 
+  // Without FORCE, the table owner skips its own policies — and the owner is
+  // exactly who a misconfigured deployment connects as.
+  const notForced = RLS_TABLES.filter((t) => !rls.find((r) => r.table_name === t && r.forced));
+  if (notForced.length > 0)
+    fail("rls_forced", `FORCE ROW LEVEL SECURITY is off for: ${notForced.join(", ")}`);
+  else log("check_ok", { check: "rls_forced" });
+
   const policies = await sql`
     select tablename, count(*)::int as n from pg_policies
     where schemaname = 'public' group by tablename`;
@@ -117,6 +139,102 @@ try {
   if (noPolicy.length > 0)
     fail("rls_policies", `RLS on but no policies for: ${noPolicy.join(", ")}`);
   else log("check_ok", { check: "rls_policies" });
+
+  // Warn if the admin URL bypasses RLS. It is SUPPOSED to — migrations and the
+  // ingestion worker need it — but the web app must never use this URL.
+  const [adminRole] = await sql`
+    select current_user as name, rolsuper, rolbypassrls
+    from pg_roles where rolname = current_user`;
+  if (adminRole?.rolsuper || adminRole?.rolbypassrls) {
+    log("note", {
+      check: "admin_role",
+      detail:
+        `this connection ("${adminRole.name}") bypasses RLS, which is correct for ` +
+        `migrations and the ingestion worker. The WEB APP must connect as the ` +
+        `insiderflow_app role instead — see pnpm db:app-role.`,
+    });
+  }
+
+  // ── RLS enforcement PROOF ────────────────────────────────────────────────
+  // Not "is the flag set" but "can a row actually be read without context".
+  // Insert a probe as admin, then read it back over APP_DATABASE_URL with no
+  // app.user_id set. Anything other than zero rows means RLS is not enforcing.
+  const appUrl = process.env.APP_DATABASE_URL;
+  if (skipRlsProof) {
+    log("warning", {
+      check: "rls_enforced",
+      detail: "--skip-rls-proof: enforcement was NOT verified, only the catalog flags.",
+    });
+  } else if (!appUrl) {
+    // Loudly unproven, never silently passed.
+    fail(
+      "rls_not_proven",
+      "APP_DATABASE_URL is not set, so RLS enforcement could not be PROVEN — only " +
+        "the catalog flags were checked, and those were true while RLS was inert. " +
+        "Set APP_DATABASE_URL to the insiderflow_app connection string (pnpm db:app-role) " +
+        "and re-run. Pass --skip-rls-proof to acknowledge and continue.",
+    );
+  } else {
+    const probeUser = "00000000-0000-4000-8000-0000000f1a90";
+    const appSql = postgres(appUrl, { prepare: false, max: 1 });
+    try {
+      await sql`delete from user_watchlists where user_id = ${probeUser}`;
+      await sql`
+        insert into user_watchlists (user_id, kind, ref_id, label, market)
+        values (${probeUser}, 'company', 'ZZRLSPROBE', 'RLS enforcement probe', 'US')`;
+
+      const [appRole] = await appSql`
+        select current_user as name, rolsuper, rolbypassrls
+        from pg_roles where rolname = current_user`;
+      if (appRole?.rolsuper || appRole?.rolbypassrls) {
+        fail(
+          "rls_not_enforced",
+          `APP_DATABASE_URL connects as "${appRole.name}", which has ` +
+            `${appRole.rolsuper ? "SUPERUSER" : "BYPASSRLS"} and therefore ignores every ` +
+            `policy. Use the insiderflow_app role (pnpm db:app-role).`,
+        );
+      }
+
+      const blind = await appSql`
+        select count(*)::int as n from user_watchlists where ref_id = 'ZZRLSPROBE'`;
+      if (blind[0].n !== 0) {
+        fail(
+          "rls_not_enforced",
+          `a user row was VISIBLE to the application role with no app.user_id set ` +
+            `(${blind[0].n} row(s)). RLS is not protecting anything. Do not ship this.`,
+        );
+      } else {
+        // The mirror image: with the right context the row must appear, or the
+        // policies are simply blocking everything and the app is broken.
+        const scoped = await appSql.begin(async (tx) => {
+          await tx`select set_config('app.user_id', ${probeUser}, true)`;
+          return tx`select count(*)::int as n from user_watchlists where ref_id = 'ZZRLSPROBE'`;
+        });
+        const wrong = await appSql.begin(async (tx) => {
+          await tx`select set_config('app.user_id', '00000000-0000-4000-8000-00000000dead', true)`;
+          return tx`select count(*)::int as n from user_watchlists where ref_id = 'ZZRLSPROBE'`;
+        });
+        if (scoped[0].n !== 1) {
+          fail(
+            "rls_over_restrictive",
+            "the probe row was invisible even WITH the correct app.user_id — policies are " +
+              "blocking legitimate access, so the app cannot work.",
+          );
+        } else if (wrong[0].n !== 0) {
+          fail("rls_not_enforced", "another user's context could read the probe row.");
+        } else {
+          log("check_ok", {
+            check: "rls_enforced",
+            proof: "no context → 0 rows; owner context → 1 row; other user → 0 rows",
+            app_role: appRole?.name,
+          });
+        }
+      }
+    } finally {
+      await appSql.end({ timeout: 5 });
+      await sql`delete from user_watchlists where user_id = ${probeUser}`;
+    }
+  }
 
   // ── Extensions ───────────────────────────────────────────────────────────
   const ext = await sql`select extname from pg_extension where extname = 'pg_trgm'`;

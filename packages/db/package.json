@@ -17,6 +17,7 @@
     "db:migrate": "drizzle-kit migrate",
     "keepalive": "node scripts/keepalive.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
+    "app-role": "node scripts/app-role.mjs",
     "seed": "node scripts/seed.mjs",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

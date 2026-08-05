@@ -533,11 +533,17 @@ export const politicianTrades = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────
-// User-scoped tables (Phase 7). `user_id` is the Supabase Auth user UUID
-// (the JWT `sub`). RLS policies live in the migration; the shared query
-// layer ALSO scopes every read/write by user_id — the server talks to
-// Postgres directly, so query-layer scoping is the primary enforcement and
-// RLS is defense in depth.
+// User-scoped tables. `user_id` is the Supabase Auth user UUID (the JWT
+// `sub`). Two layers guard them:
+//
+//   1. The shared query layer scopes every read/write by user_id (primary).
+//   2. FORCE ROW LEVEL SECURITY with policies on current_setting('app.user_id'),
+//      with the web app connecting as the NOBYPASSRLS `insiderflow_app` role.
+//
+// Layer 2 was previously present in name only — see migration 0009 for what
+// was wrong and docs/auth.md for how enforcement is now proven rather than
+// asserted. If you are adding a user table, add it to RLS_TABLES in
+// packages/db/scripts/bootstrap.mjs and give it a policy in a migration.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const watchlistKindEnum = pgEnum("watchlist_kind", ["company", "insider"]);

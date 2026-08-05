@@ -1,129 +1,230 @@
 /**
- * RLS verification.
+ * Row-level security — verified against the REAL migrations.
  *
- * Enforcement is layered: the shared query layer scopes every read/write by
- * user_id (primary, since the server connects directly as the app role),
- * and RLS blocks anything that reaches Postgres carrying an end-user JWT —
- * Supabase's anon key, PostgREST, or a future direct-from-browser path.
+ * The previous version of this file built a two-table replica of the schema
+ * by hand, enabled RLS on it, and asserted isolation. It passed for months
+ * while production RLS enforced nothing at all: `FORCE ROW LEVEL SECURITY`
+ * was never set and the app connected as a superuser, so the policies the
+ * test "proved" were skipped entirely on the deployed system. The test was
+ * not wrong about its own fixture — it was measuring the wrong object.
  *
- * These run on PGlite (real Postgres in WASM) using the same policies and
- * the same auth.uid() shim the migration installs, so behavior matches a
- * Supabase deployment.
+ * So this file runs `drizzle/*.sql` end to end, then exercises the policies
+ * as the `insiderflow_app` role the migration creates: NOBYPASSRLS, not the
+ * table owner, exactly as the web app connects. Anything that regresses the
+ * DDL — a dropped FORCE, a policy keyed on the wrong function, a role handed
+ * BYPASSRLS — fails here.
  */
 import { PGlite } from "@electric-sql/pglite";
-import { beforeAll, describe, expect, it } from "vitest";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const USER_A = "11111111-1111-4111-8111-111111111111";
 const USER_B = "22222222-2222-4222-8222-222222222222";
 
+const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle");
+
 let client: PGlite;
 
-/** Run as the unprivileged end-user role with a JWT claim set, as Supabase does. */
-async function asUser(userId: string, sql: string): Promise<unknown[]> {
-  const result = await client.exec(`
-    SET LOCAL ROLE app_user;
-    SELECT set_config('request.jwt.claims', '{"sub":"${userId}"}', true);
-    ${sql}
-  `);
-  return (result[result.length - 1]?.rows ?? []) as unknown[];
+/** The four tables whose rows belong to exactly one user. */
+const USER_TABLES = ["user_watchlists", "alert_rules", "alert_channels", "alerts_log"];
+
+/**
+ * Run SQL the way the web app does: as `insiderflow_app`, inside a
+ * transaction, with `app.user_id` set — or deliberately not set.
+ *
+ * `SET LOCAL ROLE` and `set_config(..., true)` both end with the transaction,
+ * so no case can leak context into the next one.
+ */
+async function asApp(sql: string, settings: Record<string, string> = {}): Promise<unknown[]> {
+  const config = Object.entries(settings)
+    .map(([k, v]) => `SELECT set_config('${k}', '${v}', true);`)
+    .join("\n");
+  try {
+    const result = await client.exec(`
+      BEGIN;
+      SET LOCAL ROLE insiderflow_app;
+      ${config}
+      ${sql}
+      COMMIT;
+    `);
+    // Last statement before COMMIT carries the rows.
+    return (result[result.length - 2]?.rows ?? []) as unknown[];
+  } catch (error) {
+    // A policy violation aborts the transaction. Without this rollback the
+    // connection stays poisoned and every later case fails with "current
+    // transaction is aborted" — which looks like six broken tests instead of
+    // one deliberate rejection.
+    await client.exec("ROLLBACK;").catch(() => {});
+    throw error;
+  }
 }
 
 beforeAll(async () => {
-  client = new PGlite();
+  client = new PGlite({ extensions: { pg_trgm } });
+  await client.exec("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
+  const db = drizzle(client);
+  await migrate(db, { migrationsFolder });
 
-  // Mirror the migration: auth schema + auth.uid() shim.
+  // Seed as the owner (which is how the scanner and the seed script write).
   await client.exec(`
-    CREATE SCHEMA IF NOT EXISTS auth;
-    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $body$
-      SELECT nullif(
-        coalesce(
-          current_setting('request.jwt.claim.sub', true),
-          (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
-        ), ''
-      )::uuid
-    $body$;
-
-    CREATE TABLE alert_rules (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id uuid NOT NULL,
-      name text NOT NULL,
-      enabled boolean NOT NULL DEFAULT true
-    );
-    CREATE TABLE user_watchlists (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id uuid NOT NULL,
-      kind text NOT NULL,
-      ref_id text NOT NULL
-    );
-
-    ALTER TABLE alert_rules ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE user_watchlists ENABLE ROW LEVEL SECURITY;
-    CREATE POLICY alert_rules_owner ON alert_rules
-      FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
-    CREATE POLICY user_watchlists_owner ON user_watchlists
-      FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
-
-    CREATE ROLE app_user NOLOGIN;
-    GRANT USAGE ON SCHEMA public, auth TO app_user;
-    GRANT EXECUTE ON FUNCTION auth.uid() TO app_user;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON alert_rules, user_watchlists TO app_user;
-
     INSERT INTO alert_rules (user_id, name) VALUES
       ('${USER_A}', 'A rule one'), ('${USER_A}', 'A rule two'), ('${USER_B}', 'B secret rule');
-    INSERT INTO user_watchlists (user_id, kind, ref_id) VALUES
-      ('${USER_A}', 'company', 'ZZAAA'), ('${USER_B}', 'company', 'ZZBBB');
+    INSERT INTO user_watchlists (user_id, kind, ref_id, label) VALUES
+      ('${USER_A}', 'company', 'ZZAAA', 'A watch'), ('${USER_B}', 'company', 'ZZBBB', 'B watch');
+    INSERT INTO alert_channels (user_id, channel, destination, verified, link_token, unsubscribe_token)
+      VALUES
+      ('${USER_A}', 'telegram', NULL, false, 'zz-link-token-aaa', NULL),
+      ('${USER_B}', 'telegram', NULL, false, 'zz-link-token-bbb', NULL),
+      ('${USER_A}', 'email', 'a@example.test', true, NULL, 'zz-unsub-aaa');
   `);
+}, 60_000);
+
+afterAll(async () => {
+  await client?.close();
 });
 
-describe("RLS on user tables", () => {
-  it("user A sees only their own alert rules", async () => {
-    const rows = (await asUser(USER_A, "SELECT name FROM alert_rules ORDER BY name;")) as Array<{
-      name: string;
-    }>;
+describe("RLS is actually enforced", () => {
+  it("has FORCE ROW LEVEL SECURITY on every user table", async () => {
+    // Without FORCE, the table owner skips its own policies — and the owner is
+    // who a misconfigured deployment connects as. This flag being off, while
+    // relrowsecurity was on, is what made the whole layer decorative.
+    const result = await client.query<{ relname: string; enabled: boolean; forced: boolean }>(
+      `
+      SELECT c.relname, c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ANY($1)`,
+      [USER_TABLES],
+    );
+    expect(result.rows).toHaveLength(USER_TABLES.length);
+    for (const row of result.rows) {
+      expect({ table: row.relname, enabled: row.enabled, forced: row.forced }).toEqual({
+        table: row.relname,
+        enabled: true,
+        forced: true,
+      });
+    }
+  });
+
+  it("gives the application role no way to bypass policies", async () => {
+    // A role with BYPASSRLS makes every policy above cosmetic. This is the
+    // single property the audit found missing in production.
+    const { rows } = await client.query<{ rolsuper: boolean; rolbypassrls: boolean }>(
+      `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'insiderflow_app'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ rolsuper: false, rolbypassrls: false });
+  });
+});
+
+describe("user isolation under the app role", () => {
+  it("returns only the caller's rows for an UNSCOPED query", async () => {
+    // No WHERE clause at all. This is the case the query layer cannot help
+    // with, and the reason RLS is worth having: a forgotten predicate now
+    // returns the caller's own rows instead of everybody's.
+    const rows = (await asApp("SELECT name FROM alert_rules ORDER BY name;", {
+      "app.user_id": USER_A,
+    })) as Array<{ name: string }>;
     expect(rows.map((r) => r.name)).toEqual(["A rule one", "A rule two"]);
   });
 
-  it("user A cannot read user B's rules — the core isolation guarantee", async () => {
-    const rows = await asUser(USER_A, `SELECT name FROM alert_rules WHERE user_id = '${USER_B}';`);
+  it("returns nothing when no user context is set", async () => {
+    const rows = await asApp("SELECT name FROM alert_rules;");
     expect(rows).toHaveLength(0);
   });
 
-  it("user B sees only their own row", async () => {
-    const rows = (await asUser(USER_B, "SELECT name FROM alert_rules;")) as Array<{ name: string }>;
-    expect(rows.map((r) => r.name)).toEqual(["B secret rule"]);
+  it("returns nothing for another user's context", async () => {
+    const rows = await asApp(`SELECT name FROM alert_rules WHERE user_id = '${USER_B}';`, {
+      "app.user_id": USER_A,
+    });
+    expect(rows).toHaveLength(0);
   });
 
-  it("a session with no JWT claim sees nothing", async () => {
-    const result = await client.exec(`
-      SET LOCAL ROLE app_user;
-      SELECT set_config('request.jwt.claims', '', true);
-      SELECT name FROM alert_rules;
-    `);
-    expect(result[result.length - 1]?.rows ?? []).toHaveLength(0);
+  it("ignores a malformed user id rather than erroring open", async () => {
+    // app_user_id() catches the failed cast and returns NULL, which matches no
+    // rows. Failing closed matters more than a clear error message here.
+    const rows = await asApp("SELECT name FROM alert_rules;", { "app.user_id": "not-a-uuid" });
+    expect(rows).toHaveLength(0);
   });
 
-  it("WITH CHECK blocks writing rows owned by someone else", async () => {
+  it("blocks writing a row owned by someone else", async () => {
     await expect(
-      asUser(USER_A, `INSERT INTO alert_rules (user_id, name) VALUES ('${USER_B}', 'forged');`),
+      asApp(`INSERT INTO alert_rules (user_id, name) VALUES ('${USER_B}', 'forged');`, {
+        "app.user_id": USER_A,
+      }),
     ).rejects.toThrow(/row-level security/i);
   });
 
-  it("user A cannot update or delete user B's rules", async () => {
-    await asUser(USER_A, `UPDATE alert_rules SET name = 'hijacked' WHERE user_id = '${USER_B}';`);
-    await asUser(USER_A, `DELETE FROM alert_rules WHERE user_id = '${USER_B}';`);
-    // B's row is untouched.
-    const rows = (await asUser(USER_B, "SELECT name FROM alert_rules;")) as Array<{ name: string }>;
+  it("leaves another user's rows untouched by UPDATE and DELETE", async () => {
+    await asApp(`UPDATE alert_rules SET name = 'hijacked' WHERE user_id = '${USER_B}';`, {
+      "app.user_id": USER_A,
+    });
+    await asApp(`DELETE FROM alert_rules WHERE user_id = '${USER_B}';`, {
+      "app.user_id": USER_A,
+    });
+    const rows = (await asApp("SELECT name FROM alert_rules;", {
+      "app.user_id": USER_B,
+    })) as Array<{ name: string }>;
     expect(rows.map((r) => r.name)).toEqual(["B secret rule"]);
   });
 
-  it("watchlists are isolated the same way", async () => {
-    const a = (await asUser(USER_A, "SELECT ref_id FROM user_watchlists;")) as Array<{
-      ref_id: string;
-    }>;
+  it("isolates watchlists the same way", async () => {
+    const a = (await asApp("SELECT ref_id FROM user_watchlists;", {
+      "app.user_id": USER_A,
+    })) as Array<{ ref_id: string }>;
     expect(a.map((r) => r.ref_id)).toEqual(["ZZAAA"]);
-    const b = (await asUser(USER_B, "SELECT ref_id FROM user_watchlists;")) as Array<{
-      ref_id: string;
-    }>;
+    const b = (await asApp("SELECT ref_id FROM user_watchlists;", {
+      "app.user_id": USER_B,
+    })) as Array<{ ref_id: string }>;
     expect(b.map((r) => r.ref_id)).toEqual(["ZZBBB"]);
+  });
+
+  it("still honours a Supabase JWT claim, for a future direct-from-browser path", async () => {
+    const rows = (await asApp("SELECT ref_id FROM user_watchlists;", {
+      "request.jwt.claims": `{"sub":"${USER_A}"}`,
+    })) as Array<{ ref_id: string }>;
+    expect(rows.map((r) => r.ref_id)).toEqual(["ZZAAA"]);
+  });
+});
+
+describe("capability tokens", () => {
+  it("reaches exactly the row holding the token, even with no WHERE clause", async () => {
+    // The Telegram webhook has no session. Under app.capability the DATABASE
+    // decides which single row is reachable, so this deliberately reckless
+    // statement still cannot touch anyone else's channel.
+    await asApp(`UPDATE alert_channels SET destination = '999', verified = true;`, {
+      "app.capability": "zz-link-token-aaa",
+    });
+    const { rows } = await client.query<{ user_id: string; destination: string | null }>(
+      `SELECT user_id, destination FROM alert_channels WHERE destination = '999'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.user_id).toBe(USER_A);
+  });
+
+  it("reaches nothing when the token is wrong", async () => {
+    const before = await client.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM alert_channels WHERE destination = '888'`,
+    );
+    expect(before.rows[0]!.n).toBe(0);
+    await asApp(`UPDATE alert_channels SET destination = '888';`, {
+      "app.capability": "zz-not-a-real-token",
+    });
+    const after = await client.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM alert_channels WHERE destination = '888'`,
+    );
+    expect(after.rows[0]!.n).toBe(0);
+  });
+
+  it("does not let a capability read other tables", async () => {
+    // The capability policy is scoped to alert_channels UPDATE only. Holding a
+    // link token must not turn into a read of that user's rules.
+    const rows = await asApp("SELECT name FROM alert_rules;", {
+      "app.capability": "zz-link-token-aaa",
+    });
+    expect(rows).toHaveLength(0);
   });
 });

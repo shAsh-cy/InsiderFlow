@@ -23,6 +23,7 @@
     "db:push": "pnpm --filter @insiderflow/db db:push",
     "db:studio": "pnpm --filter @insiderflow/db db:studio",
     "db:bootstrap": "pnpm --filter @insiderflow/db bootstrap",
+    "db:app-role": "pnpm --filter @insiderflow/db app-role",
     "seed": "pnpm --filter @insiderflow/db seed",
     "analytics:nightly": "pnpm --filter @insiderflow/analytics nightly",
     "ops:check": "pnpm --filter @insiderflow/analytics ops-check",

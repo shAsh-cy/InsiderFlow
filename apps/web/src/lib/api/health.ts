@@ -16,7 +16,6 @@
  * minutes.
  */
 import {
-  alertsLog,
   companies,
   desc,
   eq,
@@ -61,9 +60,51 @@ export interface HealthReport {
     companies: number;
     filings: number;
     politicianTrades: number;
-    alertsPending: number;
-    alertsOrphaned: number;
+    /**
+     * null, not 0, when the queue depth could not be read. The app role is
+     * bound by row-level security and cannot count other users' alerts
+     * directly; it goes through a counts-only SECURITY DEFINER function. If
+     * that call fails, saying "unknown" is the only honest answer — reporting
+     * an empty queue would turn a broken monitor into a green dashboard.
+     */
+    alertsPending: number | null;
+    alertsOrphaned: number | null;
+    alertsFailedPermanent: number | null;
   };
+}
+
+interface AlertQueueDepth {
+  pending: number;
+  orphaned: number;
+  failedPermanent: number;
+}
+
+/**
+ * Alert queue depth across all users.
+ *
+ * Deliberately narrow: `alerts_queue_depth()` returns three integers and no
+ * row content, and is the only grant the RLS-bound app role has into other
+ * users' alert rows. See migration 0009.
+ */
+async function readAlertQueueDepth(db: Database): Promise<AlertQueueDepth | null> {
+  try {
+    const result = await db.execute<{
+      pending: string | number;
+      orphaned: string | number;
+      failed_permanent: string | number;
+    }>(sql`select * from alerts_queue_depth()`);
+    const row = Array.isArray(result) ? result[0] : (result as { rows?: unknown[] }).rows?.[0];
+    if (!row) return null;
+    const r = row as { pending: string | number; orphaned: string; failed_permanent: string };
+    return {
+      pending: Number(r.pending),
+      orphaned: Number(r.orphaned),
+      failedPermanent: Number(r.failed_permanent),
+    };
+  } catch {
+    // Missing function (migration not applied) or no EXECUTE grant.
+    return null;
+  }
 }
 
 /** The ingest cron ticks every minute; this much silence means it is stuck. */
@@ -90,7 +131,7 @@ const describeAge = (seconds: number | null): string => {
 export async function buildHealthReport(db: Database): Promise<HealthReport> {
   const now = Date.now();
 
-  const [latestFiling, edgarState, sourceRows, scanner, clusterCursor, counts, alertCounts] =
+  const [latestFiling, edgarState, sourceRows, scanner, clusterCursor, counts, alertQueue] =
     await Promise.all([
       db.select({ filedAt: filings.filedAt }).from(filings).orderBy(desc(filings.filedAt)).limit(1),
       db.select().from(ingestionState).where(eq(ingestionState.key, "edgar:cursor")),
@@ -112,12 +153,7 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
           politicianTrades: sql`(select count(*) from ${politicianTrades})`.mapWith(Number),
         })
         .from(sql`(select 1) as _`),
-      db
-        .select({
-          pending: sql`count(*) filter (where ${alertsLog.status} = 'pending')`.mapWith(Number),
-          orphaned: sql`count(*) filter (where ${alertsLog.status} = 'orphaned')`.mapWith(Number),
-        })
-        .from(alertsLog),
+      readAlertQueueDepth(db),
     ]);
 
   const filingAgeSeconds = ageOf(latestFiling[0]?.filedAt ?? null, now);
@@ -194,12 +230,31 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     }))
     .sort((a, b) => b.rows - a.rows);
 
-  const orphaned = alertCounts[0]?.orphaned ?? 0;
-  if (orphaned > 0) {
+  if (alertQueue === null) {
+    checks.push({
+      name: "alerts_queue",
+      level: "unknown",
+      detail:
+        "Alert queue depth could not be read (alerts_queue_depth() is missing or not granted). " +
+        "Run pnpm db:migrate.",
+      ageSeconds: null,
+    });
+  } else if (alertQueue.orphaned > 0) {
     checks.push({
       name: "alerts_orphaned",
       level: "degraded",
-      detail: `${orphaned} alert${orphaned === 1 ? "" : "s"} retired because their subject row no longer exists.`,
+      detail: `${alertQueue.orphaned} alert${alertQueue.orphaned === 1 ? "" : "s"} retired because their subject row no longer exists.`,
+      ageSeconds: null,
+    });
+  }
+
+  if (alertQueue !== null && alertQueue.failedPermanent > 0) {
+    checks.push({
+      name: "alerts_failed_permanent",
+      level: "degraded",
+      detail:
+        `${alertQueue.failedPermanent} alert${alertQueue.failedPermanent === 1 ? "" : "s"} could not be delivered ` +
+        "and will not be retried (channel rejected them, or they exhausted their attempts).",
       ageSeconds: null,
     });
   }
@@ -217,8 +272,9 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
       companies: counts[0]?.companies ?? 0,
       filings: counts[0]?.filings ?? 0,
       politicianTrades: counts[0]?.politicianTrades ?? 0,
-      alertsPending: alertCounts[0]?.pending ?? 0,
-      alertsOrphaned: orphaned,
+      alertsPending: alertQueue?.pending ?? null,
+      alertsOrphaned: alertQueue?.orphaned ?? null,
+      alertsFailedPermanent: alertQueue?.failedPermanent ?? null,
     },
   };
 }
