@@ -229,6 +229,8 @@ The entire stack runs on free tiers — **no paid services required, no credit c
 
 **→ [docs/quickstart.md](docs/quickstart.md) walks the whole deploy, step by step.**
 
+⛔ The reference deployment is **paused before Part 2** — read [DEPLOYMENT_STATE.md](DEPLOYMENT_STATE.md) before running any deploy command.
+
 > ⚠️ Supabase pauses free projects after **7 idle days** (HTTP 540, manual restore).
 > `.github/workflows/keepalive.yml` prevents that and is the most load-bearing
 > workflow in the repo for a free deployment — do not disable it.
