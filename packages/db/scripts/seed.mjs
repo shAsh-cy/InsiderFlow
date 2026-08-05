@@ -135,7 +135,12 @@ const TRADES = [
     code: "A",
     day: 20,
     shares: 40_000,
-    price: 0,
+    // NULL, not 0. A grant has no purchase price, and docs/architecture.md
+    // states the invariant plainly: "a missing value is never a zero". The
+    // renderers were correct — they faithfully printed the 0 they were given,
+    // as "at USD 0" in RSS and "$0" on the stock page. The FIXTURE was the lie,
+    // and it is the first example every contributor reads.
+    price: null,
     routine: true,
   },
 
@@ -235,6 +240,9 @@ try {
     // first run wrote, so a change to the price model silently did not apply
     // to the benchmark — and scoring measures excess OVER that benchmark.
     await sql`delete from daily_prices where source = 'seed'`;
+    await sql`delete from sast_disclosures where dedup_key like 'e2e-seed-%'`;
+    await sql`delete from bulk_block_deals where dedup_key like 'e2e-seed-%'`;
+    await sql`delete from pledge_disclosures where dedup_key like 'e2e-seed-%'`;
     log("reset_ok");
   }
 
@@ -287,9 +295,13 @@ try {
   let n = 0;
   for (const t of TRADES) {
     const ccy = t.ccy ?? "USD";
-    const value = t.shares * t.price;
-    const priceUsd = ccy === "INR" ? t.price * INR_USD : t.price;
-    const valueUsd = ccy === "INR" ? value * INR_USD : value;
+    // A null price yields a null value and a null USD value all the way
+    // through. Multiplying by 0 or coalescing here is exactly how a
+    // not-disclosed field becomes a confident-looking zero downstream.
+    const hasPrice = t.price !== null && t.price !== undefined;
+    const value = hasPrice ? t.shares * t.price : null;
+    const priceUsd = !hasPrice ? null : ccy === "INR" ? t.price * INR_USD : t.price;
+    const valueUsd = value === null ? null : ccy === "INR" ? value * INR_USD : value;
     const country = COMPANIES.find((c) => c.key === t.co).country;
     await sql`
       insert into transactions (source, insider_id, company_id, txn_date, code, shares, price,
@@ -437,6 +449,123 @@ try {
       on conflict (dedup_key) do nothing`;
   }
   log("seeded", { politicians: politicianIds.size, disclosures: PTRS.length });
+
+  // ── India disclosures (SEBI) ──────────────────────────────────────────────
+  //
+  // The stock page has three India panels — SAST, bulk/block deals, promoter
+  // pledges — and the seed shipped zero rows for all of them, so every panel
+  // rendered its empty state and the whole India feature was unprovable from a
+  // clean start. "The schema exists" is not the same claim as "the feature
+  // works", and only one of them is testable.
+  //
+  // These are written directly, NOT via the local-scrape runner: the hosted
+  // deployment never scrapes NSE/BSE, and neither does `docker compose up`.
+  // The exchanges' terms restrict automated access and India IT Act s43
+  // creates civil liability for unauthorised access — see
+  // ingestion/india-local/README.md. Fixtures are how this path is exercised
+  // without touching either.
+  const SAST = [
+    {
+      acquirer: "ZZ Kaveri Holdings Pvt Ltd",
+      regulation: "29(2)",
+      side: "acquisition",
+      shares: 1_250_000,
+      pctBefore: 4.86,
+      pctAfter: 6.31,
+      // Reg 29 requires the SHAREHOLDING to be disclosed, not the consideration.
+      // Most filings carry no value at all, and inventing one — say, shares x
+      // yesterday's close — would publish a number nobody filed. NULL, and the
+      // UI says "not disclosed".
+      value: null,
+      day: 5,
+    },
+    {
+      acquirer: "ZZ Bharat Promoter Family Trust",
+      regulation: "31(1)",
+      side: "disposal",
+      shares: 400_000,
+      pctBefore: 22.4,
+      pctAfter: 21.94,
+      value: 568_000_000,
+      day: 18,
+    },
+  ];
+  for (const d of SAST) {
+    await sql`
+      insert into sast_disclosures (country, exchange, symbol, company_name, acquirer_name,
+        regulation, category, acquisition_mode, side, shares, shares_pct_before, shares_pct_after,
+        value, currency, value_usd, txn_date, intimated_at, source_url, dedup_key)
+      values ('IN', 'NSE', 'ZZBHARAT', 'ZZ Bharat Industries Ltd.', ${d.acquirer},
+        ${d.regulation}, 'Promoter Group', 'Market purchase', ${d.side}, ${d.shares},
+        ${d.pctBefore}, ${d.pctAfter}, ${d.value}, 'INR',
+        ${d.value === null ? null : (d.value * INR_USD).toFixed(4)},
+        ${day(d.day)}, ${day(d.day - 1)},
+        'https://example.invalid/seed/sast.pdf',
+        ${`e2e-seed-sast-ZZBHARAT-${d.day}-${d.side}#0`})
+      on conflict (dedup_key) do nothing`;
+  }
+
+  const DEALS = [
+    {
+      type: "bulk",
+      client: "ZZ Sundara Asset Management",
+      side: "buy",
+      qty: 820_000,
+      wap: 1432.5,
+      day: 6,
+    },
+    {
+      type: "block",
+      client: "ZZ Nilgiri Capital LLP",
+      side: "sell",
+      qty: 500_000,
+      wap: 1418.0,
+      day: 14,
+    },
+  ];
+  for (const d of DEALS) {
+    const value = d.qty * d.wap;
+    await sql`
+      insert into bulk_block_deals (country, exchange, deal_type, deal_date, symbol, company_name,
+        client_name, side, quantity, wap, value, currency, value_usd, remarks, dedup_key)
+      values ('IN', 'NSE', ${d.type}, ${day(d.day)}, 'ZZBHARAT', 'ZZ Bharat Industries Ltd.',
+        ${d.client}, ${d.side}, ${d.qty}, ${d.wap}, ${value}, 'INR',
+        ${(value * INR_USD).toFixed(4)}, null,
+        ${`e2e-seed-deal-ZZBHARAT-${d.day}-${d.side}#0`})
+      on conflict (dedup_key) do nothing`;
+  }
+
+  const PLEDGES = [
+    {
+      promoter: "ZZ Bharat Promoter Family Trust",
+      event: "pledge",
+      shares: 3_000_000,
+      pct: 3.42,
+      day: 9,
+    },
+    {
+      promoter: "ZZ Bharat Promoter Family Trust",
+      event: "revoke",
+      shares: 1_100_000,
+      pct: 1.25,
+      day: 2,
+    },
+  ];
+  for (const p of PLEDGES) {
+    await sql`
+      insert into pledge_disclosures (country, exchange, symbol, company_name, promoter_name,
+        event_type, shares, shares_pct, value, currency, value_usd, event_date, intimated_at,
+        source_url, dedup_key)
+      values ('IN', 'NSE', 'ZZBHARAT', 'ZZ Bharat Industries Ltd.', ${p.promoter},
+        ${p.event}, ${p.shares}, ${p.pct},
+        -- A pledge moves no consideration; there is no value to report.
+        null, 'INR', null,
+        ${day(p.day)}, ${day(Math.max(0, p.day - 1))},
+        'https://example.invalid/seed/pledge.pdf',
+        ${`e2e-seed-pledge-ZZBHARAT-${p.day}-${p.event}#0`})
+      on conflict (dedup_key) do nothing`;
+  }
+  log("seeded", { sast: SAST.length, deals: DEALS.length, pledges: PLEDGES.length });
 
   // ── Scanner row ───────────────────────────────────────────────────────────
   await sql`insert into scanner_state (name) values ('alerts') on conflict do nothing`;
