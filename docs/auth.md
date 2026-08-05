@@ -40,28 +40,113 @@ while data still comes from your local Postgres.
    statement by it. The server connects to Postgres directly as the app role,
    so this is what protects data on every real request path. _Never add a
    function there that touches a user table without a `user_id` predicate._
-2. **RLS — defense in depth.** `user_watchlists`, `alert_rules`,
-   `alert_channels`, and `alerts_log` have RLS enabled with owner-only
-   policies. This catches anything reaching Postgres with an end-user JWT (the
-   Supabase anon key, PostgREST, a future direct-from-browser path).
+2. **RLS — defence in depth.** `user_watchlists`, `alert_rules`,
+   `alert_channels`, and `alerts_log` carry `FORCE ROW LEVEL SECURITY` with
+   policies keyed on `current_setting('app.user_id')`, and the web app
+   connects as **`insiderflow_app`** — a role with `NOBYPASSRLS`. A query with
+   no user context returns nothing; a query with one returns that user's rows
+   and nobody else's, WHERE clause or not.
 
-Policies use `auth.uid()`. On Supabase that is built in; migration `0006`
-installs a **compatible shim** on plain Postgres reading the same
-`request.jwt.claims` GUC, so RLS behaves identically locally and is testable
-without the Supabase platform — see `packages/db/src/rls.test.ts`, which proves
-user A cannot read, update, or delete user B's rows and that `WITH CHECK`
-blocks forged writes.
+Every function in `user-queries.ts` opens that context through
+`withUserContext`, which sets the GUC with `set_config(..., true)` — local to
+the transaction, so it cannot leak to the next borrower of a pooled
+connection.
+
+### What this looked like before, and why it was worse than nothing
+
+Migration `0006` enabled RLS and wrote policies against Supabase's
+`auth.uid()`. That configuration enforced **nothing**:
+
+- `FORCE ROW LEVEL SECURITY` was never set, so the table owner — which is who
+  the app connected as — skipped every policy.
+- The server talks to Postgres **directly**. No end-user JWT is anywhere in
+  the connection, so `auth.uid()` was always NULL; the predicate guarded a
+  browser-to-PostgREST path this project does not have.
+- `rls.test.ts` "proved" isolation against a hand-built two-table replica of
+  the schema rather than the real migrations, so it stayed green throughout.
+- `bootstrap.mjs` reported `check_ok: rls` on the strength of
+  `pg_class.relrowsecurity` alone — certifying a control that did nothing,
+  which is worse than no check because it stops anyone looking again.
+
+All four are fixed, and the fix is verified rather than asserted:
+
+```console
+$ APP_DATABASE_URL='postgres://insiderflow_app:...@host/db' pnpm db:bootstrap -- --check
+{"event":"check_ok","check":"rls_forced"}
+{"event":"check_ok","check":"rls_enforced",
+ "proof":"no context → 0 rows; owner context → 1 row; other user → 0 rows",
+ "app_role":"insiderflow_app"}
+```
+
+Bootstrap inserts a probe row as admin and tries to read it back over
+`APP_DATABASE_URL` with no context set. Visible → `rls_not_enforced`, loudly.
+`APP_DATABASE_URL` unset → `rls_not_proven`, also a failure: enforcement is
+never taken on trust, because the flags were true the whole time it was inert.
+`--skip-rls-proof` exists for a database that has no app role yet, and says so
+in the output.
+
+`packages/db/src/rls.test.ts` now runs the actual `drizzle/*.sql` files on
+PGlite and exercises the policies as `insiderflow_app`, including the case
+that matters most: **an unscoped `SELECT * FROM alert_rules` returns only the
+caller's rows.** That is the day-someone-forgets scenario the query layer
+cannot cover.
+
+### Capability tokens
+
+Two operations have no session and cannot have one: the Telegram
+`/start <token>` webhook and one-click email unsubscribe. Both run under
+`withCapability`, where the policy compares the caller's token against the
+row's own `link_token` / `unsubscribe_token`. The database decides which
+single row is reachable, so even `UPDATE alert_channels SET ...` with no
+`WHERE` touches exactly the row whose 192-bit token the caller already held.
+
+### Who connects as what
+
+| Component                                   | Role              | Why                                                                                                      |
+| ------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Web app (Vercel, docker `web`)              | `insiderflow_app` | Request path. Must be bound by RLS.                                                                      |
+| Migrations, `db:bootstrap`, seed            | admin / owner     | Creates the policies; cannot be subject to them.                                                         |
+| Ingestion worker, analytics jobs, ops-check | admin / owner     | Legitimately scan every user's rules to decide what to deliver. Not a request path, no user to scope to. |
+
+`pnpm db:app-role` creates the login for `insiderflow_app` from
+`APP_DB_PASSWORD` and refuses to finish if the role ends up with `SUPERUSER`
+or `BYPASSRLS`.
 
 ## Environment
 
-| Variable                        | Where           | Purpose                                       |
-| ------------------------------- | --------------- | --------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | web             | Supabase project URL. Empty ⇒ auth disabled.  |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web             | Public anon key (safe in the browser).        |
-| `DATABASE_URL`                  | web + ingestion | Our Postgres. Holds **all** application data. |
+| Variable                        | Where           | Purpose                                                                |
+| ------------------------------- | --------------- | ---------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | web             | Supabase project URL. Empty ⇒ auth disabled. Public by design.         |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web             | Public anon key (safe in the browser, see docs/security.md).           |
+| `APP_DATABASE_URL`              | web             | The `insiderflow_app` role. RLS-bound. What the request path must use. |
+| `DATABASE_URL`                  | ingestion, jobs | Admin/owner connection. Migrations and cron jobs only.                 |
+| `APP_DB_PASSWORD`               | local setup, CI | Read by `pnpm db:app-role` when issuing the app role's login.          |
 
 Enable GitHub OAuth and email magic links in the Supabase dashboard, with
 `https://<your-deployment>/auth/callback` as the redirect URL.
+
+To run `e2e/auth-isolation.spec.ts` — the cross-user exploitation suite — also
+enable **email + password** and turn **off** email confirmation on the dev
+project, so the tests can mint two real users. Without that they skip, and say
+so in the output rather than passing silently.
+
+## Sessions, tokens, and redirects
+
+- **Identity is always validated.** Server code derives the user from
+  `supabase.auth.getUser()`, which checks the JWT against the Auth server.
+  `getSession()` returns whatever is in the cookie without verifying it; an
+  ESLint rule (`no-restricted-syntax` in `apps/web/eslint.config.mjs`) makes
+  using it for identity a build error rather than a code-review question.
+- **Post-login redirects are shape-checked.** `?next=` goes through
+  `safeRedirectPath`, which accepts a same-origin path and nothing else.
+  `new URL(next, origin)` — the previous implementation — returns an absolute
+  `next` verbatim and ignores the base, which was a live open redirect at the
+  moment of highest user trust.
+- **Every callback failure is explained.** Cancelled consent, a missing code,
+  an expired or reused magic link, and a rejected exchange each land on
+  `/login` with their own message. None of them is a 500.
+- **Sign-out clears cookies**, not just client state; an e2e test asserts the
+  signed-out contract returns after `POST /auth/signout`.
 
 ## Sign-in flow
 

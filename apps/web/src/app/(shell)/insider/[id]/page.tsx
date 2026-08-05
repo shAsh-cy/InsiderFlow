@@ -1,10 +1,11 @@
-import { Lock } from "lucide-react";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
+import { InsiderScorePanel } from "@/components/analytics/insider-score-panel";
 import { StatCard } from "@/components/domain/stat-card";
 import { TradeTable } from "@/components/trades/trade-table";
 import { WatchlistButton } from "@/components/watchlist/watchlist-button";
+import { queryInsiderScore } from "@/lib/api/analytics-queries";
 import { queryInsiderProfile } from "@/lib/api/page-queries";
 import { queryTrades } from "@/lib/api/queries";
 import { tradesQuerySchema } from "@/lib/api/schemas";
@@ -24,11 +25,14 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
   if (!profile) notFound();
   const { insider, stats } = profile;
 
-  const trades = await queryTrades(db, {
-    ...tradesQuerySchema.parse({}),
-    insider_id: insider.id,
-    limit: 100,
-  }).catch(() => ({ data: [] }));
+  const [trades, score] = await Promise.all([
+    queryTrades(db, {
+      ...tradesQuerySchema.parse({}),
+      insider_id: insider.id,
+      limit: 100,
+    }).catch(() => ({ data: [] })),
+    queryInsiderScore(db, insider.id).catch(() => ({ summary: null, trades: [] })),
+  ]);
 
   const roles = [
     insider.isDirector ? "Director" : null,
@@ -55,25 +59,14 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
         <WatchlistButton kind="insider" refId={insider.id} label={insider.name} market="US" />
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Buys" value={stats.buys} />
         <StatCard label="Sells" value={stats.sells} />
         <StatCard label="Net USD" value={stats.netUsd} preset="signed-usd" accent />
         <StatCard label="Companies" value={stats.companiesTraded} />
-        {/* Phase 8 computes this — deliberately not invented here. */}
-        <div
-          className="glass relative rounded-xl p-4 opacity-70"
-          aria-label="Performance score (coming soon)"
-        >
-          <p className="text-2xs font-medium uppercase tracking-widest text-muted-foreground">
-            Performance score
-          </p>
-          <p className="mt-1.5 flex items-center gap-2 text-2xl font-semibold text-subtle-foreground">
-            <Lock className="size-4" aria-hidden /> —
-          </p>
-          <p className="text-2xs mt-1 text-subtle-foreground">Coming in Phase 8</p>
-        </div>
       </div>
+
+      <InsiderScorePanel detail={score} />
 
       <section aria-label="Trade history" className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">

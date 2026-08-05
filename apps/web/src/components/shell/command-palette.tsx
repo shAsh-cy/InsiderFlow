@@ -10,9 +10,13 @@ import {
   BookOpen,
   Braces,
   ExternalLink,
+  Flame,
+  Landmark,
   LayoutGrid,
   Rss,
+  Sigma,
   TerminalSquare,
+  Trophy,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -72,6 +76,21 @@ export default function CommandPalette({
           <CommandItem onSelect={() => navigate("/watchlist")}>
             <LayoutGrid aria-hidden /> Watchlist
           </CommandItem>
+          <CommandItem onSelect={() => navigate("/heatmap")}>
+            <Flame aria-hidden /> Heatmap
+            <CommandShortcut>/heatmap</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/leaderboard")}>
+            <Trophy aria-hidden /> Insider leaderboard
+            <CommandShortcut>/leaderboard</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/politicians")}>
+            <Landmark aria-hidden /> Congressional trading
+            <CommandShortcut>/politicians</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/docs/methodology")}>
+            <Sigma aria-hidden /> Methodology
+          </CommandItem>
           <CommandItem onSelect={() => navigate("/design")}>
             <LayoutGrid aria-hidden /> Design system
             <CommandShortcut>/design</CommandShortcut>
@@ -88,6 +107,9 @@ export default function CommandPalette({
           </CommandItem>
           <CommandItem onSelect={() => external("/api/rss/latest")}>
             <Rss aria-hidden /> RSS · latest insider trades
+          </CommandItem>
+          <CommandItem onSelect={() => external("/api/rss/politicians")}>
+            <Rss aria-hidden /> RSS · congressional disclosures
           </CommandItem>
           <CommandItem
             onSelect={() => {

@@ -1,6 +1,19 @@
-# Local Postgres for development. Production uses Supabase (free tier).
-#   docker compose up -d
-#   pnpm db:push   # apply the Drizzle schema
+# Full local stack. `docker compose up` gives you a working product with data.
+#
+#   docker compose up            # Postgres + migrations + seed + web + ingest loop
+#   open http://localhost:3000
+#
+# The `db` profile is the lighter option for day-to-day development, where you
+# run the web app and the worker on the host with hot reload:
+#
+#   docker compose up -d postgres
+#   pnpm db:migrate && pnpm seed && pnpm dev
+#
+# WHY THE INGEST LOOP IS A PLAIN SLEEP LOOP, not wrangler: the production
+# runtime is a Cloudflare Worker on a cron trigger, and `wrangler dev` needs
+# Cloudflare's workerd sandbox, which is awkward and heavy inside Docker. The
+# same pipeline code runs either way — this just calls it on an interval from
+# Node. Anything you verify here holds on the worker.
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,6 +33,140 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Runs migrations, then seeds sample data, then exits. Everything else waits
+  # for it to complete successfully, so there is no race between "Postgres is
+  # accepting connections" and "the schema exists".
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: insiderflow-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+      # Seeded data is entirely synthetic and lives in the reserved ZZ*
+      # namespace. Set SEED=0 to migrate only.
+      SEED: ${SEED:-1}
+      # Login password for the RLS-bound application role the web service
+      # connects as. A LOCAL DEVELOPMENT value, on a database that also accepts
+      # postgres/postgres — no more secret than the line above it. Production
+      # generates one and stores it in the platform's secret manager; see
+      # docs/security.md.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-insiderflow_local_dev}
+    command: >
+      sh -c "pnpm --filter @insiderflow/db exec drizzle-kit migrate &&
+             pnpm --filter @insiderflow/db app-role &&
+             if [ \"$$SEED\" = \"1\" ]; then pnpm --filter @insiderflow/db seed; fi"
+    restart: "no"
+
+  # Derived analytics: cluster flags, insider scores, company anomalies.
+  #
+  # WHY THIS IS NOT OPTIONAL. Migrations and the seed leave every derived table
+  # empty, and three product surfaces read only those tables: the `cluster-buys`
+  # and `unusual-flow` presets, and the whole leaderboard. Without this step a
+  # fresh `docker compose up` renders two blank screens and an empty
+  # leaderboard, which reads as broken software rather than as an unfinished
+  # pipeline — a pre-release audit called it exactly that.
+  #
+  # Runs only the OFFLINE steps. `sectors` calls EDGAR, `politicians` fetches
+  # congressional feeds, and `prices` pulls Stooq; a first run of the local
+  # stack must not depend on three third-party services being reachable. The
+  # seed ships enough price history for scoring to compute real numbers.
+  analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: insiderflow-analytics
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+    # `run` is required, not stylistic: with the implicit form
+    # (`pnpm --filter X nightly -- --only=...`) pnpm swallows the flag and the
+    # network steps run anyway.
+    command: pnpm --filter @insiderflow/analytics run nightly -- --only=clusters,scoring,anomalies
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+      # The browser bundle resolves NEXT_PUBLIC_* at BUILD time; the server
+      # reads them at run time. Both are fed from the same shell variables
+      # below so they can never disagree — see the Dockerfile's `web` stage.
+      # Unset (the default) = the supported public read-only mode.
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    container_name: insiderflow-web
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      # So the first page a contributor opens already has the derived data.
+      analytics:
+        condition: service_completed_successfully
+    environment:
+      # NOT the postgres superuser. The web app connects as insiderflow_app,
+      # which has NOBYPASSRLS, so the row-level-security policies on the four
+      # user tables actually apply to every request this container makes.
+      #
+      # This is deliberate friction: if a query layer function ever forgets to
+      # open a user context, it returns zero rows HERE — in the reference
+      # stack a contributor runs — instead of quietly working in development
+      # and leaking in production. Connecting this service as `postgres` would
+      # restore the exact configuration the pre-release audit found inert.
+      APP_DATABASE_URL: postgres://insiderflow_app:${APP_DB_PASSWORD:-insiderflow_local_dev}@postgres:5432/insiderflow
+      SITE_URL: http://localhost:3000
+      NODE_ENV: production
+      # Aggregate surfaces (heatmap, leaderboard, anomaly rankings) normally
+      # exclude the reserved ZZ* fixture namespace so fabricated trades can
+      # never be shown as market data. A seeded local stack contains nothing
+      # BUT fixtures, so opt in here — otherwise those pages are empty and the
+      # first run looks broken. The UI labels itself whenever this is on, and
+      # the default everywhere else is off.
+      INSIDERFLOW_SHOW_SYNTHETIC: ${INSIDERFLOW_SHOW_SYNTHETIC:-true}
+      # Auth, alerts and secondary sources are all optional — the app runs as
+      # a fully public read-only site without any of them. Export these before
+      # `docker compose up` and the reference stack gains real sign-in, which
+      # is what e2e/auth-isolation.spec.ts needs in order to run instead of
+      # skipping. See docs/quickstart.md → "Running the auth E2E".
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      # Only used to build the `/start <token>` deep link. Not a secret: it is
+      # the bot's public @name.
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # The EDGAR ingest + alert + cluster pipeline on a loop. Disabled by default
+  # because it makes live requests to sec.gov: opt in with
+  #   docker compose --profile live up
+  # and set EDGAR_USER_AGENT to something identifying you (SEC requires it).
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: insiderflow-ingest
+    profiles: ["live"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/insiderflow
+      EDGAR_USER_AGENT: ${EDGAR_USER_AGENT:-InsiderFlow/0.1 (set-your-email@example.com)}
+      INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-60}
+      MAX_FILINGS_PER_RUN: ${MAX_FILINGS_PER_RUN:-25}
+    command: pnpm --filter @insiderflow/edgar-worker ingest:loop
+    restart: unless-stopped
 
 volumes:
   insiderflow_pgdata:

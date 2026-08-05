@@ -24,11 +24,20 @@ export interface EdgarFilingRef {
   sourceUrl: string | null;
 }
 
-/** Atom feed of the most recent filings of one form type, newest first. */
-export function edgarCurrentFeedUrl(formType: string, count = 100): string {
+/**
+ * Atom feed of the most recent filings of one form type, newest first.
+ *
+ * `start` pages backwards through the window. It is not optional decoration:
+ * the feed is a rolling window, so a burst larger than one page means the
+ * older filings are only reachable by paging before they scroll out entirely.
+ * Discovery walks back until it overlaps filings already known — see
+ * discoverFilings in the worker pipeline.
+ */
+export function edgarCurrentFeedUrl(formType: string, count = 100, start = 0): string {
+  const startParam = start > 0 ? `&start=${start}` : "";
   return `${EDGAR_BASE}/cgi-bin/browse-edgar?action=getcurrent&type=${encodeURIComponent(
     formType,
-  )}&company=&dateb=&owner=include&count=${count}&output=atom`;
+  )}&company=&dateb=&owner=include&count=${count}${startParam}&output=atom`;
 }
 
 /** Complete submission text file — contains the ownershipDocument XML inline. */

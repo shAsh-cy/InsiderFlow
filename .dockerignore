@@ -1,0 +1,51 @@
+# Without this, `COPY . .` drags the HOST's node_modules into the image and
+# overwrites the Linux dependency tree installed inside it — pnpm's symlink
+# farm and any native binary become wrong for the container's platform, and
+# the build fails with a confusing "cannot find module" on a package that is
+# obviously installed.
+node_modules
+**/node_modules
+
+# Build output — regenerated inside the image.
+.next
+**/.next
+dist
+**/dist
+out
+**/out
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Local state and secrets. `.env.example` is intentionally NOT ignored.
+#
+# The `**/` prefix is NOT decoration. A bare `.env` pattern matches ONLY at the
+# build-context root — `apps/web/.env.local` sails straight past it and into the
+# image, where Next.js then auto-loads it at runtime. That exact bug shipped a
+# live bot token inside a locally built image and silently overrode the
+# container's rate-limit config. Every secret pattern below must be `**/`-rooted,
+# and ci.yml asserts the result by scanning the built image.
+**/.env
+**/.env.*
+!**/.env.example
+**/.dev.vars
+.wrangler
+**/.wrangler
+
+# Test artefacts
+coverage
+**/coverage
+playwright-report
+**/playwright-report
+test-results
+**/test-results
+
+# VCS and editor noise
+.git
+.github
+.vscode
+.idea
+.DS_Store
+
+# Docs do not affect the build.
+*.md
+docs

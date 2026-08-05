@@ -31,6 +31,8 @@ export const CACHE_POLICIES = {
   screener: { sMaxAge: 120, staleWhileRevalidate: 600 },
   heatmap: { sMaxAge: 300, staleWhileRevalidate: 1800 },
   politicians: { sMaxAge: 3600, staleWhileRevalidate: 86_400 },
+  // Rebuilt once a night, so a long TTL costs nothing in freshness.
+  leaderboard: { sMaxAge: 3600, staleWhileRevalidate: 86_400 },
   rss: { sMaxAge: 300, staleWhileRevalidate: 900 },
   openapi: { sMaxAge: 3600, staleWhileRevalidate: 86_400 },
 } satisfies Record<string, CachePolicy>;

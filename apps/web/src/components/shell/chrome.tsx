@@ -8,13 +8,16 @@
 import { Search } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+import { LocaleSwitcher } from "./locale-switcher";
 import type { SessionInfo } from "./session-provider";
 
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
 
 export function ShellChrome({ session }: { session?: SessionInfo }) {
+  const t = useTranslations("nav");
   const [open, setOpen] = useState(false);
   /** Stays true after first open so the chunk isn't re-requested. */
   const [paletteLoaded, setPaletteLoaded] = useState(false);
@@ -44,30 +47,31 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
             <span aria-hidden className="bg-gradient-accent size-2.5 rounded-full shadow-glow" />
             InsiderFlow
           </Link>
-          <nav aria-label="Primary" className="ml-2 hidden items-center gap-1 sm:flex">
+          <nav aria-label={t("primary")} className="ml-2 hidden items-center gap-1 sm:flex">
             <Link
               href="/design"
               className="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
-              Design
+              {t("design")}
             </Link>
             <Link
               href="/docs"
               className="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             >
-              API docs
+              {t("apiDocs")}
             </Link>
           </nav>
           <div className="flex-1" />
+          <LocaleSwitcher className="hidden sm:inline-flex" />
           <button
             type="button"
             onClick={openPalette}
             onPointerEnter={() => setPaletteLoaded(true)}
-            aria-label="Open command palette"
+            aria-label={t("openPalette")}
             className="glass inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <Search className="size-3.5" aria-hidden />
-            <span className="hidden sm:inline">Search…</span>
+            <span className="hidden sm:inline">{t("search")}</span>
             <kbd className="rounded border border-white/10 bg-white/5 px-1.5 font-mono text-2xs">
               ⌘K
             </kbd>
@@ -78,14 +82,14 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
                 href="/settings"
                 className="glass inline-flex h-8 items-center rounded-lg px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
-                Settings
+                {t("settings")}
               </Link>
             ) : (
               <Link
                 href="/login"
                 className="glass inline-flex h-8 items-center rounded-lg px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
-                Sign in
+                {t("signIn")}
               </Link>
             )
           ) : null}

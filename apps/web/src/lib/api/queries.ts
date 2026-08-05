@@ -3,21 +3,21 @@ import {
   and,
   apiCache,
   asc,
+  buildTradeConditions,
   companies,
+  cutoffIso,
   dailyPrices,
   desc,
   eq,
+  excludeSynthetic,
   filings,
   gte,
-  insiders,
-  isNull,
   inArray,
-  lte,
-  or,
+  insiders,
   sql,
   transactions,
 } from "@insiderflow/db";
-import type { Database } from "@insiderflow/db";
+import type { Database, TradeFilterInput } from "@insiderflow/db";
 
 import type { HeatmapQuery, TradesQuery } from "./schemas";
 
@@ -162,86 +162,19 @@ export function serializeTrade(row: Record<string, unknown>): TradeRow {
   };
 }
 
-function cutoffIso(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-}
-
-/*
- * ── Phase 8 swap points ────────────────────────────────────────────────────
- * Cluster / dip / near-low are computed at query time today. Phase 8 will
- * precompute them as flags during ingestion; only these three functions
- * change — pages and routes stay untouched.
+/**
+ * Trade filtering is delegated to buildTradeConditions in @insiderflow/db.
+ *
+ * This used to be a parallel implementation, which is how a saved screen
+ * could quietly alert differently from how it screened. One builder, one
+ * behaviour — the parity test in packages/alerts asserts it stays that way.
  */
-
-/** Companies where ≥2 distinct insiders bought (code P) within a rolling 14-day window. */
-export function clusterCompaniesSubquery(db: Database, windowDays = 14) {
-  return db
-    .select({ companyId: transactions.companyId })
-    .from(transactions)
-    .where(and(eq(transactions.code, "P"), gte(transactions.txnDate, cutoffIso(windowDays))))
-    .groupBy(transactions.companyId)
-    .having(sql`count(distinct ${transactions.insiderId}) >= 2`);
-}
-
-/** Buys with a 5%+ drawdown vs that day's close (needs cached price context). */
-function dipCondition() {
-  return sql`exists (select 1 from daily_prices dp
-    where dp.symbol = ${companies.ticker}
-      and dp.market = ${transactions.country}
-      and dp.price_date = ${transactions.txnDate}
-      and ${transactions.price} <= dp.close * 0.95)`;
-}
-
-/** Trade-day close within 5% of the 52-week low of cached prices (≥5 points required). */
-function nearLowCondition() {
-  return sql`exists (select 1 from daily_prices dp
-    where dp.symbol = ${companies.ticker}
-      and dp.market = ${transactions.country}
-      and dp.price_date = ${transactions.txnDate}
-      and (select count(*) from daily_prices h
-             where h.symbol = dp.symbol and h.market = dp.market
-               and h.price_date >= current_date - 365) >= 5
-      and dp.close <= (select min(h.close) * 1.05 from daily_prices h
-             where h.symbol = dp.symbol and h.market = dp.market
-               and h.price_date >= current_date - 365))`;
-}
-
-function tradeConditions(q: TradesQuery) {
-  const conds = [];
-  if (q.market) conds.push(eq(transactions.country, q.market));
-  if (q.ticker) conds.push(eq(companies.ticker, q.ticker));
-  if (q.side) conds.push(eq(transactions.acquiredDisposed, q.side === "buy" ? "A" : "D"));
-  if (q.sector) conds.push(eq(companies.sector, q.sector));
-  if (q.near_low) conds.push(nearLowCondition());
-  if (q.code) conds.push(eq(transactions.code, q.code as typeof transactions.code._.data));
-  if (q.relevance) conds.push(eq(transactions.relevance, q.relevance));
-  if (q.source) conds.push(eq(transactions.source, q.source));
-  if (q.insider_id) conds.push(eq(transactions.insiderId, q.insider_id));
-  if (q.min_value !== undefined) conds.push(gte(transactions.value, String(q.min_value)));
-  if (q.min_value_usd !== undefined)
-    conds.push(gte(transactions.valueUsd, String(q.min_value_usd)));
-  if (q.from) conds.push(gte(transactions.txnDate, q.from));
-  if (q.to) conds.push(lte(transactions.txnDate, q.to));
-  if (q.role === "director") conds.push(eq(insiders.isDirector, true));
-  if (q.role === "officer" || q.exec_only) conds.push(eq(insiders.isOfficer, true));
-  if (q.role === "ten_pct") conds.push(eq(insiders.isTenPctOwner, true));
-  // Amendments replace originals: hide superseded filings unless asked.
-  if (!q.include_superseded) {
-    conds.push(or(isNull(transactions.filingId), isNull(filings.supersededByFilingId)));
-  }
-  if (q.dip) conds.push(dipCondition());
-  return conds;
-}
 
 export async function queryTrades(
   db: Database,
   q: TradesQuery,
 ): Promise<{ data: TradeRow[]; meta: PageMeta }> {
-  const conds = tradeConditions(q);
-
-  if (q.cluster) {
-    conds.push(inArray(transactions.companyId, clusterCompaniesSubquery(db)));
-  }
+  const conds = buildTradeConditions(db, q as TradeFilterInput);
 
   const sortColumn = {
     txn_date: transactions.txnDate,
@@ -376,6 +309,10 @@ export async function querySentiment(db: Database, ticker: string): Promise<Sent
 }
 
 export interface HeatmapCell {
+  /** Stable identity for the cell within its grouping. */
+  key: string;
+  label: string;
+  /** Kept for API compatibility: populated only when grouping by company. */
   ticker: string | null;
   name: string;
   market: string;
@@ -383,34 +320,135 @@ export interface HeatmapCell {
   buyValueUsd: number;
   sellValueUsd: number;
   netValueUsd: number;
+  /**
+   * Finnhub MSPR (−100…100), where the ingestion worker has cached it.
+   * Sparse by design — it is an overlay, never the size of a cell.
+   */
+  mspr: number | null;
 }
 
+/**
+ * Net insider flow, grouped by company, sector, or country.
+ *
+ * Synthetic ZZ* fixtures are excluded: this is an aggregate presented as a
+ * picture of the market, and a fabricated trade must never be part of one.
+ */
 export async function queryHeatmap(db: Database, q: HeatmapQuery): Promise<HeatmapCell[]> {
   const buyExpr = sql`coalesce(sum(${transactions.valueUsd}) filter (where ${transactions.acquiredDisposed} = 'A'), 0)`;
   const sellExpr = sql`coalesce(sum(${transactions.valueUsd}) filter (where ${transactions.acquiredDisposed} = 'D'), 0)`;
 
-  const conds = [gte(transactions.txnDate, cutoffIso(q.days))];
+  const conds = [gte(transactions.txnDate, cutoffIso(q.days)), excludeSynthetic()];
   if (q.market) conds.push(eq(transactions.country, q.market));
   if (q.relevance) conds.push(eq(transactions.relevance, q.relevance));
+  if (q.sector) conds.push(eq(companies.sector, q.sector));
+
+  const base = {
+    trades: sql`count(*)`.mapWith(Number),
+    buyValueUsd: buyExpr.mapWith(Number),
+    sellValueUsd: sellExpr.mapWith(Number),
+  };
+  const order = desc(sql`greatest(${buyExpr}, ${sellExpr})`);
+
+  if (q.group_by === "sector") {
+    // Unclassified companies are shown as such, never folded into a real
+    // sector — the SIC backfill is incremental and honesty about coverage
+    // matters more than a tidy chart.
+    const label = sql<string>`coalesce(${companies.sector}, 'Unclassified')`;
+    const rows = await db
+      .select({ label, ...base })
+      .from(transactions)
+      .innerJoin(companies, eq(transactions.companyId, companies.id))
+      .where(and(...conds))
+      .groupBy(label)
+      .orderBy(order)
+      .limit(q.limit);
+    return rows.map((r) => ({
+      key: r.label,
+      label: r.label,
+      ticker: null,
+      name: r.label,
+      market: q.market ?? "*",
+      trades: r.trades,
+      buyValueUsd: r.buyValueUsd,
+      sellValueUsd: r.sellValueUsd,
+      netValueUsd: r.buyValueUsd - r.sellValueUsd,
+      mspr: null,
+    }));
+  }
+
+  if (q.group_by === "country") {
+    const rows = await db
+      .select({ label: transactions.country, ...base })
+      .from(transactions)
+      .innerJoin(companies, eq(transactions.companyId, companies.id))
+      .where(and(...conds))
+      .groupBy(transactions.country)
+      .orderBy(order)
+      .limit(q.limit);
+    return rows.map((r) => ({
+      key: r.label,
+      label: r.label,
+      ticker: null,
+      name: r.label,
+      market: r.label,
+      trades: r.trades,
+      buyValueUsd: r.buyValueUsd,
+      sellValueUsd: r.sellValueUsd,
+      netValueUsd: r.buyValueUsd - r.sellValueUsd,
+      mspr: null,
+    }));
+  }
 
   const rows = await db
     .select({
+      companyId: companies.id,
       ticker: companies.ticker,
       name: companies.name,
       market: transactions.country,
-      trades: sql`count(*)`.mapWith(Number),
-      buyValueUsd: buyExpr.mapWith(Number),
-      sellValueUsd: sellExpr.mapWith(Number),
+      ...base,
     })
     .from(transactions)
     .innerJoin(companies, eq(transactions.companyId, companies.id))
     .where(and(...conds))
     .groupBy(companies.id, companies.ticker, companies.name, transactions.country)
-    .orderBy(desc(sql`greatest(${buyExpr}, ${sellExpr})`))
+    .orderBy(order)
     .limit(q.limit);
 
+  const mspr = await msprByTicker(
+    db,
+    rows.map((r) => r.ticker).filter((t): t is string => !!t),
+  );
+
   return rows.map((r) => ({
-    ...r,
+    key: r.ticker ?? r.companyId,
+    label: r.ticker ?? r.name,
+    ticker: r.ticker,
+    name: r.name,
+    market: r.market,
+    trades: r.trades,
+    buyValueUsd: r.buyValueUsd,
+    sellValueUsd: r.sellValueUsd,
     netValueUsd: r.buyValueUsd - r.sellValueUsd,
+    mspr: r.ticker ? (mspr.get(r.ticker) ?? null) : null,
   }));
+}
+
+/** Latest cached MSPR per ticker. Absent for most tickers — that is expected. */
+async function msprByTicker(db: Database, tickers: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (tickers.length === 0) return out;
+  const keys = tickers.map((t) => `finnhub:sentiment:${t}`);
+  const rows = await db.select().from(apiCache).where(inArray(apiCache.key, keys));
+  for (const row of rows) {
+    const points = row.payload.points;
+    if (!Array.isArray(points) || points.length === 0) continue;
+    const latest = (points as SentimentPoint[])
+      .filter((p) => typeof p.mspr === "number")
+      .sort((a, b) => a.year - b.year || a.month - b.month)
+      .at(-1);
+    if (latest?.mspr !== null && latest?.mspr !== undefined) {
+      out.set(row.key.replace("finnhub:sentiment:", ""), latest.mspr);
+    }
+  }
+  return out;
 }

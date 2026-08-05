@@ -79,6 +79,16 @@ async function upstashHit(key: string, limit: number): Promise<RateLimitResult |
   }
 }
 
+/**
+ * Who is asking, for limiting purposes: an API key when one is presented and
+ * valid, otherwise the client IP. Exported so the SSE connection ceiling
+ * buckets by exactly the same identity as the request-rate limiter — two
+ * limiters disagreeing about who a caller is would be worse than one.
+ */
+export function rateLimitIdentity(req: Request): string {
+  return clientId(req).key;
+}
+
 function clientId(req: Request): { key: string; limit: number } {
   const apiKey =
     req.headers.get("x-api-key") ?? new URL(req.url).searchParams.get("api_key") ?? null;

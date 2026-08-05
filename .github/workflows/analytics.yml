@@ -1,0 +1,71 @@
+name: Nightly analytics
+
+# Derived analytics: SIC→sector enrichment, congressional PTR ingestion,
+# price-history gap fill, forward-return scoring, net-flow anomaly baselines,
+# and the cluster-flag repair sweep.
+#
+# WHY HERE AND NOT ON THE WORKER CRON: the Cloudflare worker already uses two
+# of its five free triggers, and none of this work has a 60-second SLA. Several
+# steps pull tens of megabytes or make hundreds of rate-limited requests, which
+# is a poor fit for a per-minute Worker invocation and a natural fit for a
+# scheduled Action.
+#
+# Requires repo secrets: DATABASE_URL, EDGAR_USER_AGENT.
+on:
+  schedule:
+    # 03:20 UTC — after the US market close has settled into the price feeds
+    # and well outside the EDGAR daily-index publication window.
+    - cron: "20 3 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated steps (sectors,politicians,prices,scoring,anomalies,clusters)"
+        required: false
+        default: ""
+      sectorLimit:
+        description: "Companies to enrich this run"
+        required: false
+        default: "300"
+      priceLimit:
+        description: "Symbols to backfill price history for this run"
+        required: false
+        default: "60"
+
+concurrency:
+  # Never let two nightly runs write the same derived tables at once.
+  group: nightly-analytics
+  cancel-in-progress: false
+
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run nightly analytics
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
+          # Optional: the bundled congressional sources are offline
+          # (docs/politicians.md). Set these to any source you have rights to.
+          HOUSE_PTR_URL: ${{ secrets.HOUSE_PTR_URL }}
+          SENATE_PTR_URL: ${{ secrets.SENATE_PTR_URL }}
+        # `run` is required, not optional: with the implicit form
+        # (`pnpm --filter X nightly -- --only=...`) pnpm swallows `--only` as
+        # one of its own flags and the script silently receives nothing.
+        run: >
+          pnpm --filter @insiderflow/analytics run nightly --
+          --only=${{ github.event.inputs.only }}
+          --sectorLimit=${{ github.event.inputs.sectorLimit || '300' }}
+          --priceLimit=${{ github.event.inputs.priceLimit || '60' }}

@@ -14,13 +14,23 @@ const STOOQ_MARKET_SUFFIX: Record<string, string> = {
   PL: "pl",
 };
 
-/** CSV download URL for one day of OHLCV, or null when the market is unsupported. */
-export function stooqDailyUrl(ticker: string, market: string, dateIso: string): string | null {
+/** CSV download URL for a date RANGE of daily OHLCV, or null when the market is unsupported. */
+export function stooqHistoryUrl(
+  ticker: string,
+  market: string,
+  fromIso: string,
+  toIso: string,
+): string | null {
   const suffix = STOOQ_MARKET_SUFFIX[market.toUpperCase()];
   if (!suffix) return null;
-  const d = dateIso.slice(0, 10).replaceAll("-", "");
+  const compact = (iso: string) => iso.slice(0, 10).replaceAll("-", "");
   const symbol = `${ticker.trim().toLowerCase()}.${suffix}`;
-  return `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&d1=${d}&d2=${d}&i=d`;
+  return `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&d1=${compact(fromIso)}&d2=${compact(toIso)}&i=d`;
+}
+
+/** CSV download URL for one day of OHLCV, or null when the market is unsupported. */
+export function stooqDailyUrl(ticker: string, market: string, dateIso: string): string | null {
+  return stooqHistoryUrl(ticker, market, dateIso, dateIso);
 }
 
 export interface DailyPriceRow {

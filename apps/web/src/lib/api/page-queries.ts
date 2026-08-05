@@ -6,7 +6,9 @@
 import {
   and,
   bulkBlockDeals,
+  clusterFlags,
   companies,
+  cutoffIso,
   dailyPrices,
   desc,
   eq,
@@ -16,6 +18,7 @@ import {
   isNotNull,
   or,
   pledgeDisclosures,
+  resolveClusterSource,
   sastDisclosures,
   sql,
   transactions,
@@ -23,10 +26,6 @@ import {
 import type { Company, Database, Insider } from "@insiderflow/db";
 
 const num = (v: string | number | null): number | null => (v === null ? null : Number(v));
-
-function cutoffIso(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-}
 
 // ── Company directory / header ──────────────────────────────────────────────
 
@@ -137,21 +136,83 @@ export async function queryNetFlow(
 export interface ClusterInfo {
   distinctBuyers: number;
   windowDays: number;
+  /** Present when a precomputed flag exists — the anchored cluster window. */
+  windowStart: string | null;
+  windowEnd: string | null;
+  tradeCount: number;
+  totalUsd: number | null;
+  /** "flags" when read from cluster_flags, "sql" when computed at query time. */
+  source: "flags" | "sql";
 }
 
-/** Cluster indicator: distinct open-market buyers in the last 14 days. Phase 8 precomputes this. */
-export async function queryClusterInfo(db: Database, companyId: string): Promise<ClusterInfo> {
+/**
+ * Cluster indicator: distinct open-market buyers inside the rolling window.
+ *
+ * Reads the precomputed cluster_flags maintained by the ingest cron. Falls
+ * back to the query-time GROUP BY when INSIDERFLOW_CLUSTER_SOURCE=sql, or
+ * when no flag row exists yet — a self-hoster without the analytics cron
+ * still sees a correct indicator, just computed on demand.
+ */
+export async function queryClusterInfo(
+  db: Database,
+  companyId: string,
+  windowDays = 14,
+): Promise<ClusterInfo> {
+  if (resolveClusterSource() === "flags") {
+    const [flag] = await db
+      .select()
+      .from(clusterFlags)
+      .where(
+        and(
+          eq(clusterFlags.companyId, companyId),
+          eq(clusterFlags.direction, "buy"),
+          gte(clusterFlags.windowStart, cutoffIso(windowDays)),
+        ),
+      )
+      .orderBy(desc(clusterFlags.insiderCount))
+      .limit(1);
+
+    if (flag) {
+      return {
+        distinctBuyers: flag.insiderCount,
+        windowDays,
+        windowStart: flag.windowStart,
+        windowEnd: flag.windowEnd,
+        tradeCount: flag.tradeCount,
+        totalUsd: num(flag.totalUsd),
+        source: "flags",
+      };
+    }
+    // No flag means "fewer than two buyers" — flags are only written at the
+    // threshold. Fall through to the exact count so the panel can still say
+    // "1 buyer" rather than "0".
+  }
+
   const [row] = await db
-    .select({ buyers: sql`count(distinct ${transactions.insiderId})`.mapWith(Number) })
+    .select({
+      buyers: sql`count(distinct ${transactions.insiderId})`.mapWith(Number),
+      trades: sql`count(*)`.mapWith(Number),
+      totalUsd: sql<string | null>`sum(${transactions.valueUsd})`,
+      first: sql<string | null>`min(${transactions.txnDate})`,
+      last: sql<string | null>`max(${transactions.txnDate})`,
+    })
     .from(transactions)
     .where(
       and(
         eq(transactions.companyId, companyId),
         eq(transactions.code, "P"),
-        gte(transactions.txnDate, cutoffIso(14)),
+        gte(transactions.txnDate, cutoffIso(windowDays)),
       ),
     );
-  return { distinctBuyers: row?.buyers ?? 0, windowDays: 14 };
+  return {
+    distinctBuyers: row?.buyers ?? 0,
+    windowDays,
+    windowStart: row?.first ?? null,
+    windowEnd: row?.last ?? null,
+    tradeCount: row?.trades ?? 0,
+    totalUsd: num(row?.totalUsd ?? null),
+    source: "sql",
+  };
 }
 
 export interface OwnershipEntry {

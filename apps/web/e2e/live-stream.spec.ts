@@ -27,18 +27,33 @@ test("live strip shows a DB insert and survives the SSE window close", async ({ 
     await expect(feed).toBeVisible({ timeout: 15_000 });
     expect(await feed.locator("li").count()).toBeGreaterThan(0); // seeded from /api/trades
 
+    // The newest row BEFORE our insert. Ordering is asserted against this
+    // rather than against absolute position 0: other specs run in parallel and
+    // may insert their own trades during the 31-second hold below, and those
+    // rows legitimately belong above ours. "Newer than everything that existed
+    // when we started" is the real invariant; "is literally first" was an
+    // accident of nothing else running.
+    const previousTop = ((await feed.locator("li").first().textContent()) ?? "").trim();
+
     // Insert a row directly into Postgres — nothing on the client triggers it.
     target = createSyntheticCompany("ZZLIVE");
     const shares = 900_000 + Math.floor(Math.random() * 99_999);
     insertSyntheticTrade(target, { shares, price: 12.5 });
     const marker = `${shares.toLocaleString("en-US")} sh`;
 
-    // It must stream in (no refresh) and land at the top of the tape. The
-    // strip is capped, so the row count stays flat — identity is what
-    // matters, not length.
+    // It must stream in (no refresh) and sit above everything that was already
+    // on the tape. The strip is capped, so the row count stays flat — identity
+    // is what matters, not length.
     const inserted = feed.getByText(marker);
     await expect(inserted).toHaveCount(1, { timeout: 25_000 });
-    await expect(feed.locator("li").first()).toContainText(marker);
+    const positionOf = async (text: string): Promise<number> =>
+      (await feed.locator("li").allTextContents()).findIndex((t) => t.trim().includes(text));
+    const ourIndex = await positionOf(marker);
+    const previousTopIndex = await positionOf(previousTop);
+    expect(ourIndex, "the new trade must be on the tape").toBeGreaterThanOrEqual(0);
+    if (previousTopIndex >= 0) {
+      expect(ourIndex, "a newer trade must sort above an older one").toBeLessThan(previousTopIndex);
+    }
     const afterInsert = await feed.locator("li").count();
 
     // Hold past a full server window (~25s) so the server closes the stream
@@ -46,8 +61,9 @@ test("live strip shows a DB insert and survives the SSE window close", async ({ 
     // no clearing, no duplicate row from the replay.
     await page.waitForTimeout(31_000);
     expect(await feed.locator("li").count()).toBe(afterInsert);
+    // Still exactly one — the reconnect replays from Last-Event-ID and must
+    // not duplicate the row, which is the whole point of the cursor.
     await expect(inserted).toHaveCount(1);
-    await expect(feed.locator("li").first()).toContainText(marker);
   } finally {
     if (target) cleanupSyntheticCompany(target);
   }

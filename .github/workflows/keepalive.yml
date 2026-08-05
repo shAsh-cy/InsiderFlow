@@ -1,0 +1,63 @@
+name: Supabase keep-alive
+
+# WHY THIS EXISTS: Supabase pauses free projects after 7 consecutive days with
+# no database activity. A paused project answers with HTTP 540 and stays down
+# until someone clicks "Restore" in the dashboard — which means a low-traffic
+# deployment silently dies about a week after launch, and the first person to
+# notice is a visitor.
+#
+# A trivial query twice a week resets that timer. This is the single most
+# load-bearing workflow in the repo for a free-tier deploy, and the cheapest.
+#
+# It is a no-op on paid plans and on any non-Supabase Postgres (Neon, Fly,
+# self-hosted); harmless to leave enabled either way.
+#
+# Requires repo secret: DATABASE_URL.
+on:
+  schedule:
+    # Sunday and Wednesday — two touches a week means one can fail entirely
+    # and the 7-day timer still never expires.
+    - cron: "17 6 * * 0"
+    - cron: "17 6 * * 3"
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Touch the database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @insiderflow/db run keepalive
+
+      # A silent failure here is exactly the outcome this workflow exists to
+      # prevent, so make it loud.
+      - name: Report failure to the ops chat
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPS_TELEGRAM_CHAT_ID: ${{ secrets.OPS_TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$OPS_TELEGRAM_CHAT_ID" ]; then
+            curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${OPS_TELEGRAM_CHAT_ID}" \
+              -d "text=⚠️ InsiderFlow: Supabase keep-alive FAILED. The project may pause after 7 idle days (HTTP 540). Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              >/dev/null || true
+          fi

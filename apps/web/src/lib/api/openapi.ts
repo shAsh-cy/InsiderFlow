@@ -52,6 +52,11 @@ const TRADE_FILTERS: Param[] = [
   q("min_value_usd", "Minimum transaction value in USD", { type: "number" }),
   q("cluster", "Only companies where 2+ insiders bought within 14 days", { type: "boolean" }),
   q("dip", "Buys priced 5%+ below that day's close (needs price context)", { type: "boolean" }),
+  q(
+    "min_anomaly_z",
+    "Only companies whose net insider flow is at least N standard deviations from their OWN trailing baseline (see /docs/methodology)",
+    { type: "number" },
+  ),
   q("exec_only", "Officers only", { type: "boolean" }),
   q("include_superseded", "Include rows from filings replaced by amendments", {
     type: "boolean",
@@ -185,37 +190,122 @@ export const openApiSpec = {
     },
     "/api/heatmap": {
       get: {
-        summary: "Per-company buy/sell heatmap",
+        summary: "Net insider flow heatmap",
+        description:
+          "Aggregated buy/sell notional, grouped by company (default), sector, or country. " +
+          "Synthetic test fixtures (ZZ* tickers) are excluded. `mspr` is a sparse overlay from " +
+          "cached Finnhub insider sentiment and is null for most cells.",
         parameters: [
+          q("group_by", "Aggregation level (default company)", {
+            type: "string",
+            enum: ["company", "sector", "country"],
+            default: "company",
+          }),
+          q("timeframe", "Named lookback window; `days` overrides it when both are sent", {
+            type: "string",
+            enum: ["7d", "30d", "90d", "180d", "1y"],
+          }),
           q("days", "Lookback window in days (default 30)", { type: "integer", default: 30 }),
           q("market", "Two-letter market code"),
+          q("sector", "Restrict to one sector (exact match)"),
           q("relevance", "Filter by relevance", {
             type: "string",
             enum: ["routine", "opportunistic"],
           }),
-          q("limit", "Max companies (default 50)", { type: "integer", default: 50 }),
+          q("limit", "Max cells (default 50)", { type: "integer", default: 50 }),
         ],
-        responses: { "200": { description: "Aggregated USD buy/sell values per company" } },
+        responses: { "200": { description: "Aggregated USD buy/sell values per cell" } },
+      },
+    },
+    "/api/leaderboard": {
+      get: {
+        summary: "Insider performance leaderboard",
+        description:
+          "Backward-looking descriptive statistics over discretionary, non-superseded trades. " +
+          "Excess returns are measured against SPY and signed by trade direction (a well-timed " +
+          "sale scores as a win); the composite score is shrunk toward zero by sample size. " +
+          "Full formulas at /docs/methodology. INFORMATIONAL ONLY — not investment advice.",
+        parameters: [
+          q("metric", "Ranking statistic", {
+            type: "string",
+            enum: ["score", "avg_excess_90d", "hit_rate_90d", "realized"],
+            default: "score",
+          }),
+          q("min_trades", "Minimum scored trades (default 5)", { type: "integer", default: 5 }),
+          q("role", "Insider role", { type: "string", enum: ["director", "officer", "ten_pct"] }),
+          q("order", "Sort direction", { type: "string", enum: ["asc", "desc"], default: "desc" }),
+          ...PAGINATION,
+        ],
+        responses: { "200": { description: "Ranked insiders with their component statistics" } },
       },
     },
     "/api/politicians": {
       get: {
-        summary: "Politician trading disclosures (placeholder)",
+        summary: "Congressional trading disclosures (STOCK Act PTRs)",
         description:
-          "Congressional trading ingestion (Senate/House PTR filings) is not implemented yet; " +
-          "returns an empty, correctly-shaped page so clients can integrate now.",
-        parameters: PAGINATION,
-        responses: { "200": { description: "Empty paginated list (for now)" } },
+          "Periodic transaction reports filed by members of the House and Senate. " +
+          "AMOUNTS ARE RANGES: `amountMin`/`amountMax` come from the disclosed bracket and " +
+          "either may be null (the top bracket is open-ended). There is deliberately no single " +
+          "value field — the filing does not contain one. PTRs are due within 45 days of a " +
+          "transaction over $1,000, so `txnDate` may precede `disclosedAt` by weeks; `late` " +
+          "marks filings past that deadline. Source provenance: docs/politicians.md.",
+        parameters: [
+          q("ticker", "Exchange symbol, e.g. NVDA"),
+          q("politician_id", "Filter to one filer (UUID)", { type: "string", format: "uuid" }),
+          q("chamber", "Chamber", { type: "string", enum: ["house", "senate"] }),
+          q("party", "Party as disclosed"),
+          q("txn_type", "Disclosed transaction type", {
+            type: "string",
+            enum: ["purchase", "sale", "sale_partial", "sale_full", "exchange"],
+          }),
+          q("side", "Collapse sale variants into buy/sell", {
+            type: "string",
+            enum: ["buy", "sell"],
+          }),
+          q("min_amount_usd", "Matches on the disclosed UPPER bound of the bracket", {
+            type: "number",
+          }),
+          q("late_only", "Only filings past the 45-day STOCK Act deadline", { type: "boolean" }),
+          q("from", "Earliest transaction date (YYYY-MM-DD)", { type: "string", format: "date" }),
+          q("to", "Latest transaction date (YYYY-MM-DD)", { type: "string", format: "date" }),
+          q("sort", "Sort field", {
+            type: "string",
+            enum: ["disclosed_at", "txn_date", "amount"],
+            default: "disclosed_at",
+          }),
+          q("order", "Sort direction", { type: "string", enum: ["asc", "desc"], default: "desc" }),
+          ...PAGINATION,
+        ],
+        responses: { "200": { description: "Paginated disclosures" } },
       },
     },
     "/api/rss/{screen}": {
       get: {
         summary: "RSS 2.0 feed of a screen",
+        description: "Every screener preset has a feed.",
         parameters: [
           pathParam("screen", "Screen preset", {
             type: "string",
             enum: Object.keys(SCREENER_PRESETS),
           }),
+        ],
+        responses: {
+          "200": { description: "RSS 2.0 XML", content: { "application/rss+xml": {} } },
+          "404": { description: "Unknown screen" },
+        },
+      },
+    },
+    "/api/rss/politicians": {
+      get: {
+        summary: "RSS 2.0 feed of congressional disclosures",
+        description:
+          "Accepts the same filters as /api/politicians, so a reader can subscribe to one " +
+          "chamber, one ticker, or only the late filings. Ordered by disclosure date. " +
+          "Amounts are rendered as the disclosed bracket, never a point value.",
+        parameters: [
+          q("chamber", "Chamber", { type: "string", enum: ["house", "senate"] }),
+          q("ticker", "Exchange symbol"),
+          q("late_only", "Only filings past the 45-day deadline", { type: "boolean" }),
         ],
         responses: {
           "200": { description: "RSS 2.0 XML", content: { "application/rss+xml": {} } },

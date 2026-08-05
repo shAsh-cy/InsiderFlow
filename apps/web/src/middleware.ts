@@ -3,6 +3,34 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
+ * LOCALE / SESSION CACHE SAFETY — how it is actually guaranteed.
+ *
+ * Both the locale and the session live in cookies, so a shared cache serving
+ * one visitor's HTML to another would leak a Hindi page (or signed-in chrome)
+ * to the wrong person.
+ *
+ * What protects us is NOT a `Vary` header set here. Setting one is futile:
+ * Next.js rewrites `Vary` on its own responses to the RSC negotiation headers
+ * and drops anything we add. Verified against a production build —
+ * `Vary: rsc, next-router-state-tree, …`, no `Cookie`.
+ *
+ * The real guarantee is that HTML from this app is never shared-cacheable at
+ * all. The root layout reads cookies (for the session and for `getLocale()`),
+ * which makes every page dynamic, and Next marks those responses
+ * `Cache-Control: private, no-cache, no-store, must-revalidate`. `private` +
+ * `no-store` is strictly stronger than `Vary: Cookie` — a shared cache may not
+ * store the response under any key.
+ *
+ * That invariant is asserted by an e2e test ("HTML is never shared-cacheable"),
+ * so making a page cacheable — the change that would reintroduce the risk —
+ * fails the suite and forces the author to handle the locale cookie.
+ *
+ * /api/* is excluded from this matcher and is unaffected: those responses are
+ * locale-agnostic by design (also asserted by a test) and are meant to be
+ * shared-cached.
+ */
+
+/**
  * Refreshes the Supabase session cookie on navigation. Without this a
  * Server Component can read an expired token and bounce a signed-in user.
  *

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { TradeTable } from "@/components/trades/trade-table";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { defaultAlertMode } from "@/lib/alerts/policy";
 import { fetchAllPages, fetchScreener, fetchTrades } from "@/lib/api/client";
 import type { Paged, TradesParams } from "@/lib/api/client";
 import type { PageMeta, TradeRow } from "@/lib/api/queries";
@@ -40,19 +41,26 @@ export function ScreenerResults({
     setSaving(true);
     try {
       const { limit: _limit, offset: _offset, ...filters } = params;
+      // Telegram-only → instant. Nothing here is rate-capped, so batching
+      // would only add latency (see defaultAlertMode).
+      const channels = ["telegram"];
+      const mode = defaultAlertMode(channels);
       const response = await fetch("/api/me/alert-rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: preset ? `Screen: ${preset}` : "Saved screen",
           filters,
-          mode: "digest",
-          channels: ["telegram"],
+          mode,
+          channels,
         }),
       });
       if (response.ok) {
         toast.success("Saved as alert", {
-          description: "Tune delivery and quiet hours in Settings.",
+          description:
+            mode === "instant"
+              ? "Fires instantly to Telegram. Tune delivery and quiet hours in Settings."
+              : "Rolls into your daily digest. Tune delivery and quiet hours in Settings.",
         });
       } else if (response.status === 401) {
         toast.error("Sign in to save alerts");

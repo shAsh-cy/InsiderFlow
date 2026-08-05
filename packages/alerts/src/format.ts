@@ -20,6 +20,9 @@ export function formatValue(candidate: AlertCandidate): string {
 }
 
 export function tradeSummary(candidate: AlertCandidate): string {
+  // Cluster/politician alerts arrive pre-summarised — they describe a group of
+  // trades or a disclosure bracket, neither of which the sentence below fits.
+  if (candidate.headline) return candidate.headline;
   const verb =
     candidate.acquiredDisposed === "A"
       ? "bought"
@@ -34,18 +37,38 @@ export function tradeSummary(candidate: AlertCandidate): string {
   return `${candidate.insiderName}${candidate.insiderTitle ? ` (${candidate.insiderTitle})` : ""} ${verb} ${shares} ${symbol} shares — ${formatValue(candidate)}`;
 }
 
-const escapeHtml = (s: string): string =>
+/**
+ * Escape for Telegram's HTML parse mode and for email HTML.
+ *
+ * EVERY interpolation of company, insider, or user-supplied text into a
+ * rendered message must go through this. Telegram's HTML mode accepts only a
+ * small tag whitelist and rejects malformed entities with
+ * `400 Bad Request: can't parse entities` — so an unescaped `&` is not a
+ * cosmetic bug, it is a message that never sends. Issuer names carrying `&`
+ * are routine (AT&T, Procter & Gamble, Johnson & Johnson), so this fires on
+ * ordinary data with no attacker involved.
+ *
+ * Exported so every renderer in this package shares one implementation
+ * rather than each remembering to write its own.
+ */
+export const escapeHtml = (s: string): string =>
   s
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+const KIND_ICON: Record<string, string> = { cluster: "👥", politician: "🏛" };
+
 /** Telegram message (HTML parse mode). */
 export function telegramMessage(ruleName: string, candidate: AlertCandidate): string {
-  const arrow = candidate.acquiredDisposed === "D" ? "🔻" : "🟢";
+  const icon =
+    KIND_ICON[candidate.kind ?? "transaction"] ??
+    (candidate.acquiredDisposed === "D" ? "🔻" : "🟢");
+  const badge =
+    candidate.kind && candidate.kind !== "transaction" ? candidate.kind : candidate.code;
   const lines = [
-    `${arrow} <b>${escapeHtml(candidate.ticker ?? candidate.companyName)}</b> · <code>${escapeHtml(candidate.code)}</code>`,
+    `${icon} <b>${escapeHtml(candidate.ticker ?? candidate.companyName)}</b> · <code>${escapeHtml(badge)}</code>`,
     escapeHtml(tradeSummary(candidate)),
     `<i>${escapeHtml(candidate.txnDate)} · ${escapeHtml(candidate.relevance)}${candidate.is10b51 ? " · 10b5-1" : ""} · via ${escapeHtml(candidate.source)}</i>`,
     `Rule: ${escapeHtml(ruleName)}`,
@@ -58,6 +81,38 @@ export function telegramMessage(ruleName: string, candidate: AlertCandidate): st
 export interface DigestGroup {
   ruleName: string;
   candidates: AlertCandidate[];
+}
+
+/**
+ * Digest as a Telegram message — the fallback when a user has Telegram
+ * verified but no email configured.
+ *
+ * Lives here, next to the other renderers, rather than inline in dispatch.ts.
+ * It was inline, and it was the one path in the package that interpolated
+ * `ruleName`, `ticker`, and `companyName` raw into an HTML payload.
+ */
+export function digestTelegram(groups: DigestGroup[]): string {
+  const total = groups.reduce((sum, g) => sum + g.candidates.length, 0);
+  const summary = groups
+    .map((g) => {
+      const items = g.candidates
+        .map(
+          (c) =>
+            `• ${escapeHtml(c.ticker ?? c.companyName)} ${escapeHtml(
+              c.kind && c.kind !== "transaction" ? c.kind : c.code,
+            )}`,
+        )
+        .join("\n");
+      return `<b>${escapeHtml(g.ruleName)}</b>\n${items}`;
+    })
+    .join("\n\n");
+  return [
+    `📰 <b>InsiderFlow digest</b> — ${total} ${total === 1 ? "alert" : "alerts"}`,
+    "",
+    summary,
+    "",
+    "<i>Not investment advice.</i>",
+  ].join("\n");
 }
 
 /** Digest email: one send covering every pending alert for a user. */

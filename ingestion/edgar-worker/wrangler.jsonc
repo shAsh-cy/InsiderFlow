@@ -5,29 +5,49 @@
   "compatibility_date": "2025-06-01",
   // nodejs_compat lets postgres.js use cloudflare:sockets + node built-ins.
   "compatibility_flags": ["nodejs_compat"],
-  // Free plan includes cron triggers (5 per worker). Every minute keeps
-  // filing→DB latency < 2 min and drives the alert scanner; the hourly
-  // trigger flushes daily digests for users whose local digest hour has
-  // arrived. See docs/alerts.md for why the scanner rides this worker.
+  // Cloudflare's free plan allows 5 cron triggers per worker. We use 2:
+  //
+  //   * * * * *  EDGAR ingest → cluster flags → alert scan → instant dispatch
+  //              → secondary sources → price context. One minute keeps
+  //              filing→feed latency under ~2 minutes.
+  //   0 * * * *  Digest flush. HOURLY, not daily, because each user has their
+  //              own local digest hour — a daily trigger could only serve one
+  //              timezone. Takes a lease, so the GitHub Actions backstop can
+  //              run alongside it without double-sending.
+  //
+  // Cluster maintenance is deliberately folded into the 1-minute run rather
+  // than given a third trigger: it is O(rows created since its cursor), so it
+  // costs nothing on a quiet minute. Everything without a 60-second deadline
+  // (SIC backfill, price history, scoring, anomalies, PTR ingestion) runs on
+  // GitHub Actions instead — see .github/workflows/analytics.yml.
+  //
+  // That leaves 3 triggers free. See docs/alerts.md and docs/architecture.md.
   "triggers": {
     "crons": ["* * * * *", "0 * * * *"],
   },
   "vars": {
-    // Keep well under the 50 subrequests/invocation free-tier cap.
+    // Keep well under the 50 subrequests/invocation free-tier cap:
+    // 3 forms x 3 discovery pages (9) + 25 filing fetches = 34.
     "MAX_FILINGS_PER_RUN": "25",
+    "MAX_DISCOVERY_PAGES": "3",
   },
   "observability": {
     "enabled": true,
   },
-  // Secrets (set with `wrangler secret put <NAME>`, mirrored in .dev.vars for local dev):
-  //   DATABASE_URL       — Supabase transaction-pooler URL (prod) / local Postgres (dev)
-  //   EDGAR_USER_AGENT   — descriptive UA required by the SEC fair-access policy
-  //   FINNHUB_API_KEY    — optional; enables the Finnhub adapter (60 calls/min free tier)
-  //   FMP_API_KEY        — optional; enables the FMP adapter (~250 calls/day free tier)
-  //   WATCHLIST_SYMBOLS  — optional; comma-separated symbols for Finnhub/FMP
-  //   INDIA_FEED_URL     — optional; licensed NSE/BSE feed (see IndiaAdapter legal note)
-  //   SITE_URL           — public origin used in alert email links
-  //   TELEGRAM_BOT_TOKEN — primary alert channel (free, unlimited)
-  //   RESEND_API_KEY     — digest + opted-in instant email (free tier: 100/day)
-  //   RESEND_FROM        — verified sender address for Resend
+  // Secrets (set with `wrangler secret put <NAME>`, mirrored in .dev.vars for local dev).
+  // Only the first two are required; the rest each unlock one feature.
+  //   DATABASE_URL          — Supabase TRANSACTION-POOLER URL (prod) / local Postgres (dev)
+  //   EDGAR_USER_AGENT      — descriptive UA with a contact address; required by SEC fair access
+  //   SITE_URL              — public origin used in alert email links
+  //   TELEGRAM_BOT_TOKEN    — primary alert channel (free, unlimited). Use a FRESH
+  //                           production token, never one that has been in a chat or screenshot.
+  //   RESEND_API_KEY        — digest + opted-in instant email (free tier: 100/day)
+  //   RESEND_FROM           — verified sender address for Resend
+  //   ALERT_INSTANT_MAX_AGE — minutes an event may be old and still fire instantly (default 60)
+  //   FINNHUB_API_KEY       — optional; enables the Finnhub adapter (60 calls/min free tier)
+  //   FMP_API_KEY           — optional; enables the FMP adapter (~250 calls/day free tier)
+  //   WATCHLIST_SYMBOLS     — optional; comma-separated symbols for Finnhub/FMP
+  //   INDIA_FEED_URL        — optional; LICENSED NSE/BSE feed (see IndiaAdapter legal note)
+  //
+  // Full reference, including which runtime consumes each: .env.example
 }

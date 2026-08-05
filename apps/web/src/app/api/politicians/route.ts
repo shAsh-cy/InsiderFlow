@@ -1,21 +1,31 @@
+import { queryPoliticianTrades } from "@/lib/api/analytics-queries";
 import { CACHE_POLICIES, handleApi, searchParamsToObject } from "@/lib/api/http";
-import { paginationSchema } from "@/lib/api/schemas";
+import { politiciansQuerySchema } from "@/lib/api/schemas";
+import { getDb } from "@/lib/db";
 
 /**
- * Placeholder: congressional trading (Senate/House PTR filings) is a
- * separate ingestion pipeline that is not built yet. The endpoint ships
- * now with the final response shape so clients can integrate against it.
+ * Congressional trading (STOCK Act periodic transaction reports).
+ *
+ * This shipped in Phase 4 as a typed placeholder returning an empty `data`
+ * array plus a `note`. The response CONTRACT is unchanged — `data` and `meta`
+ * have the same shape and the same names, and `note` is still present — so a
+ * client written against the placeholder keeps working; it just starts
+ * receiving rows.
+ *
+ * AMOUNTS ARE RANGES. `amountMin` / `amountMax` come straight from the
+ * disclosed bracket and either may be null (the top bracket is open-ended).
+ * There is deliberately no single `value` field: the filing does not contain
+ * one, and inventing a midpoint would be fabricating data.
  */
 export async function GET(req: Request): Promise<Response> {
   return handleApi(req, CACHE_POLICIES.politicians, async () => {
-    const { limit, offset } = paginationSchema.parse(
-      searchParamsToObject(new URL(req.url).searchParams),
-    );
+    const query = politiciansQuerySchema.parse(searchParamsToObject(new URL(req.url).searchParams));
+    const { data, meta } = await queryPoliticianTrades(getDb(), query);
     return {
       json: {
-        data: [],
-        meta: { limit, offset, count: 0, hasMore: false, nextOffset: null },
-        note: "Politician trading ingestion (Senate/House PTR filings) is planned but not yet implemented.",
+        data,
+        meta,
+        note: "Amounts are the disclosed STOCK Act brackets (amountMin/amountMax); filings contain no exact figure. PTRs are due within 45 days of a transaction over $1,000, so txnDate may precede disclosedAt by weeks. Research/education only — not investment advice.",
       },
     };
   });
