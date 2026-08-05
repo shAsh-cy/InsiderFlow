@@ -114,14 +114,39 @@ or `BYPASSRLS`.
 
 ## Environment
 
-| Variable                        | Where           | Purpose                                       |
-| ------------------------------- | --------------- | --------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | web             | Supabase project URL. Empty ⇒ auth disabled.  |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web             | Public anon key (safe in the browser).        |
-| `DATABASE_URL`                  | web + ingestion | Our Postgres. Holds **all** application data. |
+| Variable                        | Where           | Purpose                                                                |
+| ------------------------------- | --------------- | ---------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | web             | Supabase project URL. Empty ⇒ auth disabled. Public by design.         |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web             | Public anon key (safe in the browser, see docs/security.md).           |
+| `APP_DATABASE_URL`              | web             | The `insiderflow_app` role. RLS-bound. What the request path must use. |
+| `DATABASE_URL`                  | ingestion, jobs | Admin/owner connection. Migrations and cron jobs only.                 |
+| `APP_DB_PASSWORD`               | local setup, CI | Read by `pnpm db:app-role` when issuing the app role's login.          |
 
 Enable GitHub OAuth and email magic links in the Supabase dashboard, with
 `https://<your-deployment>/auth/callback` as the redirect URL.
+
+To run `e2e/auth-isolation.spec.ts` — the cross-user exploitation suite — also
+enable **email + password** and turn **off** email confirmation on the dev
+project, so the tests can mint two real users. Without that they skip, and say
+so in the output rather than passing silently.
+
+## Sessions, tokens, and redirects
+
+- **Identity is always validated.** Server code derives the user from
+  `supabase.auth.getUser()`, which checks the JWT against the Auth server.
+  `getSession()` returns whatever is in the cookie without verifying it; an
+  ESLint rule (`no-restricted-syntax` in `apps/web/eslint.config.mjs`) makes
+  using it for identity a build error rather than a code-review question.
+- **Post-login redirects are shape-checked.** `?next=` goes through
+  `safeRedirectPath`, which accepts a same-origin path and nothing else.
+  `new URL(next, origin)` — the previous implementation — returns an absolute
+  `next` verbatim and ignores the base, which was a live open redirect at the
+  moment of highest user trust.
+- **Every callback failure is explained.** Cancelled consent, a missing code,
+  an expired or reused magic link, and a rejected exchange each land on
+  `/login` with their own message. None of them is a 500.
+- **Sign-out clears cookies**, not just client state; an e2e test asserts the
+  signed-out contract returns after `POST /auth/signout`.
 
 ## Sign-in flow
 

@@ -2,16 +2,31 @@
 
 import { KeyRound, Loader2, Mail } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getSupabaseBrowserClient, isAuthConfiguredClient } from "@/lib/auth/supabase-browser";
+import { safeRedirectPath } from "@/lib/auth/redirect";
+
+import { CallbackNotice } from "./callback-notice";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const configured = isAuthConfiguredClient();
+
+  /**
+   * Where to land after sign-in. Validated on the way out as well as on the
+   * way back in: the callback re-checks it, but a link the app itself hands to
+   * an OAuth provider should never contain a hostile value in the first place.
+   */
+  const callbackUrl = (): string => {
+    const next = safeRedirectPath(new URLSearchParams(window.location.search).get("next"));
+    const url = new URL("/auth/callback", window.location.origin);
+    if (next !== "/settings") url.searchParams.set("next", next);
+    return url.toString();
+  };
 
   const sendMagicLink = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -20,7 +35,7 @@ export default function LoginPage() {
     setStatus("sending");
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo: callbackUrl() },
     });
     if (error) {
       setStatus("error");
@@ -36,7 +51,7 @@ export default function LoginPage() {
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: "github",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: callbackUrl() },
     });
   };
 
@@ -53,6 +68,11 @@ export default function LoginPage() {
           Accounts sync your watchlist across devices and power alerts. Browsing stays free and
           anonymous — you never need one to read the data.
         </p>
+
+        {/* useSearchParams needs a boundary; a failed sign-in must still render. */}
+        <Suspense fallback={null}>
+          <CallbackNotice />
+        </Suspense>
 
         {!configured ? (
           <p className="mt-6 rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-xs leading-relaxed text-amber-200/90">

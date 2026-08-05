@@ -91,3 +91,50 @@ test("the telegram webhook rejects unsigned traffic when a secret is set", async
   // 403 when TELEGRAM_WEBHOOK_SECRET is configured; 200 (ignored) otherwise.
   expect([200, 403]).toContain(response.status());
 });
+
+/**
+ * /auth/callback — the route a user lands on immediately after clicking a
+ * sign-in link, and therefore the one where a failure is most confusing and a
+ * redirect is most trusted. These hold in both deployment states.
+ */
+test.describe("auth callback", () => {
+  test("explains a cancelled sign-in instead of erroring", async ({ page }) => {
+    const response = await page.goto(
+      "/auth/callback?error=access_denied&error_description=The%20user%20denied%20the%20request",
+    );
+    expect(response?.status(), "a denied consent is not a server error").toBe(200);
+    await expect(page).toHaveURL(/\/login/);
+    // Unconfigured deployments report their own state first, which is also fine.
+    await expect(page.getByTestId("login-error")).toBeVisible();
+  });
+
+  test("explains a link opened without its code", async ({ page }) => {
+    const response = await page.goto("/auth/callback");
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveURL(/\/login\?error=/);
+    await expect(page.getByTestId("login-error")).toBeVisible();
+  });
+
+  test("explains an expired magic link in words a user can act on", async ({ page }) => {
+    await page.goto("/login?error=expired");
+    await expect(page.getByTestId("login-error")).toContainText(/expired|single-use/i);
+  });
+
+  // `new URL(next, origin)` returns `next` verbatim when it is absolute, so
+  // this was a live open redirect on the highest-trust route in the app.
+  for (const hostile of [
+    "https://evil.example/phish",
+    "//evil.example",
+    "/\\evil.example",
+    "javascript:alert(1)",
+  ]) {
+    test(`never redirects off-origin for next=${hostile}`, async ({ page }) => {
+      await page.goto(`/auth/callback?code=zz-not-a-real-code&next=${encodeURIComponent(hostile)}`);
+      const landed = new URL(page.url());
+      expect(landed.hostname, `must stay on this origin, landed on ${page.url()}`).toBe(
+        "localhost",
+      );
+      expect(page.url()).not.toContain("evil.example");
+    });
+  }
+});
