@@ -60,12 +60,35 @@ transactions per filing        ≈ 1.5–2.5   (multi-line filings are common)
 → transactions                 ≈ 1,000–2,000 rows/day
                                ≈ 250,000–500,000 rows/year
 
-bytes per transaction row       ≈ 400 B data + ~250 B across 8 indexes
+bytes per transaction row       ≈ 400 B data + ~250 B across 8 indexes  [ESTIMATE]
 → transactions table            ≈ 450 MB/year at the high end
-filings                         ≈ 200k rows/year × ~300 B ≈ 60 MB/year
+filings                         ≈ 200k rows/year × ~300 B ≈ 60 MB/year   [ESTIMATE]
 daily_prices                    ≈ 250 rows/symbol/year — 5,000 symbols ≈ 1.2M rows ≈ 120 MB
 trade_returns                   ≈ 1 row per scored trade ≈ 15% of transactions
 ```
+
+> **The per-row figures are estimates, not measurements.** They come from the
+> column types and index list, not from a populated database. A pre-release
+> audit tried to check them and could not: at 25 seeded rows
+> `pg_total_relation_size / count` reports ~11 kB per row, because the number
+> is dominated by fixed 8 kB index pages that have barely been filled. The
+> estimate is plausible at that volume but neither confirmed nor refuted.
+>
+> Re-measure at **≥100,000 transactions** — a month of full-market coverage,
+> or a backfill — and correct these lines with what you find:
+>
+> ```sql
+> SELECT pg_size_pretty(pg_relation_size('transactions'))            AS heap,
+>        pg_size_pretty(pg_indexes_size('transactions'))             AS indexes,
+>        pg_relation_size('transactions') / count(*)                 AS bytes_per_row,
+>        pg_indexes_size('transactions') / count(*)                  AS index_bytes_per_row,
+>        count(*)                                                    AS rows
+> FROM transactions;
+> ```
+>
+> Everything below this box — the free-tier thresholds and the timing of each
+> upgrade — moves proportionally if the real figure differs. Treat the months
+> as an order of magnitude, and watch the actual size query above instead.
 
 **Roughly 500–700 MB per year of full-market US coverage**, dominated by
 `transactions` and its indexes. So:
