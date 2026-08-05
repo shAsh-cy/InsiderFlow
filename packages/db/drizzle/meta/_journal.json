@@ -71,6 +71,13 @@
       "when": 1785920000000,
       "tag": "0009_rls_enforced",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785939293248,
+      "tag": "0010_pending_filings_queue",
+      "breakpoints": true
     }
   ]
 }

@@ -22,6 +22,7 @@ import type {
 } from "@insiderflow/core";
 import {
   and,
+  asc,
   companies,
   eq,
   filings,
@@ -29,7 +30,10 @@ import {
   ingestionState,
   insiders,
   isNull,
+  lt,
   ne,
+  pendingFilings,
+  PENDING_FILING_MAX_ATTEMPTS,
   sql,
   transactions,
 } from "@insiderflow/db";
@@ -400,6 +404,11 @@ export interface PipelineOptions {
   requestDelayMs?: number;
   /** Cap on filings fetched per run (Workers free tier allows 50 subrequests/invocation). */
   maxFilings?: number;
+  /**
+   * How many 100-item feed pages discovery may walk back per form. Bounded by
+   * the same subrequest budget as maxFilings; see DISCOVERY_MAX_PAGES.
+   */
+  maxDiscoveryPages?: number;
   /** Which ownership form feeds to poll. */
   forms?: readonly string[];
   log?: Logger;
@@ -414,10 +423,43 @@ export interface IngestStats {
   transactionsDeduped: number;
   skippedEmpty: number;
   errors: number;
+  /** Filings still queued after this run. The number the old code threw away. */
+  backlog: number;
+}
+
+export interface DiscoveryStats {
+  pagesFetched: number;
+  refsSeen: number;
+  enqueued: number;
+  alreadyKnown: number;
+  /** True when a form's window was still all-new at the last page fetched. */
+  truncated: boolean;
 }
 
 const DEFAULT_FORMS = ["4", "3", "5"] as const;
 const CURSOR_KEY = "edgar:cursor";
+
+/** Feed page size. EDGAR's `getcurrent` window tops out at 100 per request. */
+const FEED_PAGE_SIZE = 100;
+/**
+ * How far back discovery will page in one run.
+ *
+ * Bounded by the Workers free tier's 50 subrequests per invocation: 3 forms ×
+ * 3 pages = 9, leaving room for the 25-filing drain. A burst deeper than 300
+ * filings per form is not lost — the next tick a minute later picks up where
+ * this one stopped, because everything found is already in the queue.
+ */
+const DISCOVERY_MAX_PAGES = 3;
+/**
+ * Attempts before a queued filing is left alone.
+ *
+ * A filing EDGAR will never serve (withdrawn, permanently 404) must not sit at
+ * the head of an oldest-first queue forever, or it blocks everything behind it
+ * on every run. The row is kept, not deleted: the backlog metric excludes it,
+ * but an operator can still see what got stuck and why. Shared with
+ * /api/health, which must exclude the same rows.
+ */
+const MAX_FILING_ATTEMPTS = PENDING_FILING_MAX_ATTEMPTS;
 
 function resolveOptions(opts: PipelineOptions) {
   return {
@@ -433,24 +475,323 @@ function resolveOptions(opts: PipelineOptions) {
   };
 }
 
-/** Poll the EDGAR "current events" feeds and ingest anything new. */
-export async function ingestFromFeed(opts: PipelineOptions): Promise<IngestStats> {
-  const { fetchFn, requestDelayMs, forms, log, headers } = resolveOptions(opts);
-  const limiter = new RateLimiter(requestDelayMs);
+/**
+ * Persist filing refs to the pending queue.
+ *
+ * Refs already in `filings` are dropped (nothing to do); the rest are inserted
+ * with ON CONFLICT DO NOTHING, so a ref seen twice — by two feed pages, by the
+ * feed and the backfill, by two overlapping runs — enqueues once.
+ */
+export async function enqueueFilingRefs(
+  db: Database,
+  refs: EdgarFilingRef[],
+  via: "feed" | "backfill" | "reconcile" = "feed",
+): Promise<{ enqueued: number; alreadyKnown: number }> {
+  if (refs.length === 0) return { enqueued: 0, alreadyKnown: 0 };
 
-  const refs: EdgarFilingRef[] = [];
-  for (const form of forms) {
-    await limiter.wait();
-    const response = await fetchWithRetry(fetchFn, edgarCurrentFeedUrl(form), headers, { log });
-    refs.push(...parseCurrentFeed(await response.text()));
+  const byAccession = new Map<string, EdgarFilingRef>();
+  for (const ref of refs) {
+    if (!byAccession.has(ref.accessionNo)) byAccession.set(ref.accessionNo, ref);
   }
-  return ingestFilingRefs(refs, opts, limiter);
+  const unique = [...byAccession.values()];
+
+  const known = new Set<string>();
+  const accessions = unique.map((r) => r.accessionNo);
+  for (let i = 0; i < accessions.length; i += 200) {
+    const rows = await db
+      .select({ accessionNo: filings.accessionNo })
+      .from(filings)
+      .where(inArray(filings.accessionNo, accessions.slice(i, i + 200)));
+    for (const row of rows) known.add(row.accessionNo);
+  }
+
+  const fresh = unique.filter((r) => !known.has(r.accessionNo));
+  let enqueued = 0;
+  for (let i = 0; i < fresh.length; i += 200) {
+    const chunk = fresh.slice(i, i + 200);
+    const inserted = await db
+      .insert(pendingFilings)
+      .values(
+        chunk.map((r) => ({
+          accessionNo: r.accessionNo,
+          cik: r.cik,
+          formType: r.formType,
+          filedAt: r.filedAt ? new Date(r.filedAt) : null,
+          sourceUrl: r.sourceUrl,
+          discoveredVia: via,
+        })),
+      )
+      .onConflictDoNothing({ target: pendingFilings.accessionNo })
+      .returning({ accessionNo: pendingFilings.accessionNo });
+    enqueued += inserted.length;
+  }
+
+  return { enqueued, alreadyKnown: unique.length - fresh.length };
 }
 
 /**
- * Ingest a batch of EDGAR filing refs (live feed or backfill index):
- * diff against filings already in the DB, fetch + normalize the new ones,
- * and persist idempotently.
+ * Walk the EDGAR "current events" feeds and queue everything not yet seen.
+ *
+ * Pages BACKWARDS until a page yields nothing new, which means this run has
+ * caught up with what is already known. The single-page version could only
+ * ever see the newest 100 filings per form: once the unprocessed remainder
+ * grew past that window the oldest ones scrolled out and were gone, with no
+ * cursor to go back for them.
+ *
+ * Discovery deliberately writes rows and fetches nothing else. Losing a filing
+ * now requires losing a database row.
+ */
+export async function discoverFilings(
+  opts: PipelineOptions,
+  limiter?: RateLimiter,
+): Promise<DiscoveryStats> {
+  const { db } = opts;
+  const { fetchFn, requestDelayMs, forms, log, headers } = resolveOptions(opts);
+  const rate = limiter ?? new RateLimiter(requestDelayMs);
+  const maxPages = opts.maxDiscoveryPages ?? DISCOVERY_MAX_PAGES;
+
+  const stats: DiscoveryStats = {
+    pagesFetched: 0,
+    refsSeen: 0,
+    enqueued: 0,
+    alreadyKnown: 0,
+    truncated: false,
+  };
+
+  for (const form of forms) {
+    for (let page = 0; page < maxPages; page++) {
+      await rate.wait();
+      const url = edgarCurrentFeedUrl(form, FEED_PAGE_SIZE, page * FEED_PAGE_SIZE);
+      const response = await fetchWithRetry(fetchFn, url, headers, { log });
+      const refs = parseCurrentFeed(await response.text());
+      stats.pagesFetched++;
+      stats.refsSeen += refs.length;
+      if (refs.length === 0) break;
+
+      const result = await enqueueFilingRefs(db, refs, "feed");
+      stats.enqueued += result.enqueued;
+      stats.alreadyKnown += result.alreadyKnown;
+
+      // Nothing new on this page → we have overlapped what we already hold,
+      // and everything older is behind it. Stop paging this form.
+      if (result.enqueued === 0) break;
+
+      // Still finding new filings at the last page we are allowed to fetch:
+      // the window is deeper than this run can reach. Not data loss — the
+      // queue holds what we found and the next tick resumes — but worth saying.
+      if (page === maxPages - 1) {
+        stats.truncated = true;
+        log("edgar_discovery_truncated", { form, pages: maxPages, refsSeen: stats.refsSeen });
+      }
+    }
+  }
+
+  log("edgar_discovery", { ...stats });
+  return stats;
+}
+
+/** Queue depth, and the age of the oldest thing waiting. */
+export async function pendingBacklog(
+  db: Database,
+): Promise<{ depth: number; stuck: number; oldestDiscoveredAt: Date | null }> {
+  const [row] = await db
+    .select({
+      depth:
+        sql`count(*) filter (where ${pendingFilings.attempts} < ${MAX_FILING_ATTEMPTS})`.mapWith(
+          Number,
+        ),
+      stuck:
+        sql`count(*) filter (where ${pendingFilings.attempts} >= ${MAX_FILING_ATTEMPTS})`.mapWith(
+          Number,
+        ),
+      oldestDiscoveredAt: sql<Date | null>`min(${pendingFilings.discoveredAt}) filter (where ${pendingFilings.attempts} < ${MAX_FILING_ATTEMPTS})`,
+    })
+    .from(pendingFilings);
+  return {
+    depth: row?.depth ?? 0,
+    stuck: row?.stuck ?? 0,
+    oldestDiscoveredAt: row?.oldestDiscoveredAt ? new Date(row.oldestDiscoveredAt) : null,
+  };
+}
+
+/**
+ * Fetch and ingest queued filings, OLDEST FIRST.
+ *
+ * Oldest-first is the durability property, not a preference: a newest-first
+ * drain under sustained load starves the tail indefinitely, which is the same
+ * data loss the queue exists to prevent, just slower.
+ */
+export async function drainPendingFilings(
+  opts: PipelineOptions,
+  limiter?: RateLimiter,
+): Promise<IngestStats> {
+  const { db } = opts;
+  const { requestDelayMs, maxFilings, log } = resolveOptions(opts);
+  const rate = limiter ?? new RateLimiter(requestDelayMs);
+
+  const queued = await db
+    .select()
+    .from(pendingFilings)
+    .where(lt(pendingFilings.attempts, MAX_FILING_ATTEMPTS))
+    .orderBy(asc(pendingFilings.filedAt), asc(pendingFilings.discoveredAt))
+    .limit(maxFilings);
+
+  const stats = emptyStats();
+  stats.discovered = queued.length;
+
+  for (const row of queued) {
+    const ref: EdgarFilingRef = {
+      accessionNo: row.accessionNo,
+      cik: row.cik,
+      formType: row.formType,
+      filedAt: row.filedAt ? row.filedAt.toISOString() : null,
+      sourceUrl: row.sourceUrl,
+    };
+    const outcome = await processFilingRef(ref, opts, rate, stats);
+    if (outcome.ok) {
+      // Done with it either way: ingested, or definitively nothing to ingest.
+      await db.delete(pendingFilings).where(eq(pendingFilings.accessionNo, row.accessionNo));
+    } else {
+      await db
+        .update(pendingFilings)
+        .set({
+          attempts: sql`${pendingFilings.attempts} + 1`,
+          lastError: outcome.error ?? null,
+        })
+        .where(eq(pendingFilings.accessionNo, row.accessionNo));
+    }
+  }
+
+  const backlog = await pendingBacklog(db);
+  stats.backlog = backlog.depth;
+  if (backlog.stuck > 0) {
+    log("edgar_filings_stuck", { count: backlog.stuck, attempts: MAX_FILING_ATTEMPTS });
+  }
+  await writeCursor(db, stats);
+  return stats;
+}
+
+/**
+ * One cron tick: discover everything new, then drain what the cap allows.
+ *
+ * The two halves are independent on purpose. Discovery is cheap and must never
+ * be skipped; processing is expensive and is what the cap protects.
+ */
+export async function ingestFromFeed(opts: PipelineOptions): Promise<IngestStats> {
+  const { requestDelayMs } = resolveOptions(opts);
+  const limiter = new RateLimiter(requestDelayMs);
+  await discoverFilings(opts, limiter);
+  return drainPendingFilings(opts, limiter);
+}
+
+/** A fresh, zeroed stats object. */
+function emptyStats(): IngestStats {
+  return {
+    discovered: 0,
+    alreadyKnown: 0,
+    ingested: 0,
+    transactionsInserted: 0,
+    transactionsDeduped: 0,
+    skippedEmpty: 0,
+    errors: 0,
+    backlog: 0,
+  };
+}
+
+/** Heartbeat + last-run summary, read by /api/health and ops-check. */
+async function writeCursor(db: Database, stats: IngestStats): Promise<void> {
+  const value = { lastRunAt: new Date().toISOString(), ...stats };
+  await db
+    .insert(ingestionState)
+    .values({ key: CURSOR_KEY, value })
+    .onConflictDoUpdate({
+      target: ingestionState.key,
+      set: { value, updatedAt: new Date() },
+    });
+}
+
+/**
+ * Fetch, parse and persist ONE filing. The single place that knows how to turn
+ * a ref into rows — shared by the queue drain and the bulk backfill, so the
+ * two paths cannot drift.
+ *
+ * Returns false only when the filing should be retried. A filing with no
+ * ownership XML is a successful outcome: there is nothing to ingest and there
+ * never will be, so retrying it would wedge the queue.
+ */
+async function processFilingRef(
+  ref: EdgarFilingRef,
+  opts: PipelineOptions,
+  rate: RateLimiter,
+  stats: IngestStats,
+): Promise<{ ok: boolean; error?: string }> {
+  const { db } = opts;
+  const { fetchFn, log, headers } = resolveOptions(opts);
+  try {
+    await rate.wait();
+    const url = edgarSubmissionTextUrl(ref.cik, ref.accessionNo);
+    const response = await fetchWithRetry(fetchFn, url, headers, { log });
+    const parsed = parseEdgarSubmission(ref, await response.text());
+
+    if (!parsed) {
+      stats.skippedEmpty++;
+      log("edgar_no_ownership_xml", { accessionNo: ref.accessionNo });
+      return { ok: true };
+    }
+
+    // Holdings-only filings (most Form 3s) still get a filing row so the
+    // DB diff marks them known; trade-bearing ones go through the full path.
+    const result =
+      parsed.transactions.length > 0
+        ? await persistUnified(
+            parsed.transactions,
+            { db, log, fxRateLookup: opts.fxRateLookup },
+            { rawXmlUrl: url },
+          )
+        : await persistFilingOnly(db, parsed, url);
+    stats.transactionsInserted += result.transactionsInserted;
+    stats.transactionsDeduped += result.transactionsDeduped;
+
+    if (parsed.filing.formType.includes("/A") && parsed.filing.originalFiledDate) {
+      await linkAmendment(
+        db,
+        parsed.filing.accessionNo,
+        parsed.filing.originalFiledDate,
+        parsed.insider.externalKey,
+        result.dedupedKeys,
+        log,
+      );
+    }
+
+    if (result.filingsCreated > 0 || result.transactionsInserted > 0) {
+      stats.ingested++;
+      log("filing_ingested", {
+        accessionNo: ref.accessionNo,
+        formType: ref.formType,
+        issuer: parsed.company.ticker ?? parsed.company.name,
+        transactions: result.transactionsInserted,
+      });
+    } else {
+      stats.alreadyKnown++;
+    }
+    return { ok: true };
+  } catch (error) {
+    stats.errors++;
+    const message = error instanceof Error ? error.message : String(error);
+    log("filing_error", { accessionNo: ref.accessionNo, message });
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Ingest a batch of EDGAR filing refs directly — the BACKFILL path, where the
+ * caller already holds a complete list from a daily full-index and there is no
+ * rolling window to fall out of.
+ *
+ * The live path does NOT use this: it enqueues (enqueueFilingRefs) and drains
+ * (drainPendingFilings) so a burst larger than the per-run cap becomes a
+ * visible queue rather than silent loss. Anything this call cannot reach
+ * within `maxFilings` is enqueued instead of dropped.
  */
 export async function ingestFilingRefs(
   allRefs: EdgarFilingRef[],
@@ -458,7 +799,7 @@ export async function ingestFilingRefs(
   limiter?: RateLimiter,
 ): Promise<IngestStats> {
   const { db } = opts;
-  const { fetchFn, requestDelayMs, maxFilings, log, headers } = resolveOptions(opts);
+  const { requestDelayMs, maxFilings, log } = resolveOptions(opts);
   const rate = limiter ?? new RateLimiter(requestDelayMs);
 
   // Dedupe refs (feeds list a filing once per associated company/owner).
@@ -468,15 +809,8 @@ export async function ingestFilingRefs(
   }
   const refs = [...byAccession.values()];
 
-  const stats: IngestStats = {
-    discovered: refs.length,
-    alreadyKnown: 0,
-    ingested: 0,
-    transactionsInserted: 0,
-    transactionsDeduped: 0,
-    skippedEmpty: 0,
-    errors: 0,
-  };
+  const stats = emptyStats();
+  stats.discovered = refs.length;
 
   // Diff against the DB — the accession_no unique index is the source of truth.
   const known = new Set<string>();
@@ -494,76 +828,22 @@ export async function ingestFilingRefs(
   stats.alreadyKnown = refs.length - fresh.length;
   const batch = fresh.slice(0, maxFilings);
   if (fresh.length > batch.length) {
-    log("edgar_batch_capped", { pending: fresh.length - batch.length, cap: maxFilings });
+    // Not dropped: queued. This log line used to be the only trace of filings
+    // that were then forgotten.
+    const overflow = fresh.slice(maxFilings);
+    const { enqueued } = await enqueueFilingRefs(db, overflow, "backfill");
+    log("edgar_batch_capped", { queued: enqueued, cap: maxFilings });
   }
 
   for (const ref of batch) {
-    try {
-      await rate.wait();
-      const url = edgarSubmissionTextUrl(ref.cik, ref.accessionNo);
-      const response = await fetchWithRetry(fetchFn, url, headers, { log });
-      const parsed = parseEdgarSubmission(ref, await response.text());
-
-      if (!parsed) {
-        stats.skippedEmpty++;
-        log("edgar_no_ownership_xml", { accessionNo: ref.accessionNo });
-        continue;
-      }
-
-      // Holdings-only filings (most Form 3s) still get a filing row so the
-      // DB diff marks them known; trade-bearing ones go through the full path.
-      const result =
-        parsed.transactions.length > 0
-          ? await persistUnified(
-              parsed.transactions,
-              { db, log, fxRateLookup: opts.fxRateLookup },
-              { rawXmlUrl: url },
-            )
-          : await persistFilingOnly(db, parsed, url);
-      stats.transactionsInserted += result.transactionsInserted;
-      stats.transactionsDeduped += result.transactionsDeduped;
-
-      if (parsed.filing.formType.includes("/A") && parsed.filing.originalFiledDate) {
-        await linkAmendment(
-          db,
-          parsed.filing.accessionNo,
-          parsed.filing.originalFiledDate,
-          parsed.insider.externalKey,
-          result.dedupedKeys,
-          log,
-        );
-      }
-
-      if (result.filingsCreated > 0 || result.transactionsInserted > 0) {
-        stats.ingested++;
-        log("filing_ingested", {
-          accessionNo: ref.accessionNo,
-          formType: ref.formType,
-          issuer: parsed.company.ticker ?? parsed.company.name,
-          transactions: result.transactionsInserted,
-        });
-      } else {
-        stats.alreadyKnown++;
-      }
-    } catch (error) {
-      stats.errors++;
-      log("filing_error", {
-        accessionNo: ref.accessionNo,
-        message: error instanceof Error ? error.message : String(error),
-      });
+    const result = await processFilingRef(ref, opts, rate, stats);
+    if (!result.ok) {
+      // Retry later rather than losing it, same as the live path.
+      await enqueueFilingRefs(db, [ref], "backfill");
     }
   }
 
-  await db
-    .insert(ingestionState)
-    .values({ key: CURSOR_KEY, value: { lastRunAt: new Date().toISOString(), ...stats } })
-    .onConflictDoUpdate({
-      target: ingestionState.key,
-      set: {
-        value: { lastRunAt: new Date().toISOString(), ...stats },
-        updatedAt: new Date(),
-      },
-    });
-
+  stats.backlog = (await pendingBacklog(db)).depth;
+  await writeCursor(db, stats);
   return stats;
 }

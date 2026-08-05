@@ -69,6 +69,7 @@ async function tick(): Promise<void> {
         db: handle.db,
         userAgent: userAgent!,
         maxFilings: env.MAX_FILINGS_PER_RUN ? Number(env.MAX_FILINGS_PER_RUN) : undefined,
+        maxDiscoveryPages: env.MAX_DISCOVERY_PAGES ? Number(env.MAX_DISCOVERY_PAGES) : undefined,
       });
       jsonLogger("cron_complete", { durationMs: Date.now() - started, ...stats });
     } catch (error) {

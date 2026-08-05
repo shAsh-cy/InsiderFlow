@@ -1,8 +1,21 @@
 name: Backfill
 
-# Manual backfill of EDGAR ownership filings from the daily full-index.
+# Backfill of EDGAR ownership filings from the daily full-index — and, on a
+# nightly schedule, RECONCILIATION of the live feed path against it.
+#
+# The reconcile job is the point of the schedule. The daily index is a complete
+# list of what EDGAR published; the live feed is a rolling window the worker
+# samples. Anything in the index that is neither ingested nor queued is a
+# filing the live path missed. The job reports the count and a sample before
+# repairing it, because a job that silently fixes gaps hides the defect that
+# produced them.
+#
 # Requires repo secrets: DATABASE_URL (Supabase pooler URL), EDGAR_USER_AGENT.
 on:
+  schedule:
+    # 07:20 UTC — after the nightly analytics window, well clear of the US
+    # filing day, and on a minute nobody else uses (GitHub throttles :00).
+    - cron: "20 7 * * *"
   workflow_dispatch:
     inputs:
       days:
@@ -19,7 +32,30 @@ on:
         default: "5000"
 
 jobs:
+  # Nightly audit of the live path. Never ingests: it reports what is missing
+  # and queues it for the worker to fetch on its normal cadence.
+  reconcile:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Reconcile the last 3 days against the daily full-index
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
+        # `run` is required: with the implicit form pnpm swallows the flags.
+        run: pnpm --filter @insiderflow/edgar-worker run backfill -- --days=3 --forms=4,3,5 --reconcile
+
   backfill:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:

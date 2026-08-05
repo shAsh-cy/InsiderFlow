@@ -26,8 +26,10 @@
     "crons": ["* * * * *", "0 * * * *"],
   },
   "vars": {
-    // Keep well under the 50 subrequests/invocation free-tier cap.
+    // Keep well under the 50 subrequests/invocation free-tier cap:
+    // 3 forms x 3 discovery pages (9) + 25 filing fetches = 34.
     "MAX_FILINGS_PER_RUN": "25",
+    "MAX_DISCOVERY_PAGES": "3",
   },
   "observability": {
     "enabled": true,

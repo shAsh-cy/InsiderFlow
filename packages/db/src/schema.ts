@@ -728,6 +728,59 @@ export const ingestionState = pgTable("ingestion_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Filings discovered but not yet fetched — the durability boundary of the
+ * whole ingestion path.
+ *
+ * WHY IT EXISTS. Discovery used to be inseparable from processing: one poll of
+ * the EDGAR "current events" feed (a rolling window of the 100 most recent
+ * filings) fetched at most 25 of them and forgot the rest. Under sustained
+ * arrival above 25/min the unprocessed remainder grew until it exceeded the
+ * 100-item window, at which point the oldest unprocessed filings scrolled out
+ * of the feed and were NEVER SEEN AGAIN — there was no cursor to go back for
+ * them. EDGAR Form 4 volume clusters heavily after the US close, so that was a
+ * plausible daily condition, not a pathological one.
+ *
+ * Splitting the two makes losing a filing require losing a database row.
+ * Discovery pages the feed backwards until it overlaps what is already known
+ * and writes EVERY new ref here; processing drains this table oldest-first at
+ * whatever the per-run cap allows. A burst becomes a queue with a visible
+ * depth (see /api/health) instead of silent data loss.
+ *
+ * Rows are deleted on successful ingestion, so depth IS the backlog.
+ */
+/**
+ * Attempts before a queued filing stops being retried.
+ *
+ * Shared between the worker (which enforces it) and /api/health (which must
+ * exclude retired rows from the backlog, or a single permanently-404 filing
+ * makes the queue look eternally behind).
+ */
+export const PENDING_FILING_MAX_ATTEMPTS = 5;
+
+export const pendingFilings = pgTable(
+  "pending_filings",
+  {
+    /** Canonical dashed accession number — the same identity `filings` uses. */
+    accessionNo: text("accession_no").primaryKey(),
+    cik: text("cik").notNull(),
+    formType: text("form_type").notNull(),
+    /** From the feed's <updated>, when present. Drives oldest-first ordering. */
+    filedAt: timestamp("filed_at", { withTimezone: true }),
+    sourceUrl: text("source_url"),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Bounded: a filing EDGAR will never serve must not block the queue forever. */
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    /** Where the ref came from: "feed" | "backfill" | "reconcile". */
+    discoveredVia: text("discovered_via").notNull().default("feed"),
+  },
+  (t) => [
+    // The drain reads oldest-first among rows that have not exhausted retries.
+    index("pending_filings_queue_idx").on(t.attempts, t.filedAt),
+  ],
+);
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type Insider = typeof insiders.$inferSelect;

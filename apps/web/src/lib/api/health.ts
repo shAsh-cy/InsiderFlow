@@ -18,6 +18,8 @@
 import {
   clusterFlagStatus,
   companies,
+  pendingFilings,
+  PENDING_FILING_MAX_ATTEMPTS,
   desc,
   eq,
   filings,
@@ -54,6 +56,21 @@ export interface HealthReport {
   /** Seconds since the newest EDGAR filing acceptance time we hold. */
   filingAgeSeconds: number | null;
   latestFilingAt: string | null;
+  /**
+   * Filings discovered but not yet fetched, and how long the oldest has
+   * waited.
+   *
+   * The number the previous version threw away. Discovery used to be
+   * inseparable from processing: whatever a run could not fetch was simply
+   * forgotten, so the only trace of a burst was a log line. With the queue,
+   * depth IS the backlog and this is the signal that the drain has stopped
+   * keeping up — the difference between "the cron ran" and "the cron is
+   * winning".
+   */
+  ingestBacklog: number;
+  ingestBacklogOldestSeconds: number | null;
+  /** Queued filings that exhausted their retries — stuck, not merely waiting. */
+  ingestStuck: number;
   sources: SourceHealth[];
   checks: HealthCheck[];
   counts: {
@@ -114,6 +131,12 @@ const INGEST_RUN_STALE_SECONDS = 15 * 60;
 const FILING_STALE_SECONDS = 72 * 3600;
 /** The alert scanner rides the same 1-minute cron. */
 const SCANNER_STALE_SECONDS = 15 * 60;
+/**
+ * How long a discovered filing may sit unfetched before the drain is judged to
+ * be losing. Generous: a genuine post-close burst of a few hundred filings
+ * takes several cron ticks to clear at 25/run, and that is working as designed.
+ */
+const INGEST_BACKLOG_STALE_SECONDS = 30 * 60;
 
 const ageOf = (value: Date | string | null | undefined, now: number): number | null => {
   if (!value) return null;
@@ -141,6 +164,7 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     counts,
     alertQueue,
     clusterFallback,
+    backlogRow,
   ] = await Promise.all([
     db.select({ filedAt: filings.filedAt }).from(filings).orderBy(desc(filings.filedAt)).limit(1),
     db.select().from(ingestionState).where(eq(ingestionState.key, "edgar:cursor")),
@@ -164,6 +188,19 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
       .from(sql`(select 1) as _`),
     readAlertQueueDepth(db),
     clusterFlagStatus(db),
+    db
+      .select({
+        depth:
+          sql`count(*) filter (where ${pendingFilings.attempts} < ${PENDING_FILING_MAX_ATTEMPTS})`.mapWith(
+            Number,
+          ),
+        stuck:
+          sql`count(*) filter (where ${pendingFilings.attempts} >= ${PENDING_FILING_MAX_ATTEMPTS})`.mapWith(
+            Number,
+          ),
+        oldest: sql<Date | null>`min(${pendingFilings.discoveredAt}) filter (where ${pendingFilings.attempts} < ${PENDING_FILING_MAX_ATTEMPTS})`,
+      })
+      .from(pendingFilings),
   ]);
 
   const filingAgeSeconds = ageOf(latestFiling[0]?.filedAt ?? null, now);
@@ -175,6 +212,9 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     (clusterCursor[0]?.value as { createdAt?: string } | undefined)?.createdAt ?? null,
     now,
   );
+  const ingestBacklog = backlogRow[0]?.depth ?? 0;
+  const ingestStuck = backlogRow[0]?.stuck ?? 0;
+  const ingestBacklogOldestSeconds = ageOf(backlogRow[0]?.oldest ?? null, now);
   const clusterFlags = clusterFallback[0]?.flags ?? 0;
   const clusterQualifying = clusterFallback[0]?.qualifying ?? 0;
   const clusterFallbackOn = clusterFlags === 0 && clusterQualifying > 0;
@@ -193,6 +233,35 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
           ? "The EDGAR cron has never recorded a completed run."
           : `EDGAR cron last completed ${describeAge(ingestRunAgeSeconds)}.`,
       ageSeconds: ingestRunAgeSeconds,
+    },
+    {
+      name: "ingest_backlog",
+      // Depth alone is not the signal — a burst SHOULD queue, that is the
+      // point. What matters is whether the drain is winning: if the oldest
+      // waiting filing keeps aging, arrivals are outrunning the per-run cap
+      // and the latency claim no longer holds.
+      level:
+        ingestStuck > 0
+          ? "degraded"
+          : ingestBacklogOldestSeconds !== null &&
+              ingestBacklogOldestSeconds > INGEST_BACKLOG_STALE_SECONDS
+            ? "degraded"
+            : "ok",
+      detail:
+        ingestBacklog === 0 && ingestStuck === 0
+          ? "No filings waiting to be fetched."
+          : [
+              `${ingestBacklog} filing${ingestBacklog === 1 ? "" : "s"} queued`,
+              ingestBacklogOldestSeconds === null
+                ? null
+                : `oldest discovered ${describeAge(ingestBacklogOldestSeconds)}`,
+              ingestStuck > 0
+                ? `${ingestStuck} gave up after ${PENDING_FILING_MAX_ATTEMPTS} attempts`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("; ") + ".",
+      ageSeconds: ingestBacklogOldestSeconds,
     },
     {
       name: "edgar_filings",
@@ -285,6 +354,9 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     ingestRunAgeSeconds,
     filingAgeSeconds,
     latestFilingAt: latestFiling[0]?.filedAt ? latestFiling[0].filedAt.toISOString() : null,
+    ingestBacklog,
+    ingestBacklogOldestSeconds,
+    ingestStuck,
     sources,
     checks,
     counts: {

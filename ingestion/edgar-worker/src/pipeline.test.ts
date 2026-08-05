@@ -177,14 +177,22 @@ describe("ingestion pipeline (PGlite integration)", () => {
     expect(purchase.relevance).toBe("routine"); // filing-level 10b5-1 checkbox covers it
 
     // Second run over the same feed: everything already known — including
-    // the holdings-only Form 3 — so zero new rows and zero re-fetches.
+    // the holdings-only Form 3 — so nothing is queued, nothing is ingested,
+    // and nothing is re-fetched.
+    //
+    // `discovered` counts what the DRAIN pulled from the queue, which is now
+    // the honest measure of "work this run had to do". Discovery rejects the
+    // three known accessions before they ever reach the queue, so the number
+    // is zero rather than "three, all already known".
     const second = await ingestFromFeed(options);
-    expect(second.alreadyKnown).toBe(3);
+    expect(second.discovered).toBe(0);
     expect(second.ingested).toBe(0);
     expect(second.transactionsInserted).toBe(0);
+    expect(second.backlog).toBe(0);
     expect(await db.select().from(dbExports.transactions)).toHaveLength(6);
     // The diff happens in the DB, so already-known filings are not re-fetched.
     expect(requestLog.filter((u) => u.endsWith(".txt"))).toHaveLength(3);
+    expect(await db.select().from(dbExports.pendingFilings)).toHaveLength(0);
 
     // ── Cross-source dedup: the same sale arrives again via Finnhub ────────
     const finnhubTxns = finnhubAdapter.normalize({

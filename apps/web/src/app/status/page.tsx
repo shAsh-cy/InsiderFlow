@@ -175,6 +175,11 @@ export default async function StatusPage() {
               ["Companies", report.counts.companies],
               ["Filings", report.counts.filings],
               ["Congressional", report.counts.politicianTrades],
+              // Filings discovered but not yet fetched. Shown as a number
+              // beside the rest because "how far behind is ingestion" is the
+              // one operational question this page exists to answer, and it
+              // was the one it could not.
+              ["Filings queued", report.ingestBacklog],
               ["Alerts pending", report.counts.alertsPending],
               ["Alerts undeliverable", report.counts.alertsFailedPermanent],
               ["Alerts orphaned", report.counts.alertsOrphaned],

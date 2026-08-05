@@ -82,12 +82,53 @@ ingestion.** Rows arrive from the worker, the Actions backfill, and the optional
 India runner. A scanner that only ran when _it_ wrote something would miss the
 other two.
 
+## Discovery and processing are separate, and that is the point
+
+EDGAR's "current events" feed is a **rolling window of the 100 most recent
+filings**. The original design polled one page and ingested up to
+`MAX_FILINGS_PER_RUN` (25) of what it found; anything beyond that was neither
+processed nor remembered. Under sustained arrival above 25/min the unprocessed
+remainder grew, and once it exceeded 100 the oldest unprocessed filings scrolled
+out of the window and were **never seen again** — there was no cursor to go back
+for them. At 50 filings/min that takes about four minutes, and Form 4 volume
+clusters heavily after the US close, so it was a plausible daily condition
+rather than a pathological one.
+
+So the two halves are split:
+
+**Discovery** pages the feed backwards (`&start=`) until a page contains nothing
+new — meaning it has overlapped what is already held — and writes every new ref
+to `pending_filings`. It fetches no filing documents and is cheap enough that it
+is never the thing the per-run cap skips.
+
+**Processing** drains `pending_filings` **oldest-first** at the per-run cap.
+Oldest-first is a durability property, not a preference: a newest-first drain
+under sustained load starves the tail forever, which is the same data loss in
+slower motion.
+
+Losing a filing now requires losing a database row. A burst becomes a queue with
+a visible depth — `/api/health` reports the depth and the age of the oldest
+waiting filing, and `/status` shows both — instead of a log line and a gap.
+
+Two backstops:
+
+- Queued filings that fail `PENDING_FILING_MAX_ATTEMPTS` times stop being
+  retried but are **kept**, with `last_error`, so one permanently-404 filing
+  cannot block the queue behind it and cannot silently disappear either.
+- A nightly reconcile job (`backfill --reconcile`) compares EDGAR's
+  authoritative daily full-index against what we hold and **reports** every
+  accession number the live path missed before queueing it. Reporting comes
+  first on purpose: a job that silently repairs gaps hides the defect that
+  produced them.
+
 ## Data flow, one filing at a time
 
-1. The worker polls EDGAR's Atom feed, diffs against `ingestion_state`.
-2. Each new accession is fetched, the `ownershipDocument` XML parsed, and rows
-   normalized: SEC code taxonomy, role flags, native currency + USD via cached
-   FX, and a `routine` / `opportunistic` label.
+1. The worker pages EDGAR's Atom feed and queues every unseen accession in
+   `pending_filings`; the drain then takes the oldest ones, up to the cap.
+2. Each queued accession is fetched, the `ownershipDocument` XML parsed, and
+   rows normalized: SEC code taxonomy, role flags, native currency + USD via
+   cached FX, and a `routine` / `opportunistic` label. The queue row is deleted
+   on success.
 3. Rows upsert on `dedup_key` — `US|AAPL|DOE JANE|2026-07-30|10000|S#0` — so
    the same trade arriving later from Finnhub is a no-op.
 4. Cluster flags are recomputed for the companies touched in that run.

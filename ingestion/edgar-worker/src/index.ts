@@ -20,6 +20,12 @@ export interface Env {
   EDGAR_USER_AGENT: string;
   /** Optional override; keep the default well under the 50 subrequests/invocation free-tier cap. */
   MAX_FILINGS_PER_RUN?: string;
+  /**
+   * How many 100-item feed pages discovery walks back per form. Shares the
+   * same subrequest budget as MAX_FILINGS_PER_RUN: forms x pages + filings
+   * must stay under 50.
+   */
+  MAX_DISCOVERY_PAGES?: string;
   /** Optional secondary sources (see src/sources.ts for intervals and caching). */
   FINNHUB_API_KEY?: string;
   FMP_API_KEY?: string;
@@ -119,6 +125,7 @@ export default {
           db: handle.db,
           userAgent: env.EDGAR_USER_AGENT,
           maxFilings: env.MAX_FILINGS_PER_RUN ? Number(env.MAX_FILINGS_PER_RUN) : undefined,
+          maxDiscoveryPages: env.MAX_DISCOVERY_PAGES ? Number(env.MAX_DISCOVERY_PAGES) : undefined,
         });
         jsonLogger("cron_complete", {
           cron: event.cron,

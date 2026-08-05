@@ -15,6 +15,8 @@ import {
   eq,
   filings,
   ingestionState,
+  pendingFilings,
+  PENDING_FILING_MAX_ATTEMPTS,
   scannerState,
   sql,
   transactions,
@@ -27,6 +29,12 @@ export const INGEST_RUN_STALE_SECONDS = 30 * 60;
 export const SCANNER_STALE_SECONDS = 30 * 60;
 /** Long weekend + a federal holiday. */
 export const FILING_STALE_SECONDS = 96 * 3600;
+/**
+ * How long a discovered filing may wait before ingestion is judged to be
+ * losing. A post-close burst legitimately queues for several cron ticks at the
+ * per-run cap; an hour means arrivals are outrunning the drain.
+ */
+export const BACKLOG_STALE_SECONDS = 60 * 60;
 
 export interface OpsStatus {
   degraded: boolean;
@@ -37,6 +45,10 @@ export interface OpsStatus {
     alertsPending: number;
     alertsOrphaned: number;
     alertsFailedPermanent: number;
+    /** Filings discovered but not yet fetched. */
+    ingestBacklog: number;
+    /** Queued filings that exhausted their retries. */
+    ingestStuck: number;
   };
   ingestRunAgeSeconds: number | null;
   scannerRunAgeSeconds: number | null;
@@ -53,7 +65,7 @@ const mins = (seconds: number | null): string =>
   seconds === null ? "never" : `${Math.round(seconds / 60)} min`;
 
 export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
-  const [edgarState, scanner, latestFiling, txnCount, alertCounts] = await Promise.all([
+  const [edgarState, scanner, latestFiling, txnCount, alertCounts, backlog] = await Promise.all([
     db.select().from(ingestionState).where(eq(ingestionState.key, "edgar:cursor")),
     db.select().from(scannerState).where(eq(scannerState.name, "alerts")),
     db.select({ filedAt: filings.filedAt }).from(filings).orderBy(desc(filings.filedAt)).limit(1),
@@ -68,6 +80,19 @@ export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
           sql`count(*) filter (where ${alertsLog.status} = 'failed_permanent')`.mapWith(Number),
       })
       .from(alertsLog),
+    db
+      .select({
+        depth:
+          sql`count(*) filter (where ${pendingFilings.attempts} < ${PENDING_FILING_MAX_ATTEMPTS})`.mapWith(
+            Number,
+          ),
+        stuck:
+          sql`count(*) filter (where ${pendingFilings.attempts} >= ${PENDING_FILING_MAX_ATTEMPTS})`.mapWith(
+            Number,
+          ),
+        oldest: sql<Date | null>`min(${pendingFilings.discoveredAt}) filter (where ${pendingFilings.attempts} < ${PENDING_FILING_MAX_ATTEMPTS})`,
+      })
+      .from(pendingFilings),
   ]);
 
   const ingestRunAgeSeconds = ageOf(
@@ -98,6 +123,22 @@ export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
     problems.push(`${orphaned} orphaned alert${orphaned === 1 ? "" : "s"} (subject row deleted).`);
   }
 
+  const ingestBacklog = backlog[0]?.depth ?? 0;
+  const ingestStuck = backlog[0]?.stuck ?? 0;
+  const backlogOldestSeconds = ageOf(backlog[0]?.oldest ?? null);
+  if (backlogOldestSeconds !== null && backlogOldestSeconds > BACKLOG_STALE_SECONDS) {
+    problems.push(
+      `${ingestBacklog} filing${ingestBacklog === 1 ? "" : "s"} queued, oldest waiting ` +
+        `${mins(backlogOldestSeconds)} — ingestion is not keeping up with arrivals.`,
+    );
+  }
+  if (ingestStuck > 0) {
+    problems.push(
+      `${ingestStuck} queued filing${ingestStuck === 1 ? "" : "s"} gave up after ` +
+        `${PENDING_FILING_MAX_ATTEMPTS} attempts. Check pending_filings.last_error.`,
+    );
+  }
+
   const failedPermanent = alertCounts[0]?.failedPermanent ?? 0;
   if (failedPermanent > 0) {
     problems.push(
@@ -115,6 +156,8 @@ export async function collectOpsStatus(db: Database): Promise<OpsStatus> {
       alertsPending: alertCounts[0]?.pending ?? 0,
       alertsOrphaned: orphaned,
       alertsFailedPermanent: failedPermanent,
+      ingestBacklog,
+      ingestStuck,
     },
     ingestRunAgeSeconds,
     scannerRunAgeSeconds,
@@ -135,7 +178,7 @@ export function formatOpsMessage(status: OpsStatus): string {
     ...status.problems.map((p) => `• ${escapeHtml(p)}`),
     status.problems.length > 0 ? "" : null,
     `<i>ingest ${mins(status.ingestRunAgeSeconds)} ago · scanner ${mins(status.scannerRunAgeSeconds)} ago</i>`,
-    `<i>${status.counts.transactions.toLocaleString("en-US")} transactions · ${status.counts.alertsPending} alerts pending</i>`,
+    `<i>${status.counts.transactions.toLocaleString("en-US")} transactions · ${status.counts.ingestBacklog} filings queued · ${status.counts.alertsPending} alerts pending</i>`,
   ].filter((l): l is string => l !== null);
   return lines.join("\n");
 }

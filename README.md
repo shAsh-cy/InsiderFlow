@@ -30,6 +30,25 @@ scoring, sector classification, and net-flow anomaly detection. **Planned**: mor
 Every derived number is computed by a formula published at [`/docs/methodology`](/docs/methodology).
 There is no proprietary model, and none of it is investment advice.
 
+### What "real time" means here, precisely
+
+A single Form 4 reaches the site in roughly **60–90 seconds** from EDGAR acceptance: up to 60s
+waiting for the next cron tick, ~12s to fetch, parse and persist, and no page cache to wait out.
+Through the cached API or the SSE stream, allow ~2 minutes.
+
+**Bursts drain, they do not vanish.** EDGAR Form 4 volume clusters heavily after the US close, and
+a run fetches at most `MAX_FILINGS_PER_RUN` (default 25) filings. Everything discovered beyond
+that is written to a queue and drained oldest-first on later ticks, so 200 filings arriving in one
+minute take about 8 minutes to land in full — the last of them, not the first. The queue depth and
+the age of the oldest waiting filing are on [`/status`](/status) and `/api/health`, and a nightly
+job reconciles the live path against EDGAR's authoritative daily index and reports anything it
+missed.
+
+That queue is the fix for a real defect: discovery used to be inseparable from processing, so
+whatever a run could not fetch was forgotten, and under sustained load the oldest unprocessed
+filings scrolled out of EDGAR's 100-item feed window permanently. See
+[docs/architecture.md](docs/architecture.md).
+
 ## Architecture
 
 ```mermaid
