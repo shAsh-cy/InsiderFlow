@@ -2,7 +2,12 @@
 
 **Date:** 2026-08-04
 **Scope:** open-source public release readiness
-**Verdict:** 🔴 **NO-GO** — one BLOCKER, eight MAJOR
+**Verdict at audit time:** 🔴 **NO-GO** — one BLOCKER, eight MAJOR
+**Verdict after remediation:** 🟢 **GO**, conditional — see [REMEDIATION](#remediation) at the end.
+
+> The findings below are left exactly as written on 2026-08-04. They are the
+> historical record of what was wrong; the REMEDIATION section maps each one to
+> its fix and to after-evidence from a stack rebuilt from nothing.
 
 ---
 
@@ -475,3 +480,418 @@ to be true, and should land before the repository is publicised.
 
 _Findings are reproducible from the commands shown. See the independence notice
 at the top before relying on the absence of findings in any area._
+
+---
+
+# REMEDIATION
+
+**Date:** 2026-08-05
+**Branch:** `audit-remediation` (10 commits)
+**Verdict:** 🟢 **GO**, with two named conditions below.
+
+Every finding above is addressed. This section maps each one to its fix and to
+evidence gathered **after** the change, from a stack rebuilt from nothing:
+
+```console
+$ docker compose down -v && docker compose up --build
+```
+
+Two defects were found that the audit missed, and three things remain
+unverified. Both lists are below, because a remediation report that shows only
+resolved rows is exactly the kind of check this audit was written about.
+
+## Verification baseline
+
+|                    |                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Unit + integration | **267 passed, 0 failed** across 28 files (`pnpm test`, exit 0)                                                                      |
+| End-to-end         | **90 passed, 0 failed, 6 skipped** against the clean compose stack                                                                  |
+| The 6 skips        | Cross-user isolation. They print `SKIPPED — … cross-user isolation is therefore UNVERIFIED` and the reason. See "Still unverified". |
+| Migrations         | 11 (`0009_rls_enforced` and `0010_pending_filings_queue` are new)                                                                   |
+| Typecheck / lint   | clean — 6 pre-existing unused-var warnings, 0 errors                                                                                |
+
+---
+
+## 🔴 BLOCKER-1 — live secrets baked into the image → **FIXED**
+
+**Fix.** `.dockerignore` patterns are `**/`-rooted. A bare `.env` matches only
+the build-context root in Docker, which is why `apps/web/.env.local` sailed
+past it. Reviewing the ignore file is what failed here, so the guarantee is now
+enforced against the artefact: a required `image-secret-scan` CI job plants
+decoy `.env` files at three depths, builds the image, and fails if any
+survives. The webhook secret was regenerated.
+
+**After:**
+
+```console
+$ docker run --rm --entrypoint sh insiderflow-web:latest -c 'ls -la /app/apps/web/.env*'
+ls: /app/apps/web/.env*: No such file or directory
+
+$ docker run --rm --entrypoint sh insiderflow-web:latest \
+    -c 'find /app -name ".env" -o -name ".env.*" ! -name ".env.example" -o -name ".dev.vars"'
+(no output)
+
+$ curl -sI "localhost:3000/api/trades?limit=1" | grep -i x-ratelimit-limit
+x-ratelimit-limit: 60          # was 600, silently overridden by the leaked file
+```
+
+**The gate was proved to catch the regression**, not merely to pass today.
+`.dockerignore` was temporarily reverted to the buggy patterns with a decoy
+planted beside the real file:
+
+```console
+$ docker run --rm --entrypoint sh insiderflow-web:regression \
+    -c 'find /app -name ".env" -o -name ".env.*" ! -name ".env.example" ...'
+/app/apps/web/.env.local
+/app/apps/web/.env.decoytest        # CI fails the build here
+```
+
+> ⚠️ **Still the user's action:** rotating the Telegram bot token and the
+> Supabase database password. `docs/security.md` carries the procedure, the
+> list of what is and is not a secret (`NEXT_PUBLIC_*` values are public by
+> design and are **not** an incident), and a standing rule never to publish an
+> image built before this commit.
+
+---
+
+## 🟠 MAJOR-1 — RLS decorative, and falsely certified → **FIXED**
+
+**Fix.** Three things were wrong and all three are corrected: policies key on
+`current_setting('app.user_id')` — set per transaction by `withUserContext` —
+instead of a JWT claim that could never be present on a direct connection;
+`FORCE ROW LEVEL SECURITY` is set; and the web app connects as
+`insiderflow_app`, a **NOBYPASSRLS** role. Any one alone would still have been
+decoration.
+
+`bootstrap.mjs` no longer certifies from catalog flags. It inserts a probe row
+as admin and reads it back over `APP_DATABASE_URL`.
+
+**After:**
+
+```console
+$ psql
+admin: rolsuper=true  rolbypassrls=true      # correct — migrations need it
+app:   rolsuper=false rolbypassrls=false     # the point of the whole exercise
+alert_channels  enabled=true forced=true
+alert_rules     enabled=true forced=true
+alerts_log      enabled=true forced=true
+user_watchlists enabled=true forced=true
+
+$ probe row, read as insiderflow_app
+no context    -> 0 rows
+owner context -> 1 rows
+
+$ APP_DATABASE_URL=... pnpm db:bootstrap -- --check
+{"event":"check_ok","check":"rls_forced"}
+{"event":"check_ok","check":"rls_enforced",
+ "proof":"no context → 0 rows; owner context → 1 row; other user → 0 rows"}
+```
+
+Both failure modes were exercised rather than assumed. Pointed at a superuser
+URL it reports `rls_not_enforced` — _"a user row was VISIBLE to the application
+role with no app.user_id set"_ — which is precisely the state this audit found.
+With no `APP_DATABASE_URL` at all it fails `rls_not_proven` rather than passing
+on the flags.
+
+`rls.test.ts` was rewritten to run the real `drizzle/*.sql` and exercise the
+policies as `insiderflow_app`, including the case that matters most: an
+**unscoped** `SELECT * FROM alert_rules` returns only the caller's rows. The
+old version asserted against a hand-built two-table replica of the schema,
+which is why it stayed green for months while production enforced nothing.
+
+`/api/me/*` still rejects anonymous callers: 401, 401, 401.
+
+---
+
+## 🟠 MAJOR-2 — unescaped Telegram digest → **FIXED**
+
+**Fix.** Rendering moved to `digestTelegram()` in `format.ts`, beside the other
+renderers, with `escapeHtml` exported so there is one implementation. The
+retry-forever consequence is fixed too: 400 and 403 are permanent and retire
+the row as `failed_permanent`; everything else retries, bounded by
+`MAX_DELIVERY_ATTEMPTS`. A row is retired only when **every** attempted channel
+failed permanently, so a permanent Telegram rejection alongside a transient
+Resend outage still retries rather than dropping a deliverable alert.
+
+**After** — six regression cases, all passing:
+
+```
+✓ escapes an ordinary issuer name containing & and angle brackets
+✓ escapes a rule name the user chose, markup and all
+✓ retires a 400 as permanent instead of retrying it forever
+✓ retires a 403 (user blocked the bot) as permanent
+✓ keeps retrying a transient failure, but only up to the cap
+✓ keeps retrying when one channel is permanently rejected but another could still deliver
+```
+
+The first drives the exact case proved above: a tickerless company named
+`ZZ Procter & Gamble <Holdings>`. The payload now contains
+`ZZ Procter &amp; Gamble &lt;Holdings&gt;`, and the test asserts that no loose
+`&` survives anywhere in it.
+
+`/api/health` and `/status` gained an `alerts_failed_permanent` check, so
+retired alerts are visible rather than merely absent from the pending count.
+
+---
+
+## 🟠 MAJOR-3 / MAJOR-4 — the seeded stack under-delivered, and was wrong → **FIXED**
+
+**Fix.** An `analytics` one-shot service runs between the seed and the web app,
+which now waits on it. It runs only the offline steps, so a first run never
+depends on EDGAR, Stooq, or the congressional feeds being reachable.
+
+Separately — and this is MAJOR-4 — `clusterCondition` carries a **cold-state
+fallback expressed in the SQL itself**: the query-time definition contributes
+only while `cluster_flags` is entirely empty. Keyed on "has maintenance ever
+run", not "are the flags fresh": a stale flag set is a different failure with a
+different remedy, and papering over it would hide a broken cron behind
+correct-looking results. `/api/health` reports the fallback as `degraded`, so
+it is visible rather than convenient.
+
+**After**, from `docker compose down -v && docker compose up --build`:
+
+```
+latest                     25       big-discretionary-sales     2
+big-buys                    4       unusual-flow               17
+cluster-buys                7  ←    leaderboard rows            2  ←
+exec-buys                   6       cluster_flags=1  insider_scores=3  company_anomalies=5
+dip-buys                   11
+
+$ ground truth vs API
+SQL definition: ZZNOVA
+API preset:     ZZNOVA           # was: SQL said ZZNOVA, the API said nothing
+```
+
+The leaderboard needed more than a job. It defaults to `min_trades=5`, which is
+not arbitrary — the composite score shrinks by sample size, and ranking someone
+on one lucky trade is the false precision this project refuses to publish. So
+the seed grew insiders who have actually traded enough, rather than the
+threshold being lowered for the demo. Each seeded price series also got its own
+drift, amplitude and phase: scoring measures excess **over SPY**, and with every
+series moving identically the excess was ~0 for every trade — a leaderboard of
+zeroes, technically honest and demonstrating nothing. Scores are now 2.79 and
+2.64 with hit rates 0.60 and 1.00, still fully deterministic.
+
+New coverage: `e2e/cold-start.spec.ts` asserts all seven presets return rows,
+the cluster preset agrees with the definition it derives from, the leaderboard
+API and page are populated, and health does not report the fallback — 11/11.
+Four unit cases in `packages/db` cover cold, maintained, and
+maintained-but-not-qualifying against the real migrations. Docs corrected from
+"six presets" to seven.
+
+---
+
+## 🟠 MAJOR-5 / MAJOR-6 / MAJOR-7 — data loss, invisible, and an unqualified claim → **FIXED**
+
+**Fix.** Discovery and processing are now separate. Discovery pages the feed
+backwards (`&start=`) until a page holds nothing new — meaning it has
+overlapped what is already held — and writes every new ref to
+`pending_filings`. Processing drains that queue **oldest-first** at the per-run
+cap. Oldest-first is a durability property, not a preference: a newest-first
+drain under sustained load starves the tail forever, which is the same data
+loss in slow motion. **Losing a filing now requires losing a database row.**
+
+Two backstops. A queued filing that exhausts `PENDING_FILING_MAX_ATTEMPTS`
+stops being retried but is **kept**, with its `last_error`, so one
+permanently-404 filing can neither block the queue behind it nor vanish. And a
+**nightly reconcile job** compares EDGAR's authoritative daily full-index
+against what we hold, and reports every accession number the live path missed
+_before_ queueing it — reporting first, because a job that silently repairs
+gaps hides the defect that produced them.
+
+**After** — seven cases, every one phrased as "nothing is lost":
+
+```
+✓ queues everything it discovers and loses nothing across runs
+    60-filing burst at a cap of 25 → 25 / 25 / 10, backlog 35 → 10 → 0,
+    with all 60 accession numbers verified present in `filings`
+✓ drains oldest-first, so the tail is never starved
+✓ does not re-fetch a filing it has already ingested
+✓ walks back past the first page rather than seeing only the newest 100
+    250 filings in the window → all 250 queued
+✓ stops paging as soon as a page holds nothing new
+✓ a permanently-404 filing at the HEAD of the queue exhausts its attempts
+    without blocking the other 59, and stays visible with its error
+✓ reports depth and the age of the oldest waiting filing
+```
+
+MAJOR-6 — the backlog is observable:
+
+```console
+$ grep -nE 'ingestBacklog|ingest_backlog' apps/web/src/lib/api/health.ts
+70:  ingestBacklog: number;
+71:  ingestBacklogOldestSeconds: number | null;
+238:      name: "ingest_backlog",
+
+$ curl -s localhost:3000/api/health
+{"ingestBacklog":0,"oldest":null,"stuck":0}
+checks: ingest_cron ingest_backlog edgar_filings alert_scanner cluster_flags
+
+$ curl -s localhost:3000/status | grep -o "Filings queued"
+Filings queued
+```
+
+`ops-check` alerts when the **oldest waiting filing** exceeds an hour, which is
+the real signal — depth alone is fine, because a burst _should_ queue.
+
+MAJOR-7 — the claim is now stated precisely in the README and
+`docs/architecture.md`: ~60–90 s for a single filing, ~2 min through the cached
+API or SSE, and bursts drain at the per-run cap — 200 filings arriving in one
+minute take ~8 minutes for the **last** of them to land, with the queue depth
+visible on `/status` throughout.
+
+---
+
+## 🟠 MAJOR-8 — the seed violated the project's own invariant → **FIXED**
+
+**Fix.** A grant has no purchase price. It is `NULL`, and the null propagates:
+value and `value_usd` stay null rather than being multiplied by zero, because
+that is exactly how a not-disclosed field becomes a confident zero three layers
+downstream.
+
+**After:**
+
+```console
+$ psql: rows with price=0 or value=0: 0
+$ psql: A price=NULL value=NULL
+
+$ curl -s localhost:3000/api/rss/latest | grep -c "USD 0"
+0                                    # was: "…on 2026-07-15 at USD 0 [routine]…"
+
+$ curl -s "localhost:3000/api/trades?ticker=ZZNOVA&code=A"
+"price":null,"value":null
+```
+
+Five e2e cases cover it, including one that sweeps **every** seeded transaction
+for a zero price or value, not just the grant.
+
+> **A note for whoever greps next.** The stock page renders `$0` in raw SSR HTML
+> by design: `CountUp` emits `format(0)` as its first frame and animates to the
+> real number on the client. That is an animation artefact, not a value — which
+> is why these assertions go through the API and the rendered DOM rather than
+> through `curl`. The `>$0<` evidence on that page was partly this; the RSS
+> evidence was the real defect, and it is fixed.
+
+---
+
+## 🟡 MINORs
+
+| #       | Status       | After-evidence                                                                                                                                                                                                                                                                                                                                                      |
+| ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MINOR-1 | ✅ Fixed     | Swept every `process.env` read against `.env.example`. `RATE_LIMIT_APIKEY_PER_MIN` was documented as `RATE_LIMIT_KEYED_PER_MIN`, so anyone following the docs set a variable nothing reads. Added `PLAYWRIGHT_BASE_URL`, `APP_DB_ROLE`, `MAX_DISCOVERY_PAGES`, and the two SSE ceilings.                                                                            |
+| MINOR-2 | ✅ Fixed     | `user-queries.ts` documents the real contract: two operations arrive with no session by design and are authorised by a 192-bit bearer capability, which the RLS policy checks against the row itself.                                                                                                                                                               |
+| MINOR-3 | ✅ Qualified | Not measurable at this volume, so the figures are labelled `[ESTIMATE]` with the query to re-measure at ≥100k rows and a note that every free-tier threshold below moves proportionally. A sizing number nobody has measured should say so.                                                                                                                         |
+| MINOR-4 | ✅ Fixed     | `docs/quickstart.md`: "a screener with all **seven** presets returning rows".                                                                                                                                                                                                                                                                                       |
+| MINOR-5 | ✅ Fixed     | Two ceilings — 4 concurrent streams per client, 200 global — with 503 + `Retry-After`; `?mode=poll` exempt. Slots release idempotently, because a stream can end by abort _and_ by its own `finally`, and double-counting would drift the counter until the ceiling silently stopped applying. 6 unit cases + an e2e opening 8 concurrent streams from a real page. |
+| MINOR-6 | ✅ Fixed     | `sast=2 bulk_block=2 pledges=2`, written directly rather than via the local-scrape runner — the hosted deployment never scrapes NSE/BSE and neither does `docker compose`. One SAST row carries `value=NULL` deliberately: Reg. 29 requires the shareholding, not the consideration, and deriving one would publish a number nobody filed.                          |
+
+**CSV / XLSX export**, previously marked NOT TESTED, now has two e2e cases that
+drive the real buttons and read the files off disk: the CSV header contract, at
+least one data row, no zero in a price column, and the XLSX zip magic bytes —
+which catches the lazy-loaded sheet library failing to arrive and leaving an
+HTML error with an `.xlsx` extension.
+
+---
+
+## Found while fixing — not in the original audit
+
+Both were pre-existing, and both were invisible because nothing had ever
+exercised the path.
+
+**1. Every auth redirect pointed at the bound address.** `/auth/callback` and
+`/auth/signout` built their `Location` from `new URL(request.url).origin`,
+which Next derives from the address the server is bound to:
+
+```console
+$ curl -sI localhost:3000/auth/callback | grep -i location
+location: http://0.0.0.0:3000/login?error=unconfigured     # ERR_ADDRESS_INVALID
+```
+
+Sign-in and sign-out both dead-ended on a redirect no browser would follow, and
+the same breakage appears behind any TLS-terminating proxy. Fixed with
+`requestOrigin`, which echoes the host the client actually asked for and
+prefers `x-forwarded-host` / `-proto`; five unit cases. After:
+`location: http://localhost:3000/login?error=unconfigured`.
+
+**2. `/auth/callback` was an open redirect.** `new URL(next, origin)` returns
+`next` verbatim when it is absolute, so `?next=https://evil.example` left the
+site — at the moment of highest user trust. `safeRedirectPath` now whitelists
+shape rather than blacklisting hosts, rejecting absolute URLs,
+protocol-relative `//host`, the `/\host` and `\\host` spellings browsers
+normalise into it, schemes, control characters, and unrooted paths. 17 unit
+cases plus e2e driving the real route with four hostile values.
+
+Two **test-isolation** defects were also fixed, neither of which was a product
+bug: a describe block whose last case deleted the row its siblings asserted on
+(now serial), and a live-feed assertion that the inserted trade was literally
+first, which another spec's concurrent insert legitimately displaces. That one
+now compares against the row that was newest _before_ the insert — the real
+ordering invariant, rather than an accident of nothing else running.
+
+---
+
+## Still unverified
+
+Unchanged from the audit unless noted. These are not fixed, and saying so is
+the point.
+
+- **Cross-user exploitation is still UNVERIFIED on this machine.** The suite
+  now exists — `e2e/auth-isolation.spec.ts` signs up two users, captures real
+  sessions through `@supabase/ssr`'s own cookie encoding, and attacks in both
+  directions: reads, a delete aimed at the other user's row, a rename and a
+  delete using the other user's **real rule id**, absent / tampered / expired
+  cookies, sign-out, and a DB-layer check that A's context sees zero of B's
+  rows while seeing its own. It **skips**, loudly, because the dev Supabase
+  project returns no session for password sign-up:
+
+  ```
+  [auth-isolation] SKIPPED — Password sign-up returned no session, so cross-user
+  isolation is UNVERIFIED. Enable email+password and disable email confirmation
+  on the dev Supabase project.
+  ```
+
+  Enable those two settings and the six cases run. Until then the claim rests
+  on the query layer, the RLS proof above, and inspection.
+
+- **No production deployment was performed.** Vercel, Supabase and Cloudflare
+  Worker deploys remain documented but untested. Free-tier behaviour, real CDN
+  edge caching, and Supabase pooler behaviour are unverified.
+
+- **Per-row storage sizing** still cannot be validated at this volume
+  (MINOR-3).
+
+- **Sustained real EDGAR burst behaviour** is now proven against a simulated
+  250-filing window with a mocked feed, but not against live sec.gov during an
+  actual post-close surge.
+
+---
+
+## Verdict: 🟢 GO — conditional
+
+The blocker is closed, and its recurrence is gated in CI against the artefact
+rather than against a reviewer's attention.
+
+The honesty guarantees that held under adversarial testing still hold, re-run
+from a clean stack: open-ended PTR brackets render `Over $50,000,000` and never
+a midpoint; a superseded transaction seeded onto an amended filing is absent
+from `/api/trades`, RSS and the screener by default and carries
+`"superseded":true` when explicitly included; with
+`INSIDERFLOW_SHOW_SYNTHETIC=false` the heatmap and leaderboard contain zero
+`ZZ*` rows in both API and HTML, and the synthetic-data notice is correctly
+absent.
+
+Two conditions before publishing:
+
+1. **Rotate the Telegram bot token and the Supabase database password.** Code
+   cannot do this. Anything else that ever sat in `apps/web/.env.local` should
+   be treated as burned. `NEXT_PUBLIC_*` values are public by design and need
+   no rotation — `docs/security.md` says which is which.
+2. **Enable email + password on the dev Supabase project and run
+   `e2e/auth-isolation.spec.ts`.** Cross-user isolation is the one security
+   claim still resting on inspection, and inspection is the method that missed
+   the inert RLS.
+
+The independence notice at the top of this document applies in full to this
+section as well. The same agent wrote the code, the audit, and this
+remediation; the evidence here is reproducible, and someone else should re-run
+it.
