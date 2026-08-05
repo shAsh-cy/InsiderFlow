@@ -27,7 +27,8 @@ import {
 } from "@insiderflow/db";
 import type { Database } from "@insiderflow/db";
 
-import { checkRateLimit, rateLimitHeaders } from "@/lib/api/rate-limit";
+import { checkRateLimit, rateLimitHeaders, rateLimitIdentity } from "@/lib/api/rate-limit";
+import { STREAM_RETRY_AFTER_SECONDS, streamCapacity, streamLimiter } from "@/lib/api/stream-limits";
 import { serializeTrade } from "@/lib/api/queries";
 import type { TradeRow } from "@/lib/api/queries";
 import { getDb } from "@/lib/db";
@@ -143,10 +144,44 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   // ── SSE window ────────────────────────────────────────────────────────────
+  //
+  // Take a concurrency slot BEFORE opening the stream. The per-minute limiter
+  // above bounds how often a client may open one; nothing bounded how many it
+  // could hold, and each one occupies a function for up to WINDOW_MS. The poll
+  // fallback above is exempt: it answers and returns immediately, so it holds
+  // nothing.
+  const identity = rateLimitIdentity(req);
+  const limiter = streamLimiter();
+  const slot = limiter.acquire(identity);
+  if (!slot) {
+    const capacity = streamCapacity();
+    return Response.json(
+      {
+        error: {
+          code: "too_many_streams",
+          message:
+            `Too many concurrent stream connections (limit ${capacity.perIdentity} per client, ` +
+            `${capacity.global} total). Use ?mode=poll, or retry shortly.`,
+        },
+      },
+      {
+        status: 503,
+        headers: {
+          ...rateLimitHeaders(rate),
+          "Retry-After": String(STREAM_RETRY_AFTER_SECONDS),
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
   const encoder = new TextEncoder();
   let aborted = false;
   req.signal.addEventListener("abort", () => {
     aborted = true;
+    // A client that walks away must give the slot back immediately, not in
+    // 25 seconds when the window would have ended anyway.
+    slot.release();
   });
 
   const stream = new ReadableStream<Uint8Array>({
@@ -179,6 +214,7 @@ export async function GET(req: Request): Promise<Response> {
         // DB hiccup mid-window: log, close; the client reconnects and resumes.
         console.error("stream_window_error", error);
       } finally {
+        slot.release();
         controller.close();
       }
     },
