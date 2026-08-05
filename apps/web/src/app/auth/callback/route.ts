@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseServerClient, isAuthConfigured } from "@/lib/auth/supabase-server";
-import { safeRedirectPath } from "@/lib/auth/redirect";
+import { requestOrigin, safeRedirectPath } from "@/lib/auth/redirect";
 import { upsertEmailChannel } from "@/lib/api/user-queries";
 import { getDb } from "@/lib/db";
 
@@ -28,12 +28,15 @@ const backToLogin = (origin: string, reason: CallbackError, next?: string): Resp
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
+  // Not url.origin — see requestOrigin: Next derives that from the bound
+  // address, which is 0.0.0.0 inside the container.
+  const origin = requestOrigin(request);
   const code = url.searchParams.get("code");
   // Never trust `next`: `new URL(next, origin)` honours an absolute URL over
   // its base, which made this an open redirect at the moment of highest trust.
   const next = safeRedirectPath(url.searchParams.get("next"));
 
-  if (!isAuthConfigured()) return backToLogin(url.origin, "unconfigured");
+  if (!isAuthConfigured()) return backToLogin(origin, "unconfigured");
 
   // The provider says no: the user cancelled at the consent screen, or the
   // app is not authorised. OAuth returns this as query params, not an error
@@ -43,11 +46,11 @@ export async function GET(request: Request): Promise<Response> {
     const denied = /denied|cancel/i.test(
       `${providerError} ${url.searchParams.get("error_description") ?? ""}`,
     );
-    return backToLogin(url.origin, denied ? "denied" : "exchange_failed", next);
+    return backToLogin(origin, denied ? "denied" : "exchange_failed", next);
   }
 
   // A magic link opened twice, or a bookmarked callback URL.
-  if (!code) return backToLogin(url.origin, "missing_code", next);
+  if (!code) return backToLogin(origin, "missing_code", next);
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -57,7 +60,7 @@ export async function GET(request: Request): Promise<Response> {
       // Distinguished because the remedy differs: request a new link, versus
       // "something is misconfigured".
       const expired = /expired|invalid|used/i.test(error.message);
-      return backToLogin(url.origin, expired ? "expired" : "exchange_failed", next);
+      return backToLogin(origin, expired ? "expired" : "exchange_failed", next);
     }
 
     try {
@@ -71,10 +74,10 @@ export async function GET(request: Request): Promise<Response> {
       // Channel seeding is best-effort — never block a successful sign-in on it.
     }
 
-    return NextResponse.redirect(new URL(next, url.origin));
+    return NextResponse.redirect(new URL(next, origin));
   } catch {
     // An auth outage or a database that will not accept the channel upsert.
     // The user gets an explanation; they do not get a stack trace.
-    return backToLogin(url.origin, "unexpected", next);
+    return backToLogin(origin, "unexpected", next);
   }
 }

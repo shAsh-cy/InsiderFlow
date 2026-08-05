@@ -63,3 +63,36 @@ export function safeRedirectPath(
     return fallback;
   }
 }
+
+/**
+ * The origin a redirect should point at.
+ *
+ * NOT `new URL(request.url).origin`. Next builds that from the address the
+ * server is BOUND to, which in the Docker image is `0.0.0.0:3000` — so
+ * /auth/callback and /auth/signout emitted `Location: http://0.0.0.0:3000/...`
+ * and every browser refused it with ERR_ADDRESS_INVALID. The same breakage
+ * appears behind any reverse proxy that terminates TLS, where the bound
+ * address is http and internal while the user is on https and public.
+ *
+ * The Host header is what the client actually asked for, which is what a
+ * redirect must echo. `x-forwarded-*` takes precedence because a proxy knows
+ * the public scheme and the origin server does not.
+ *
+ * Trusting Host means trusting the proxy in front of it — the standard
+ * assumption for this class of app, and unavoidable if redirects are to work
+ * on a custom domain at all. `SITE_URL` overrides it for deployments that
+ * would rather pin the value.
+ */
+export function requestOrigin(request: Request): string {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const host = forwardedHost ?? request.headers.get("host");
+  if (host && !host.startsWith("0.0.0.0")) {
+    const proto =
+      request.headers.get("x-forwarded-proto") ??
+      (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+    return `${proto}://${host}`;
+  }
+  const configured = process.env.SITE_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  return new URL(request.url).origin;
+}

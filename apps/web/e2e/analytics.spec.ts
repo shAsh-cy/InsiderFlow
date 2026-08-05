@@ -200,6 +200,12 @@ test.describe("cluster flags", () => {
     cleanupSyntheticCompany(target);
   });
 
+  // Serial: the last case DELETES the flag the other two depend on. Under
+  // Playwright's default parallelism that delete raced the select, and the
+  // failure looked like a product bug ("the preset does not see the flag")
+  // rather than what it was — two tests sharing one row.
+  test.describe.configure({ mode: "serial" });
+
   test("the stock-page indicator reads from the precomputed flag", async ({ page }) => {
     await page.goto(`/stock/${target.ticker}`);
     // Only one insider actually traded; the badge shows 3 because it is now

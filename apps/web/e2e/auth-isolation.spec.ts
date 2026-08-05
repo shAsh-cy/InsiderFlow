@@ -23,10 +23,16 @@ import { psql } from "./fixtures";
  * test that quietly asserts nothing is not.
  */
 
-/** Read the env the app itself uses; the Playwright process does not inherit it. */
+/**
+ * Read the env the app itself uses; the Playwright process does not inherit it.
+ *
+ * Paths are resolved from process.cwd() (apps/web, where Playwright runs)
+ * rather than from `import.meta` — the spec files are transpiled to CJS, where
+ * `import.meta` is a syntax error and the whole file silently fails to load.
+ */
 function readEnvFile(relativePath: string): Record<string, string> {
   try {
-    const raw = readFileSync(resolve(import.meta.dirname, "..", relativePath), "utf8");
+    const raw = readFileSync(resolve(process.cwd(), relativePath), "utf8");
     const out: Record<string, string> = {};
     for (const line of raw.split("\n")) {
       const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
@@ -111,21 +117,36 @@ test.describe("cross-user isolation with real sessions", () => {
   let userB: AuthedUser | null = null;
   let baseURL = "";
 
+  /**
+   * Announce a skip on stdout as well as in the annotation. Playwright's list
+   * reporter prints "6 skipped" and nothing else, which is indistinguishable
+   * from "6 passed trivially" to anyone reading CI output — precisely the
+   * silence this suite exists to end.
+   */
+  const skipLoudly = (condition: boolean, reason: string): void => {
+    if (condition)
+      console.warn(`
+[auth-isolation] SKIPPED — ${reason}
+`);
+    test.skip(condition, reason);
+  };
+
   test.beforeAll(async ({ baseURL: configured }) => {
     baseURL = configured ?? "http://localhost:3000";
-    test.skip(
+    skipLoudly(
       !SUPABASE_URL || !SUPABASE_ANON_KEY,
-      "No Supabase project configured — real sessions cannot be minted. " +
-        "Set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY to run these.",
+      "No Supabase project configured, so real sessions cannot be minted. " +
+        "Cross-user isolation is therefore UNVERIFIED on this run. Set " +
+        "NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY to run these.",
     );
 
     const password = `zz-e2e-${rand()}-${rand()}`;
     userA = await signUpAndCaptureCookies(`zz-e2e-a-${rand()}@insiderflow-test.invalid`, password);
     userB = await signUpAndCaptureCookies(`zz-e2e-b-${rand()}@insiderflow-test.invalid`, password);
-    test.skip(
+    skipLoudly(
       !userA || !userB,
-      "Password sign-up returned no session. Enable email+password and disable email " +
-        "confirmation on the dev Supabase project to run the cross-user tests.",
+      "Password sign-up returned no session, so cross-user isolation is UNVERIFIED. " +
+        "Enable email+password and disable email confirmation on the dev Supabase project.",
     );
   });
 

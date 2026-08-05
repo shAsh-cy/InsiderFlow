@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_POST_LOGIN_PATH, safeRedirectPath } from "./redirect";
+import { DEFAULT_POST_LOGIN_PATH, requestOrigin, safeRedirectPath } from "./redirect";
 
 describe("safeRedirectPath", () => {
   it("keeps an ordinary same-origin path", () => {
@@ -44,5 +44,59 @@ describe("safeRedirectPath", () => {
 
   it("honours a custom fallback", () => {
     expect(safeRedirectPath("https://evil.example", "/")).toBe("/");
+  });
+});
+
+describe("requestOrigin", () => {
+  const req = (url: string, headers: Record<string, string> = {}) => new Request(url, { headers });
+
+  it("echoes the host the client actually asked for", () => {
+    expect(
+      requestOrigin(req("http://0.0.0.0:3000/auth/callback", { host: "localhost:3000" })),
+    ).toBe("http://localhost:3000");
+  });
+
+  it("never emits the bound address", () => {
+    // `new URL(request.url).origin` returned http://0.0.0.0:3000 inside the
+    // Docker image, and every browser refused it with ERR_ADDRESS_INVALID —
+    // so sign-in and sign-out both dead-ended on a redirect.
+    const origin = requestOrigin(
+      req("http://0.0.0.0:3000/auth/callback", { host: "insiderflow.example" }),
+    );
+    expect(origin).not.toContain("0.0.0.0");
+    expect(origin).toBe("https://insiderflow.example");
+  });
+
+  it("prefers the proxy's view of the public origin", () => {
+    // Behind TLS termination the origin server sees http on an internal name;
+    // only the proxy knows the user is on https at the public host.
+    expect(
+      requestOrigin(
+        req("http://10.0.0.7:3000/auth/callback", {
+          host: "10.0.0.7:3000",
+          "x-forwarded-host": "insiderflow.dev",
+          "x-forwarded-proto": "https",
+        }),
+      ),
+    ).toBe("https://insiderflow.dev");
+  });
+
+  it("keeps http for loopback so local development is not broken", () => {
+    expect(requestOrigin(req("http://127.0.0.1:3000/x", { host: "127.0.0.1:3000" }))).toBe(
+      "http://127.0.0.1:3000",
+    );
+  });
+
+  it("falls back to SITE_URL when there is no usable host header", () => {
+    const previous = process.env.SITE_URL;
+    process.env.SITE_URL = "https://configured.example/";
+    try {
+      expect(requestOrigin(req("http://0.0.0.0:3000/x", { host: "0.0.0.0:3000" }))).toBe(
+        "https://configured.example",
+      );
+    } finally {
+      if (previous === undefined) delete process.env.SITE_URL;
+      else process.env.SITE_URL = previous;
+    }
   });
 });
