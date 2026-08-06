@@ -140,11 +140,14 @@ export function PoliticianTradeTable({
                   {row.txnType.replace("_", " ")}
                 </span>
               </td>
-              <td className="num px-4 py-2.5 text-ink">
+              {/* A bracket and an ISO date are single values: letting them
+                  wrap splits "$1,001 – $15,000" and "2026-07-06" across
+                  two lines, which reads as two numbers instead of one. */}
+              <td className="num whitespace-nowrap px-4 py-2.5 text-ink">
                 {formatBracket(row.amountMin, row.amountMax, row.amountRange)}
               </td>
-              <td className="num px-4 py-2.5 text-ink-muted">{row.txnDate}</td>
-              <td className="px-4 py-2.5">
+              <td className="num whitespace-nowrap px-4 py-2.5 text-ink-muted">{row.txnDate}</td>
+              <td className="whitespace-nowrap px-4 py-2.5">
                 {row.disclosedAt ? (
                   <span className="num text-ink-muted">{row.disclosedAt}</span>
                 ) : (
