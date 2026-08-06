@@ -20,34 +20,49 @@ function Section({
 }) {
   return (
     <section id={id} className="flex scroll-mt-20 flex-col gap-3">
-      <h2 className="text-lg font-semibold tracking-tight">
-        <a href={`#${id}`} className="hover:text-brand-teal">
+      {/* Self-link marked by a rule on hover, not by colour — this page's one
+          accent belongs to the disclaimer, and a licence page that shouts in
+          six places is a page nobody finishes. */}
+      <h2 className="text-xl font-semibold tracking-tight text-ink">
+        <a
+          href={`#${id}`}
+          className="cursor-pointer decoration-border underline-offset-4 hover:underline"
+        >
           {title}
         </a>
       </h2>
-      <div className="flex flex-col gap-3 text-sm leading-relaxed text-muted-foreground">
-        {children}
-      </div>
+      <div className="flex flex-col gap-4 text-base leading-relaxed text-ink-muted">{children}</div>
     </section>
   );
 }
 
+/** Every outbound citation on this page reads the same: ink, hairline rule
+ *  underneath, darkening on hover. No colour is spent on a footnote. */
+const LINK_CLASS =
+  "cursor-pointer text-ink underline decoration-border underline-offset-2 transition-colors hover:decoration-ink";
+
 export default function LegalPage() {
   return (
     <>
-      <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-12 pb-16">
-        <header className="flex flex-col gap-3">
-          <h1 className="text-3xl font-semibold tracking-tight">Legal &amp; data sources</h1>
-          <p className="text-muted-foreground">
+      {/* 68ch. This page exists to be read end to end, which is a measure
+          decision before it is a colour one. */}
+      <div className="mx-auto flex max-w-[68ch] flex-col gap-10 px-4 pb-16 pt-20">
+        <header className="flex flex-col gap-3 border-b border-border pb-8">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
+            Legal &amp; data sources
+          </h1>
+          <p className="text-base leading-relaxed text-ink-muted">
             What this project publishes, where each piece of it comes from, and the terms attached.
             Written to be read, not to be clicked past.
           </p>
         </header>
 
-        <div className="glass flex items-start gap-3 rounded-xl border border-amber-300/25 p-4">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden />
-          <div className="text-sm text-muted-foreground">
-            <p className="font-semibold text-foreground">Not investment advice.</p>
+        {/* The page's one accent. Everything below it is a citation; this is
+            the only paragraph a reader must not skim past. */}
+        <div className="surface-sunken flex items-start gap-3 rounded-lg p-4">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-accent-ink" aria-hidden />
+          <div className="text-sm leading-relaxed text-ink-muted">
+            <p className="font-semibold text-ink">Not investment advice.</p>
             <p className="mt-1">
               Nothing on this site — data, classifications, scores, alerts, or UI — is investment
               advice, a recommendation, a solicitation, or an offer to buy or sell any security.
@@ -55,7 +70,7 @@ export default function LegalPage() {
               adviser-client relationship is created by using it. Filings can be late, amended,
               incomplete, or simply wrong, and insider activity is not a reliable predictor of
               returns.{" "}
-              <strong className="text-foreground">
+              <strong className="font-semibold text-ink">
                 Do your own research and consult a licensed professional before making investment
                 decisions.
               </strong>{" "}
@@ -73,44 +88,47 @@ export default function LegalPage() {
             SEC states that EDGAR filings are public information that may be freely used.
           </p>
           <p>
-            <strong className="text-foreground">Fair access.</strong> The SEC requires automated
-            traffic to identify itself with a descriptive User-Agent including a contact address,
-            and to stay under 10 requests per second. InsiderFlow sends a configured{" "}
-            <code>EDGAR_USER_AGENT</code> on every request and rate-limits well below that ceiling.
-            Anyone self-hosting must set their own contact address — see{" "}
+            <strong className="font-semibold text-ink">Fair access.</strong> The SEC requires
+            automated traffic to identify itself with a descriptive User-Agent including a contact
+            address, and to stay under 10 requests per second. InsiderFlow sends a configured{" "}
+            <code className="rounded-sm bg-fill px-1 font-mono text-sm text-ink">
+              EDGAR_USER_AGENT
+            </code>{" "}
+            on every request and rate-limits well below that ceiling. Anyone self-hosting must set
+            their own contact address — see{" "}
             <a
               href="https://www.sec.gov/os/accessing-edgar-data"
               target="_blank"
               rel="noreferrer"
-              className="underline underline-offset-2"
+              className={LINK_CLASS}
             >
               the SEC&rsquo;s access policy
             </a>
             .
           </p>
           <p>
-            <strong className="text-foreground">Attribution.</strong> Source data courtesy of the US
-            Securities and Exchange Commission. The SEC does not endorse this project, and this
-            project is not affiliated with or approved by the SEC.
+            <strong className="font-semibold text-ink">Attribution.</strong> Source data courtesy of
+            the US Securities and Exchange Commission. The SEC does not endorse this project, and
+            this project is not affiliated with or approved by the SEC.
           </p>
         </Section>
 
         <Section id="stock-act" title="Congressional disclosures — STOCK Act">
           <p>
             The Stock Act (Pub. L. 112-105) requires members of Congress to publicly disclose
-            securities transactions over $1,000 within 45 days, on a periodic transaction report
-            (PTR). These filings are public records.
+            securities transactions over <span className="num">$1,000</span> within 45 days, on a
+            periodic transaction report (PTR). These filings are public records.
           </p>
           <p>
-            <strong className="text-foreground">Amounts are ranges.</strong> A PTR discloses a
-            bracket (&ldquo;$1,001&ndash;$15,000&rdquo;), never an exact figure. InsiderFlow stores
-            and displays the bracket as filed and never synthesises a midpoint or point value,
-            because the underlying document does not contain one.
+            <strong className="font-semibold text-ink">Amounts are ranges.</strong> A PTR discloses
+            a bracket (&ldquo;<span className="num">$1,001&ndash;$15,000</span>&rdquo;), never an
+            exact figure. InsiderFlow stores and displays the bracket as filed and never synthesises
+            a midpoint or point value, because the underlying document does not contain one.
           </p>
           <p>
-            <strong className="text-foreground">The disclosure is the news.</strong> Because filers
-            have 45 days, a transaction can surface here weeks after it happened. A filing made past
-            that deadline is labelled <em>late</em> — a fact stated on the filing, not an
+            <strong className="font-semibold text-ink">The disclosure is the news.</strong> Because
+            filers have 45 days, a transaction can surface here weeks after it happened. A filing
+            made past that deadline is labelled <em>late</em> — a fact stated on the filing, not an
             accusation. Nothing here alleges wrongdoing by any filer.
           </p>
           <p>
@@ -119,7 +137,7 @@ export default function LegalPage() {
               href="https://github.com/insiderflow/insiderflow/blob/main/docs/politicians.md"
               target="_blank"
               rel="noreferrer"
-              className="underline underline-offset-2"
+              className={LINK_CLASS}
             >
               docs/politicians.md
             </a>
@@ -132,12 +150,12 @@ export default function LegalPage() {
             Indian insider disclosures (SEBI Prohibition of Insider Trading regulations, SAST
             Regulations 29–31, bulk and block deals, promoter pledges) are published by the National
             Stock Exchange and BSE. Unlike EDGAR, this data is{" "}
-            <strong className="text-foreground">not in the public domain</strong>: both exchanges
-            assert copyright and their website terms restrict automated access, extraction, and
-            redistribution.
+            <strong className="font-semibold text-ink">not in the public domain</strong>: both
+            exchanges assert copyright and their website terms restrict automated access,
+            extraction, and redistribution.
           </p>
           <p>
-            <strong className="text-foreground">
+            <strong className="font-semibold text-ink">
               The hosted reference deployment therefore does not scrape NSE or BSE, and
               redistributes no Indian exchange data.
             </strong>{" "}
@@ -145,22 +163,25 @@ export default function LegalPage() {
             own legal responsibility.
           </p>
           <p>
-            <strong className="text-foreground">India IT Act § 43.</strong> Accessing a computer
-            resource without the owner&rsquo;s permission, or downloading data from it, can attract
-            civil liability under § 43 of the Information Technology Act, 2000, with § 66 providing
-            criminal liability where the act is dishonest or fraudulent. Whether routine scraping of
-            a public webpage in breach of its terms falls within these provisions has not been
-            settled by Indian courts. That uncertainty is the reason this project defaults to off
-            rather than treating it as obviously permitted.
+            <strong className="font-semibold text-ink">India IT Act § 43.</strong> Accessing a
+            computer resource without the owner&rsquo;s permission, or downloading data from it, can
+            attract civil liability under § 43 of the Information Technology Act, 2000, with § 66
+            providing criminal liability where the act is dishonest or fraudulent. Whether routine
+            scraping of a public webpage in breach of its terms falls within these provisions has
+            not been settled by Indian courts. That uncertainty is the reason this project defaults
+            to off rather than treating it as obviously permitted.
           </p>
           <p>
-            The lower-risk route is a licensed data feed: set <code>INDIA_FEED_URL</code> to a
-            source you are licensed to use, and the same normalizer handles it. See{" "}
+            The lower-risk route is a licensed data feed: set{" "}
+            <code className="rounded-sm bg-fill px-1 font-mono text-sm text-ink">
+              INDIA_FEED_URL
+            </code>{" "}
+            to a source you are licensed to use, and the same normalizer handles it. See{" "}
             <a
               href="https://github.com/insiderflow/insiderflow/blob/main/ingestion/india-local/README.md"
               target="_blank"
               rel="noreferrer"
-              className="underline underline-offset-2"
+              className={LINK_CLASS}
             >
               ingestion/india-local/README.md
             </a>{" "}
@@ -186,7 +207,7 @@ export default function LegalPage() {
           <p>
             Clusters, sector classifications, performance scores, and anomaly scores are computed by
             this project from the sources above, using formulas published in full at{" "}
-            <Link href="/docs/methodology" className="underline underline-offset-2">
+            <Link href="/docs/methodology" className={LINK_CLASS}>
               /docs/methodology
             </Link>
             . They are backward-looking descriptive statistics over past filings. They are not
@@ -220,7 +241,7 @@ export default function LegalPage() {
               href="https://www.gnu.org/licenses/agpl-3.0.html"
               target="_blank"
               rel="noreferrer"
-              className="underline underline-offset-2"
+              className={LINK_CLASS}
             >
               GNU Affero General Public License v3.0
             </a>
@@ -228,12 +249,12 @@ export default function LegalPage() {
             your users the corresponding source.
           </p>
           <p className="flex items-start gap-2">
-            <Scale className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <Scale className="mt-0.5 size-4 shrink-0 text-ink-faint" aria-hidden />
             <span>
-              The software is provided <strong className="text-foreground">as is</strong>, without
-              warranty of any kind, express or implied, including but not limited to the warranties
-              of merchantability, fitness for a particular purpose, and non-infringement. The
-              licence text governs; this page is a summary, not a substitute for it.
+              The software is provided <strong className="font-semibold text-ink">as is</strong>,
+              without warranty of any kind, express or implied, including but not limited to the
+              warranties of merchantability, fitness for a particular purpose, and non-infringement.
+              The licence text governs; this page is a summary, not a substitute for it.
             </span>
           </p>
           <p>
@@ -251,7 +272,7 @@ export default function LegalPage() {
               href="https://github.com/insiderflow/insiderflow/issues"
               target="_blank"
               rel="noreferrer"
-              className="underline underline-offset-2"
+              className={LINK_CLASS}
             >
               GitHub
             </a>{" "}

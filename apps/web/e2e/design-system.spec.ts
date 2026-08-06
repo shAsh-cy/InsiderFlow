@@ -103,17 +103,28 @@ test("reduced motion disables non-essential animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/", { waitUntil: "networkidle" });
 
-  const ambientAnimation = await page
-    .locator(".ambient-a")
-    .evaluate((el) => getComputedStyle(el).animationName);
-  expect(ambientAnimation).toBe("none");
-
+  // The live pulse is the system's one persistent ornament. It may be
+  // absent (the dot only pulses once the stream is actually live), so a
+  // missing element passes — but a present one must be stopped.
   const pulseAnimation = await page
     .locator(".live-pulse")
     .first()
     .evaluate((el) => getComputedStyle(el).animationName)
     .catch(() => "none");
   expect(pulseAnimation).toBe("none");
+
+  // The real contract, checked against every element rather than one
+  // known decorative class: under reduced motion nothing on the page may
+  // keep animating indefinitely. This survives the decoration changing.
+  const stillRunning = await page.evaluate(() =>
+    [...document.querySelectorAll("*")]
+      .filter((el) => {
+        const style = getComputedStyle(el);
+        return style.animationName !== "none" && style.animationIterationCount === "infinite";
+      })
+      .map((el) => `${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""}`),
+  );
+  expect(stillRunning).toEqual([]);
 });
 
 test("keyboard access: skip link, palette shortcut, focus rings", async ({ page }) => {

@@ -23,8 +23,10 @@ import {
 } from "./dispatch";
 import { DIGEST_LEASE, withLease } from "./lease";
 import { clusterAlertKey, scanClusterAlerts, scanPoliticianAlerts } from "./derived-scanners";
+import { digestEmail, digestTelegram, instantEmail, telegramMessage } from "./format";
 import { scanForMatches } from "./scanner";
 import type { FetchLike } from "./channels";
+import type { AlertCandidate } from "./types";
 
 const USER_A = "11111111-1111-4111-8111-111111111111";
 const USER_B = "22222222-2222-4222-8222-222222222222";
@@ -1020,6 +1022,35 @@ describe("telegram digest delivery", () => {
   /** Every `&` in a Telegram HTML payload must open a real entity, or it 400s. */
   const hasLooseAmpersand = (s: string): boolean => /&(?!(amp|lt|gt|quot|#\d+);)/.test(s);
 
+  /**
+   * Escaping is only half of the contract. Telegram's HTML mode accepts a
+   * small tag whitelist and answers everything else with
+   * `400: Unsupported start tag` — the same dead end an unescaped `&`
+   * produces. So a renderer that grows a `<div>`, or that lets a user's
+   * markup through, fails identically and is caught by the same assertion.
+   */
+  const TELEGRAM_TAGS = new Set([
+    "a",
+    "b",
+    "blockquote",
+    "code",
+    "del",
+    "em",
+    "i",
+    "ins",
+    "pre",
+    "s",
+    "span",
+    "strike",
+    "strong",
+    "tg-spoiler",
+    "u",
+  ]);
+  const foreignTags = (s: string): string[] =>
+    [...s.matchAll(/<\/?([a-z][a-z0-9-]*)/gi)]
+      .map((m) => m[1]!.toLowerCase())
+      .filter((tag) => !TELEGRAM_TAGS.has(tag));
+
   it("escapes an ordinary issuer name containing & and angle brackets", async () => {
     await telegramOnly();
     // No attacker involved: this is what EDGAR files. AT&T, Johnson & Johnson
@@ -1056,6 +1087,7 @@ describe("telegram digest delivery", () => {
     expect(text).toContain("ZZ Procter &amp; Gamble &lt;Holdings&gt;");
     expect(text).not.toContain("Gamble <Holdings>");
     expect(hasLooseAmpersand(text)).toBe(false);
+    expect(foreignTags(text)).toEqual([]);
   });
 
   it("escapes a rule name the user chose, markup and all", async () => {
@@ -1072,6 +1104,7 @@ describe("telegram digest delivery", () => {
     expect(text).not.toContain("<img");
     expect(text).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(hasLooseAmpersand(text)).toBe(false);
+    expect(foreignTags(text)).toEqual([]); // the <img> never became a tag
     // The digest's own markup survives — escaping must not flatten the message.
     expect(text).toContain("<b>");
   });
@@ -1178,5 +1211,153 @@ describe("telegram digest delivery", () => {
     expect(stats.failedPermanent).toBe(0);
     const [row] = await h.db.select().from(dbExports.alertsLog);
     expect(row?.status).toBe("pending");
+  });
+});
+
+/**
+ * The rendered messages, with no database and no dispatch in the way.
+ *
+ * A Telegram card and an HTML email are the only places a reader meets this
+ * product outside the app, and email is the one place where a literal colour
+ * value is correct — there is no stylesheet to hold a token. So the design
+ * rules are asserted here rather than trusted: Ledger values only, the accent
+ * spent once, figures tabular, direction carried by a shape that survives a
+ * client stripping every colour, and no figure the filing never disclosed.
+ */
+describe("message rendering", () => {
+  const base: AlertCandidate = {
+    id: "33333333-3333-4333-8333-333333333333",
+    dedupKey: "zz-render#0",
+    createdAt: new Date("2026-08-02T12:00:00Z"),
+    txnDate: "2026-08-02",
+    code: "P",
+    shares: 1000,
+    price: 10,
+    value: 500_000,
+    valueUsd: 500_000,
+    currency: "USD",
+    acquiredDisposed: "A",
+    relevance: "opportunistic",
+    source: "edgar",
+    country: "US",
+    is10b51: false,
+    companyId: "44444444-4444-4444-8444-444444444444",
+    ticker: "ZZALERT",
+    companyName: "ZZ Alert Test Corp",
+    insiderId: "55555555-5555-4555-8555-555555555555",
+    insiderName: "ZZ ALERT TESTER",
+    insiderTitle: "CEO",
+    kind: "transaction",
+  };
+  const candidate = (over: Partial<AlertCandidate> = {}): AlertCandidate => ({ ...base, ...over });
+  const groups = (...cs: AlertCandidate[]) => [{ ruleName: "ZZ digest", candidates: cs }];
+  const options = {
+    siteUrl: "https://insiderflow.test",
+    unsubscribeUrl: "https://insiderflow.test/api/alerts/unsubscribe?token=zz",
+  };
+
+  /** Paper, ink, hairline and accent — the whole palette an email may use. */
+  const LEDGER_HEX = ["#FBFAF7", "#FFFFFF", "#17150F", "#6B6659", "#9B9689", "#E4E1D9", "#8A2B2B"];
+  const hexesIn = (html: string): string[] =>
+    (html.match(/#[0-9a-f]{3,8}\b/gi) ?? []).map((h) => h.toUpperCase());
+  const occurrences = (s: string, needle: string): number => s.split(needle).length - 1;
+  /** Emoji as Unicode defines it. The triangles below are geometry, not emoji. */
+  const EMOJI = /\p{Extended_Pictographic}/u;
+
+  it("dresses the email in Ledger paper and ink, and nothing else", () => {
+    const { html } = digestEmail(groups(candidate()), options);
+    const found = hexesIn(html);
+    expect(found.length).toBeGreaterThan(0);
+    for (const hex of found) expect(LEDGER_HEX).toContain(hex);
+
+    // Table layout, inline styles, nothing fetched: Outlook renders through
+    // Word, and half of the rest block remote content by default.
+    expect(html).toContain("<table");
+    expect(html).not.toContain("<div");
+    expect(html).not.toContain("<style");
+    expect(html).not.toContain("<link");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("@font-face");
+  });
+
+  it("spends the one accent exactly once per message", () => {
+    const digest = digestEmail(
+      groups(candidate(), candidate({ dedupKey: "zz-render-2#0" })),
+      options,
+    );
+    expect(occurrences(digest.html, "#8A2B2B")).toBe(1);
+    expect(occurrences(instantEmail("ZZ rule", candidate(), options).html, "#8A2B2B")).toBe(1);
+  });
+
+  it("sets figures in a tabular monospace face so amounts align", () => {
+    const { html } = digestEmail(groups(candidate()), options);
+    expect(html).toContain("font-variant-numeric:tabular-nums");
+    expect(html).toContain("IBM Plex Mono");
+    expect(instantEmail("ZZ rule", candidate(), options).html).toContain(
+      "font-variant-numeric:tabular-nums",
+    );
+  });
+
+  it("carries direction as a shape, because clients strip colour unpredictably", () => {
+    expect(digestEmail(groups(candidate({ acquiredDisposed: "A" })), options).text).toContain(
+      "\n  ▲ 2026-08-02",
+    );
+    expect(digestEmail(groups(candidate({ acquiredDisposed: "D" })), options).text).toContain(
+      "\n  ▼ 2026-08-02",
+    );
+
+    // A direction nobody disclosed gets the app's null mark, never a triangle
+    // guessed in one direction or the other.
+    const unknown = digestEmail(groups(candidate({ acquiredDisposed: null })), options);
+    expect(unknown.text).toContain("\n  — 2026-08-02");
+    expect(unknown.html).not.toContain("▲");
+    expect(unknown.html).not.toContain("▼");
+  });
+
+  it("spends no emoji in any channel", () => {
+    expect(EMOJI.test(telegramMessage("ZZ rule", candidate()))).toBe(false);
+    expect(EMOJI.test(digestTelegram(groups(candidate())))).toBe(false);
+    expect(EMOJI.test(digestEmail(groups(candidate()), options).html)).toBe(false);
+    expect(EMOJI.test(instantEmail("ZZ rule", candidate(), options).html)).toBe(false);
+  });
+
+  it("names a derived alert instead of iconifying it", () => {
+    const cluster = candidate({
+      kind: "cluster",
+      headline:
+        "3 insiders bought ZZALERT between 2026-07-28 and 2026-08-02 — 3 trades, $1,500,000",
+    });
+    const message = telegramMessage("ZZ clusters", cluster);
+    // The word "cluster" is the label; a pictogram would say less and break
+    // the moment a client renders it as a box.
+    expect(message).toContain("<code>cluster</code>");
+    expect(message.startsWith("▲ <b>ZZALERT</b>")).toBe(true);
+  });
+
+  it("never prints a figure the filing did not disclose", () => {
+    const blank = candidate({ shares: null, price: null, value: null, valueUsd: null });
+    const { html, text } = digestEmail(groups(blank), options);
+    expect(text).toContain("an undisclosed number of");
+    expect(text).toContain("undisclosed value");
+    expect(html).toContain("undisclosed value");
+    expect(text).not.toContain("$0");
+  });
+
+  it("keeps a politician's disclosed bracket whole", () => {
+    const bracket = candidate({
+      kind: "politician",
+      shares: null,
+      value: null,
+      valueUsd: null,
+      headline:
+        "ZZ Representative Testcase (house-IND) bought ZZALERT — $1,001 - $15,000, disclosed 2026-08-02",
+    });
+    const { html, text } = digestEmail(groups(bracket), options);
+    expect(text).toContain("$1,001 - $15,000");
+    expect(html).toContain("$1,001 - $15,000");
+    // Neither a midpoint nor the "undisclosed value" that an empty valueUsd
+    // would otherwise print: the bracket IS the disclosure.
+    expect(html).not.toContain("$8,000");
+    expect(html).not.toContain("undisclosed value");
   });
 });

@@ -30,63 +30,74 @@ export default function DocsPage() {
   const paths = Object.entries(openApiSpec.paths as Record<string, { get?: OperationDoc }>);
 
   return (
-    <main className="mx-auto flex max-w-4xl flex-col gap-10 px-6 py-16">
-      <header className="flex flex-col gap-3">
-        <p className="text-sm font-medium uppercase tracking-widest text-emerald-400">
-          {openApiSpec.info.title} · v{openApiSpec.info.version}
+    <main id="main" className="mx-auto flex max-w-3xl flex-col gap-10 px-6 pb-24 pt-20">
+      <header className="flex flex-col gap-3 border-b border-border pb-8">
+        <p className="text-2xs font-semibold uppercase tracking-widest text-ink-faint">
+          {openApiSpec.info.title} · v<span className="num">{openApiSpec.info.version}</span>
         </p>
-        <h1 className="text-4xl font-bold tracking-tight">API documentation</h1>
-        <p className="max-w-2xl text-zinc-400">{openApiSpec.info.description}</p>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">API documentation</h1>
+        <p className="max-w-[68ch] text-base leading-relaxed text-ink-muted">
+          {openApiSpec.info.description}
+        </p>
+        <p className="text-sm text-ink-muted">
           Machine-readable spec:{" "}
-          <a href="/api/openapi.json" className="text-emerald-400 underline underline-offset-4">
+          <a
+            href="/api/openapi.json"
+            className="cursor-pointer font-mono text-ink underline decoration-border underline-offset-4 transition-colors hover:decoration-ink"
+          >
             /api/openapi.json
           </a>
         </p>
       </header>
 
-      <section className="flex flex-col gap-8">
+      <section className="flex flex-col gap-6">
         {paths.map(([path, methods]) => {
           const op = methods.get;
           if (!op) return null;
           return (
-            <article
-              key={path}
-              className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5"
-            >
+            <article key={path} className="surface flex flex-col gap-3 rounded-lg p-5">
               <div className="flex flex-wrap items-baseline gap-3">
-                <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-xs font-bold text-emerald-400">
+                {/* Rectangular: a method marker labels the endpoint, it does
+                    not do anything when you press it. */}
+                <span className="rounded-sm border border-border bg-fill px-1.5 py-0.5 font-mono text-2xs font-semibold text-ink">
                   GET
                 </span>
-                <code className="font-mono text-sm">{path}</code>
+                <code className="font-mono text-sm text-ink">{path}</code>
               </div>
-              <h2 className="font-semibold">{op.summary}</h2>
+              <h2 className="text-base font-semibold text-ink">{op.summary}</h2>
               {op.description ? (
-                <p className="text-sm leading-relaxed text-zinc-400">{op.description}</p>
+                <p className="max-w-[68ch] text-sm leading-relaxed text-ink-muted">
+                  {op.description}
+                </p>
               ) : null}
               {op.parameters && op.parameters.length > 0 ? (
-                <div className="overflow-x-auto">
+                /* Negative margin so the zebra bands bleed to the text edge
+                   rather than sitting inset inside the card's padding. */
+                <div className="-mx-2 overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-xs uppercase text-zinc-500">
-                        <th className="py-1.5 pr-4">Param</th>
-                        <th className="py-1.5 pr-4">In</th>
-                        <th className="py-1.5 pr-4">Type</th>
-                        <th className="py-1.5">Description</th>
+                      <tr className="border-b border-border text-2xs uppercase tracking-widest text-ink-faint">
+                        <th className="px-2 pb-1.5 font-medium">Param</th>
+                        <th className="px-2 pb-1.5 font-medium">In</th>
+                        <th className="px-2 pb-1.5 font-medium">Type</th>
+                        <th className="px-2 pb-1.5 font-medium">Description</th>
                       </tr>
                     </thead>
                     <tbody>
                       {op.parameters.map((p) => (
-                        <tr key={p.name} className="border-b border-zinc-800/50 align-top">
-                          <td className="py-1.5 pr-4 font-mono text-emerald-300">
+                        <tr
+                          key={p.name}
+                          className="border-b border-border align-top last:border-0 even:bg-fill/55"
+                        >
+                          <td className="px-2 py-1.5 font-mono text-xs text-ink">
                             {p.name}
                             {p.required ? "*" : ""}
                           </td>
-                          <td className="py-1.5 pr-4 text-zinc-500">{p.in}</td>
-                          <td className="py-1.5 pr-4 font-mono text-xs text-zinc-400">
+                          <td className="px-2 py-1.5 text-xs text-ink-faint">{p.in}</td>
+                          <td className="px-2 py-1.5 font-mono text-xs text-ink-muted">
                             {paramType(p)}
                           </td>
-                          <td className="py-1.5 text-zinc-400">{p.description}</td>
+                          <td className="px-2 py-1.5 text-xs text-ink-muted">{p.description}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -98,9 +109,11 @@ export default function DocsPage() {
         })}
       </section>
 
-      <footer className="border-t border-zinc-800 pt-6 text-xs leading-relaxed text-zinc-500">
-        Public tier: 60 requests/min per IP. Send <code className="font-mono">x-api-key</code> for
-        600/min. All data is for research and education only — not investment advice.
+      <footer className="border-t border-border pt-6 text-xs leading-relaxed text-ink-faint">
+        Public tier: <span className="num">60</span> requests/min per IP. Send{" "}
+        <code className="font-mono text-ink-muted">x-api-key</code> for{" "}
+        <span className="num">600</span>/min. All data is for research and education only — not
+        investment advice.
       </footer>
     </main>
   );

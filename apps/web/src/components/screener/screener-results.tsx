@@ -131,14 +131,13 @@ export function ScreenerResults({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="tnum mr-auto text-xs text-subtle-foreground" data-testid="result-count">
+        <span className="num mr-auto text-xs text-ink-faint" data-testid="result-count">
           {rows.length}
           {meta.hasMore ? "+" : ""} rows
         </span>
         <Button
           variant="outline"
           size="sm"
-          className="glass border-white/10"
           onClick={() => void exportCsv()}
           disabled={exporting || rows.length === 0}
         >
@@ -148,7 +147,6 @@ export function ScreenerResults({
         <Button
           variant="outline"
           size="sm"
-          className="glass border-white/10"
           onClick={() => void exportXlsx()}
           disabled={exporting || rows.length === 0}
         >
@@ -176,7 +174,6 @@ export function ScreenerResults({
           <Button
             variant="outline"
             size="sm"
-            className="glass border-white/10"
             data-testid="save-alert"
             onClick={() => void saveAsAlert()}
             disabled={saving}
@@ -199,7 +196,7 @@ export function ScreenerResults({
       </div>
 
       {rows.length === 0 ? (
-        <p className="glass rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-10 text-center text-sm text-ink-muted">
           Nothing matches this screen. Loosen a filter or pick another preset.
         </p>
       ) : (
@@ -210,14 +207,13 @@ export function ScreenerResults({
               <Button
                 variant="outline"
                 size="sm"
-                className="glass border-white/10"
                 onClick={() => void loadMore()}
                 disabled={loading}
               >
                 {loading ? <Loader2 className="animate-spin" aria-hidden /> : null} Load more
               </Button>
             ) : (
-              <span className="text-2xs py-2 uppercase tracking-widest text-subtle-foreground">
+              <span className="py-2 text-2xs uppercase tracking-widest text-ink-faint">
                 End of results
               </span>
             )}

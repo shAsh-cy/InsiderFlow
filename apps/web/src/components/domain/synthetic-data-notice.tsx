@@ -14,6 +14,9 @@ import { showSyntheticData } from "@insiderflow/db";
  * built from fixtures is exactly the screenshot that gets mistaken for real
  * market data — which is the thing the whole ZZ* convention exists to prevent.
  *
+ * This is one of the few places allowed to spend the accent: a caveat the
+ * reader must not skim past is exactly what scarcity is being saved for.
+ *
  * Renders nothing in the default configuration.
  */
 export function SyntheticDataNotice() {
@@ -22,13 +25,13 @@ export function SyntheticDataNotice() {
     <p
       role="status"
       data-testid="synthetic-notice"
-      className="glass flex items-center gap-2 rounded-lg border border-amber-300/25 px-3 py-2 text-xs text-amber-200/90"
+      className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/6 px-3 py-2 text-xs text-ink"
     >
-      <FlaskConical className="size-3.5 shrink-0" aria-hidden />
+      <FlaskConical className="size-3.5 shrink-0 text-accent-ink" aria-hidden />
       <span>
         <strong className="font-semibold">Includes synthetic seed data.</strong> This deployment has{" "}
-        <code>INSIDERFLOW_SHOW_SYNTHETIC=true</code>, so fabricated <code>ZZ*</code> fixtures appear
-        in these aggregates. Not market data.
+        <code className="font-mono">INSIDERFLOW_SHOW_SYNTHETIC=true</code>, so fabricated{" "}
+        <code className="font-mono">ZZ*</code> fixtures appear in these aggregates. Not market data.
       </span>
     </p>
   );

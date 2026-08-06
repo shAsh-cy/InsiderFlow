@@ -4,19 +4,22 @@ import { Slot } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Ledger badges: 6px radius, hairline, small caps. Rectangular rather
+ * than pill-shaped — pills are reserved for interactive filter chips, so
+ * the shape alone tells you whether a thing can be clicked.
+ */
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-sm border border-transparent px-1.5 py-0.5 text-2xs font-medium whitespace-nowrap transition-colors [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
-        destructive:
-          "bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90",
-        outline:
-          "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
-        ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 [a&]:hover:underline",
+        default: "bg-accent text-[#FBFAF7] [a&]:hover:bg-[#7A2525]",
+        secondary: "border-border bg-fill text-ink-muted [a&]:hover:text-ink",
+        destructive: "border-accent/40 bg-accent/8 text-accent-ink",
+        outline: "border-border text-ink [a&]:hover:bg-fill",
+        ghost: "text-ink-muted [a&]:hover:bg-fill [a&]:hover:text-ink",
+        link: "text-accent-ink underline-offset-4 [a&]:hover:underline",
       },
     },
     defaultVariants: {

@@ -1,10 +1,18 @@
 "use client";
 
 /**
- * Global client providers. The toaster is code-split (nothing on first
- * paint needs it) and MotionConfig is applied by the components that
- * actually animate, so `motion` stays out of the shared bundle.
+ * Global client providers.
+ *
+ * MotionConfig sits here rather than at each animated component so the
+ * `reducedMotion="user"` contract is impossible to forget: any spring
+ * anywhere in the tree honours the OS setting by default. Components
+ * that move something large still branch on useReducedMotion() to drop
+ * the transform entirely rather than merely shortening it.
+ *
+ * The toaster is code-split — nothing on first paint needs it.
  */
+import { MotionConfig } from "motion/react";
+import { ThemeProvider } from "next-themes";
 import dynamic from "next/dynamic";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,9 +23,19 @@ const Toaster = dynamic(() => import("@/components/ui/sonner").then((m) => m.Toa
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <TooltipProvider delayDuration={150}>
-      {children}
-      <Toaster position="bottom-right" theme="dark" />
-    </TooltipProvider>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      storageKey="insiderflow-theme"
+      disableTransitionOnChange
+    >
+      <MotionConfig reducedMotion="user">
+        <TooltipProvider delayDuration={150}>
+          {children}
+          <Toaster position="bottom-right" />
+        </TooltipProvider>
+      </MotionConfig>
+    </ThemeProvider>
   );
 }

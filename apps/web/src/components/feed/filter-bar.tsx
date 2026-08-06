@@ -13,9 +13,18 @@ import { useCallback } from "react";
 
 import { cn } from "@/lib/utils";
 
+/** Selects are inputs, so they take the 8px input radius — not the pill. */
 const SELECT_CLASS =
-  "glass h-8 rounded-lg border-0 bg-transparent px-2 text-xs text-muted-foreground focus:text-foreground [&>option]:bg-surface-2";
+  "h-8 cursor-pointer rounded-md border border-border bg-surface px-2 text-xs text-ink-muted transition-colors hover:bg-fill focus:text-ink [&>option]:bg-surface";
 
+/**
+ * A filter chip. Pill-shaped because it is interactive — the rectangular
+ * badges elsewhere in the product are not, and that shape difference is
+ * the only signal a reader has.
+ *
+ * An active chip is weight and ground, never colour: the accent is spent
+ * once per view, and a row of oxblood chips would spend it a dozen times.
+ */
 function Chip({
   active,
   onClick,
@@ -31,10 +40,10 @@ function Chip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "h-8 rounded-lg px-3 text-xs transition-colors",
+        "h-8 cursor-pointer rounded-full border px-3 text-xs transition-colors",
         active
-          ? "bg-gradient-accent font-medium text-[#06231f]"
-          : "glass text-muted-foreground hover:text-foreground",
+          ? "border-border bg-fill font-semibold text-ink"
+          : "border-transparent text-ink-muted hover:bg-fill hover:text-ink",
       )}
     >
       {children}
@@ -201,7 +210,7 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
             onKeyDown={(e) => {
               if (e.key === "Enter") setParam({ sector: e.currentTarget.value || null });
             }}
-            className="glass h-8 w-28 rounded-lg border-0 bg-transparent px-2 text-xs placeholder:text-subtle-foreground"
+            className="h-8 w-28 rounded-md border border-border bg-surface px-2 text-xs text-ink placeholder:text-ink-faint"
           />
         </>
       ) : null}
@@ -210,7 +219,7 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
         <button
           type="button"
           onClick={() => router.push(pathname, { scroll: false })}
-          className="text-2xs inline-flex h-8 items-center gap-1 rounded-lg px-2 uppercase tracking-widest text-subtle-foreground hover:text-foreground"
+          className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2 text-2xs uppercase tracking-widest text-ink-faint transition-colors hover:text-ink"
         >
           <X className="size-3" aria-hidden /> Clear
         </button>

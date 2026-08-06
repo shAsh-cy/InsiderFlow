@@ -1,292 +1,328 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* ─────────────────────────────────────────────────────────────────────────
-   InsiderFlow design tokens — dark-only, data-dense, "calm and expensive".
-   Base near-black #0A0B0F; one bold accent gradient: electric teal → violet.
-   ───────────────────────────────────────────────────────────────────────── */
+/* next-themes toggles a class on <html>, so the `dark:` variant has to
+   follow the class rather than the OS media query. In practice the token
+   layer below handles both themes on its own and `dark:` is not needed —
+   this exists so that if someone does reach for it, it behaves. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ═════════════════════════════════════════════════════════════════════════
+   LEDGER — the InsiderFlow design language.
+
+   A paper terminal. Warm off-white stock, hairline rules, ink-black type,
+   monospaced figures, and exactly one accent (oxblood). Light is the
+   default; dark is warm near-black ink, not a neon inversion.
+
+   Rules this file exists to enforce:
+     1. No raw colour values in components. Everything below is a token.
+     2. Hairlines, never glows. One border weight: 1px --border.
+     3. One accent element per view. Oxblood earns attention by scarcity.
+     4. Data colour is Wong (Nature Methods 2011) — colourblind-safe, and
+        never carries meaning alone (always paired with a glyph or label).
+   ═════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Surfaces */
-  --background: #0a0b0f;
-  --surface-1: #101218;
-  --surface-2: #151823;
-  --card: rgba(255, 255, 255, 0.03);
-  --card-foreground: #eef1f8;
-  --popover: #12141c;
-  --popover-foreground: #eef1f8;
+  /* ── Surfaces: warm paper ─────────────────────────────────────────── */
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --fill: #f1f0ec;
+  --border: #e4e1d9;
 
-  /* Text */
-  --foreground: #eef1f8;
-  --muted: rgba(255, 255, 255, 0.06);
-  --muted-foreground: #96a0b5;
-  --subtle-foreground: #6b7386;
+  /* ── Ink ──────────────────────────────────────────────────────────── */
+  --ink: #17150f;
+  /* The secondary and tertiary tones are darker than a paper palette
+     wants them, and deliberately so. Every one of them has to clear
+     4.5:1 against `--fill`, not just against white — zebra striping means
+     any faint figure in a table sits on the darker ground half the time,
+     and tuning these against the page background alone quietly fails
+     every other row. Measured: muted 6.3:1, faint 4.7:1 on `--fill`. */
+  --ink-muted: #5c5749;
+  --ink-faint: #6f6a5c;
 
-  /* The one gradient accent */
-  --accent-teal: #2de0c8;
-  --accent-violet: #7c5cff;
-  --gradient-accent: linear-gradient(135deg, var(--accent-teal) 0%, var(--accent-violet) 100%);
+  /* ── The one accent ───────────────────────────────────────────────── */
+  --accent: #8a2b2b; /* oxblood — CTA fills, brand mark */
+  --accent-ink: #8a2b2b; /* oxblood as *text*; lifted in dark for contrast */
+  --accent-2: #b15f2c; /* burnt orange — live pulse, secondary highlight */
 
-  /* shadcn semantic mapping */
-  --primary: #2de0c8;
-  --primary-foreground: #06231f;
-  --secondary: rgba(255, 255, 255, 0.06);
-  --secondary-foreground: #eef1f8;
-  --accent: rgba(45, 224, 200, 0.12);
-  --accent-foreground: #7ff0df;
-  --destructive: #fb7185;
-  --destructive-foreground: #2a0a10;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: rgba(45, 224, 200, 0.6);
-  --radius: 0.625rem;
+  /* ── Data semantics — Wong palette, colourblind-safe ───────────────
+     `--buy` / `--sell` are the canonical marks (chart fills, badges).
+     `--*-ink` are the text-legible variants: the canonical vermillion
+     is only 3.7:1 on paper, so small text uses a darkened tone of the
+     same hue rather than a different colour. Never pure red/green. */
+  --buy: #d55e00; /* vermillion */
+  --buy-ink: #b04a00;
+  --buy-soft: rgba(213, 94, 0, 0.1);
+  --sell: #0072b2; /* blue */
+  --sell-ink: #0072b2;
+  --sell-soft: rgba(0, 114, 178, 0.1);
+  --series-3: #009e73; /* bluish green */
+  --series-4: #e69f00; /* orange */
+  --flat: #6b6659;
+  --flat-soft: rgba(107, 102, 89, 0.1);
 
-  /* Market semantics */
-  --buy: #34e3b0;
-  --buy-soft: rgba(52, 227, 176, 0.14);
-  --sell: #fb7185;
-  --sell-soft: rgba(251, 113, 133, 0.13);
-  --flat: #96a0b5;
-  --flat-soft: rgba(150, 160, 181, 0.12);
+  /* ── Sequential ramp for the heatmap — perceptually uniform, never
+        red–green. Viridis, sampled at six stops. ─────────────────────── */
+  --ramp-0: #440154;
+  --ramp-1: #414487;
+  --ramp-2: #2a788e;
+  --ramp-3: #22a884;
+  --ramp-4: #7ad151;
+  --ramp-5: #fde725;
 
-  /* Depth — layered, soft, never muddy */
-  --shadow-card:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.5),
-    0 8px 24px -12px rgba(0, 0, 0, 0.6);
-  --shadow-lift:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 6px rgba(0, 0, 0, 0.45),
-    0 16px 40px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-glow: 0 0 0 1px rgba(45, 224, 200, 0.18), 0 4px 32px -8px rgba(45, 224, 200, 0.25);
+  /* ── Depth: near-flat, warm. No glow anywhere. ─────────────────────── */
+  --shadow-card: 0 1px 2px rgba(23, 21, 15, 0.05);
+  --shadow-overlay: 0 8px 24px rgba(23, 21, 15, 0.08);
+
+  /* ── Radii ────────────────────────────────────────────────────────── */
+  --radius: 0.75rem;
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0e0d0b;
+  --surface: #17150f;
+  --fill: #1e1b17;
+  --border: #2a2723;
+
+  --ink: #f2efe8;
+  --ink-muted: #a7a091;
+  /* Same reasoning as light: lifted to 5.2:1 on the dark ground. */
+  --ink-faint: #8f887a;
+
+  /* Oxblood stays the fill colour (light ink on it reads 7.6:1); as text
+     on near-black it would be 2.3:1, so text uses a lifted tone. */
+  --accent: #8a2b2b;
+  --accent-ink: #c97f76;
+  --accent-2: #b15f2c;
+
+  /* Vermillion clears 5:1 on this ground unchanged; the blue does not,
+     so only the blue is lifted. Hue family is preserved in both. */
+  --buy: #d55e00;
+  --buy-ink: #e07a2c;
+  --buy-soft: rgba(213, 94, 0, 0.14);
+  --sell: #0072b2;
+  --sell-ink: #3b95cf;
+  --sell-soft: rgba(59, 149, 207, 0.14);
+  --series-3: #009e73;
+  --series-4: #e69f00;
+  --flat: #a7a091;
+  --flat-soft: rgba(167, 160, 145, 0.12);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
 
   color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-subtle-foreground: var(--subtle-foreground);
+  /* ── Ledger-native colour names ─────────────────────────────────────── */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fill: var(--fill);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
   --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-surface-1: var(--surface-1);
-  --color-surface-2: var(--surface-2);
-  --color-teal: var(--accent-teal);
-  --color-violet: var(--accent-violet);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-2: var(--accent-2);
   --color-buy: var(--buy);
+  --color-buy-ink: var(--buy-ink);
   --color-buy-soft: var(--buy-soft);
   --color-sell: var(--sell);
+  --color-sell-ink: var(--sell-ink);
   --color-sell-soft: var(--sell-soft);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
   --color-flat: var(--flat);
   --color-flat-soft: var(--flat-soft);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* ── shadcn semantic aliases, mapped onto Ledger ───────────────────── */
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-foreground: #fbfaf7;
+  --color-secondary: var(--fill);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--fill);
+  --color-muted-foreground: var(--ink-muted);
+  --color-subtle-foreground: var(--ink-faint);
+  /* Ink that sits *on* an oxblood fill. Note this is not shadcn's
+     "subtle hover surface" meaning of accent — in Ledger the accent is
+     the oxblood itself, and hover surfaces use `fill`. */
+  --color-accent-foreground: #fbfaf7;
+  --color-destructive: var(--accent);
+  --color-destructive-foreground: #fbfaf7;
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent-ink);
+
+  /* ── Type scale — the ten Ledger steps, nothing between ────────────── */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+  --text-4xl: 3rem;
+  --text-4xl--line-height: 3.25rem;
+  --text-5xl: 4rem;
+  --text-5xl--line-height: 4.125rem;
+  /* Clamped to the top of the scale: the scale ends at 4rem, and a
+     stray text-6xl must not silently reintroduce an off-scale size. */
+  --text-6xl: 4rem;
+  --text-6xl--line-height: 4.125rem;
+  --text-7xl: 4rem;
+  --text-7xl--line-height: 4.125rem;
+
+  /* ── Radii: badges 6, inputs/buttons 8, cards 12. Nothing larger. ─── */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.75rem;
 
   --shadow-card: var(--shadow-card);
-  --shadow-lift: var(--shadow-lift);
-  --shadow-glow: var(--shadow-glow);
+  --shadow-overlay: var(--shadow-overlay);
 
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-
-  /* Type scale — quiet body, confident display */
-  --text-2xs: 0.6875rem;
-  --text-2xs--line-height: 1rem;
+  /* ── Fonts — injected by next/font in layout.tsx, self-hosted ─────── */
+  --font-sans: var(--font-onest), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* ── Base ────────────────────────────────────────────────────────────────── */
+/* ── Base ─────────────────────────────────────────────────────────────── */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: rgba(45, 224, 200, 0.28);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--ink);
 }
 
-/* Visible, branded focus — keyboard users always know where they are */
+/* Focus is a hairline square, matching the rest of the language. */
 :focus-visible {
-  outline: 2px solid var(--accent-teal);
+  outline: 2px solid var(--accent-ink);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
-/* Tabular numbers everywhere data lives */
+/* Every figure in this product is tabular — columns of numbers must align
+   on the decimal, and a digit must never change width as it ticks. */
 .tnum {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
-/* ── Glassmorphism ───────────────────────────────────────────────────────── */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
 
-.glass {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.055) 0%,
-    rgba(255, 255, 255, 0.02) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+
+/* The card. One hairline, one whisper of shadow, nothing else. */
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-card);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 
-.glass-strong {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: var(--shadow-lift);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+/* Recessed panel — for insets, wells, and zebra bands. */
+.surface-sunken {
+  background: var(--fill);
+  border: 1px solid var(--border);
 }
 
-/* ── Grain — one subtle SVG noise layer over everything ─────────────────── */
+/* Floating layer — dialogs, popovers, the command palette. */
+.surface-raised {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-overlay);
+}
 
-.grain::after {
+/* ── The ledger rule — the signature motif ────────────────────────────
+   Horizontal hairlines at the 4px grid's 8th multiple, like accounting
+   paper. Used behind editorial sections on the landing page. */
+.ruled {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 31px,
+    var(--border) 31px,
+    var(--border) 32px
+  );
+}
+
+/* Vertical ledger column rule, for the hero's left margin. */
+.ruled-margin {
+  background-image: linear-gradient(to right, var(--accent) 0 2px, transparent 2px);
+}
+
+/* ── Paper grain — one very quiet fibre layer over the whole page ────── */
+
+.paper-grain::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 60;
   pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 160px 160px;
 }
 
-/* ── Gradient utilities ──────────────────────────────────────────────────── */
-
-.text-gradient {
-  background: var(--gradient-accent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.dark .paper-grain::after {
+  mix-blend-mode: screen;
+  opacity: 0.02;
 }
 
-.bg-gradient-accent {
-  background: var(--gradient-accent);
-}
+/* ── Live pulse — the one thing on the page that breathes ─────────────
+   Burnt orange, a soft ring rather than a glow. */
 
-.border-gradient {
-  position: relative;
-}
-.border-gradient::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(45, 224, 200, 0.5), rgba(124, 92, 255, 0.5));
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-/* ── Ambient hero: two slow-drifting gradient fields ─────────────────────── */
-
-@keyframes ambient-drift-a {
-  0% {
-    transform: translate3d(-6%, -4%, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(5%, 6%, 0) scale(1.15);
-  }
-  100% {
-    transform: translate3d(-6%, -4%, 0) scale(1);
-  }
-}
-
-@keyframes ambient-drift-b {
-  0% {
-    transform: translate3d(4%, 6%, 0) scale(1.1);
-  }
-  50% {
-    transform: translate3d(-5%, -5%, 0) scale(0.95);
-  }
-  100% {
-    transform: translate3d(4%, 6%, 0) scale(1.1);
-  }
-}
-
-/*
- * No `filter: blur()` here on purpose: blurring 40rem+ elements creates
- * huge compositor layers and measurably delays first paint. Multi-stop
- * radial gradients give the same soft falloff for free.
- */
-.ambient-a,
-.ambient-b {
-  position: absolute;
-  border-radius: 9999px;
-  will-change: transform;
-  pointer-events: none;
-  contain: paint;
-}
-
-.ambient-a {
-  background: radial-gradient(
-    circle at 35% 35%,
-    rgba(45, 224, 200, 0.3) 0%,
-    rgba(45, 224, 200, 0.16) 28%,
-    rgba(45, 224, 200, 0.05) 52%,
-    transparent 72%
-  );
-  animation: ambient-drift-a 38s ease-in-out infinite;
-}
-
-.ambient-b {
-  background: radial-gradient(
-    circle at 65% 55%,
-    rgba(124, 92, 255, 0.28) 0%,
-    rgba(124, 92, 255, 0.15) 28%,
-    rgba(124, 92, 255, 0.05) 52%,
-    transparent 72%
-  );
-  animation: ambient-drift-b 46s ease-in-out infinite;
-}
-
-/* ── Live pulse ──────────────────────────────────────────────────────────── */
-
-@keyframes live-pulse {
+@keyframes ledger-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 227, 176, 0.55);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-2) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(52, 227, 176, 0);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-2) 0%, transparent);
   }
 }
 
 .live-pulse {
-  animation: live-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: ledger-pulse 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* ── Reduced motion: ambience and non-essential animation off ────────────── */
+/* ── Reduced motion: everything decorative stops. ─────────────────────
+   The live pulse is the system's only infinite animation. It is pure
+   ornament, so it is killed outright rather than shortened. */
 
 @media (prefers-reduced-motion: reduce) {
-  .ambient-a,
-  .ambient-b,
   .live-pulse {
     animation: none !important;
   }
@@ -300,20 +336,21 @@ body {
   }
 }
 
-/* ── Scrollbars that match the surface ───────────────────────────────────── */
+/* ── Scrollbars — hairline, matching the paper ────────────────────────── */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: var(--border) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ink-faint);
+  opacity: 0.4;
   border-radius: 8px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-track {

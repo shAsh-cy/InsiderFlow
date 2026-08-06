@@ -20,11 +20,12 @@ export function WatchlistButton({
     <Button
       variant="outline"
       size="sm"
-      className="glass border-white/10"
       aria-pressed={active}
       onClick={() => (active ? remove(`${kind}:${refId}`) : add({ kind, refId, label, market }))}
     >
-      <Star className={cn("size-3.5", active && "fill-amber-300 text-amber-300")} aria-hidden />
+      {/* Filled vs hollow is the state, not a colour change — the label
+          says "Watching" either way, so the glyph is confirmation. */}
+      <Star className={cn("size-3.5", active && "fill-ink text-ink")} aria-hidden />
       {active ? "Watching" : "Watch"}
     </Button>
   );

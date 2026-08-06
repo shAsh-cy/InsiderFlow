@@ -27,9 +27,13 @@ const LiveFeedRow = dynamic(
 export function LiveFeedStrip({
   initialTrades,
   limit = 6,
+  label = "Live tape",
+  emptyMessage = "Listening for filings — new trades appear here the moment they are ingested.",
 }: {
   initialTrades: TradeRow[];
   limit?: number;
+  label?: string;
+  emptyMessage?: string;
 }) {
   const { trades, status } = useTradeStream({ maxItems: limit });
 
@@ -46,27 +50,32 @@ export function LiveFeedStrip({
   }, [trades, initialTrades, limit]);
 
   return (
-    <section aria-label="Live insider trades" className="mx-auto w-full max-w-3xl px-4 sm:px-6">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          Live tape
-        </h2>
+    <section aria-label="Live insider trades" className="w-full">
+      <div className="mb-2 flex items-baseline justify-between border-b border-border pb-2">
+        <h3 className="text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">
+          {label}
+        </h3>
         <LiveDot status={status} />
       </div>
       {rows.length === 0 ? (
-        <p className="glass rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
-          Listening for filings — new trades appear here the moment they are ingested.
+        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
+          {emptyMessage}
         </p>
       ) : (
-        <ul className="flex flex-col gap-2" data-testid="live-feed">
-          {rows.map(({ trade, streamed }) =>
-            streamed ? (
-              <LiveFeedRow key={trade.id} trade={trade} />
-            ) : (
-              <StaticFeedRow key={trade.id} trade={trade} />
-            ),
-          )}
-        </ul>
+        // One surface around the whole run: rows are told apart by a
+        // hairline, so the strip reads as a continuous tape rather than a
+        // stack of separate cards.
+        <div className="surface overflow-hidden rounded-lg">
+          <ul data-testid="live-feed">
+            {rows.map(({ trade, streamed }) =>
+              streamed ? (
+                <LiveFeedRow key={trade.id} trade={trade} />
+              ) : (
+                <StaticFeedRow key={trade.id} trade={trade} />
+              ),
+            )}
+          </ul>
+        </div>
       )}
     </section>
   );

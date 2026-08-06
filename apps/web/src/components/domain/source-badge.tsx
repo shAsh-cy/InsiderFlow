@@ -16,7 +16,7 @@ export function SourceBadge({ source, className }: { source: string; className?:
     <span
       title={entry.title}
       className={cn(
-        "inline-flex items-center rounded border border-white/10 bg-white/4 px-1.5 py-0.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground",
+        "inline-flex items-center rounded-sm border border-border px-1.5 py-0.5 font-mono text-2xs uppercase tracking-wider text-ink-faint",
         className,
       )}
     >

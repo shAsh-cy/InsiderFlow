@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Design-system showcase and acceptance harness: every domain primitive
- * rendered with representative data, plus a 10,000-row virtualized
- * DataTable and a live-feed insert simulator.
+ * Ledger — design-system showcase and acceptance harness.
+ *
+ * Two jobs: document the language (tokens, scale, semantics, motion), and
+ * exercise it (every domain primitive with representative data, a 10,000
+ * row virtualized DataTable, and a live-feed insert simulator). If a
+ * primitive is not on this page it is not part of the system.
  */
 import { SEC_TRANSACTION_CODES } from "@insiderflow/core";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -23,6 +26,7 @@ import {
   TransactionCodeBadge,
   TrendBadge,
 } from "@/components/domain";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { TradeRow } from "@/lib/api/queries";
@@ -94,7 +98,7 @@ const DEMO_COLUMNS: ColumnDef<DemoRow, unknown>[] = [
     accessorKey: "txnDate",
     header: "Date",
     size: 110,
-    cell: ({ row }) => <span className="text-muted-foreground">{row.original.txnDate}</span>,
+    cell: ({ row }) => <span className="num text-ink-muted">{row.original.txnDate}</span>,
   },
   {
     accessorKey: "ticker",
@@ -103,7 +107,7 @@ const DEMO_COLUMNS: ColumnDef<DemoRow, unknown>[] = [
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2">
         <CountryFlag country={row.original.market} />
-        <span className="font-mono text-xs font-semibold">{row.original.ticker}</span>
+        <span className="num text-xs font-semibold text-ink">{row.original.ticker}</span>
       </span>
     ),
   },
@@ -118,7 +122,7 @@ const DEMO_COLUMNS: ColumnDef<DemoRow, unknown>[] = [
     accessorKey: "shares",
     header: "Shares",
     size: 110,
-    cell: ({ row }) => row.original.shares.toLocaleString("en-US"),
+    cell: ({ row }) => <span className="num">{row.original.shares.toLocaleString("en-US")}</span>,
   },
   {
     accessorKey: "valueUsd",
@@ -188,16 +192,65 @@ function fakeTrade(): TradeRow {
   };
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section aria-label={title} className="flex flex-col gap-4">
-      <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-        {title}
-      </h2>
+    <section aria-label={title} className="flex flex-col gap-3">
+      <div className="border-b border-border pb-2">
+        <h2 className="text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">
+          {title}
+        </h2>
+        {note ? <p className="mt-1.5 max-w-[68ch] text-xs text-ink-muted">{note}</p> : null}
+      </div>
       {children}
     </section>
   );
 }
+
+/** A colour token, shown with its name and its role. */
+function Swatch({ name, className, role }: { name: string; className: string; role: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden
+        className={`size-9 shrink-0 rounded-md border border-border ${className}`}
+      />
+      <span className="min-w-0">
+        <span className="num block text-2xs font-semibold text-ink">{name}</span>
+        <span className="block truncate text-2xs text-ink-faint">{role}</span>
+      </span>
+    </div>
+  );
+}
+
+const TYPE_SCALE = [
+  { cls: "text-2xs", rem: "0.75" },
+  { cls: "text-xs", rem: "0.8125" },
+  { cls: "text-sm", rem: "0.875" },
+  { cls: "text-base", rem: "1" },
+  { cls: "text-lg", rem: "1.125" },
+  { cls: "text-xl", rem: "1.375" },
+  { cls: "text-2xl", rem: "1.75" },
+  { cls: "text-3xl", rem: "2.25" },
+  { cls: "text-4xl", rem: "3" },
+  { cls: "text-5xl", rem: "4" },
+];
+
+const MOTION_PRESETS = [
+  ["snappy", "400 / 17 / 1", "Hover lift — a small, deliberate overshoot"],
+  ["press", "400 / 30", "Press. Critically damped: never bounces under a finger"],
+  ["layout", "500 / 30", "The layout prop — reflow, reorder, size change"],
+  ["feedRow", "350 / 30 / 1", "Live SSE row insertion"],
+  ["reveal", "100 / 20 / 1", "Scroll-triggered section reveal"],
+  ["counter", "75 / 15 / 0.8", "Number count-up"],
+];
 
 export default function DesignPage() {
   const rows = useMemo(() => makeRows(10_000), []);
@@ -205,18 +258,87 @@ export default function DesignPage() {
 
   return (
     <div className="flex flex-col gap-12 pb-24">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Design <span className="text-gradient">system</span>
-        </h1>
-        <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          Every domain primitive with representative data. Dark-only, data-dense, one gradient
-          accent, motion that respects your OS settings.
+      <header className="border-l-2 border-l-accent pl-5">
+        <p className="num text-2xs uppercase tracking-[0.22em] text-ink-faint">Design language</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink">Design — Ledger</h1>
+        <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-ink-muted">
+          A paper terminal. Warm off-white stock, hairline rules, ink-black type, monospaced
+          figures, and exactly one accent. Light is the default; dark is warm near-black ink, not an
+          inverted neon skin. Toggle the theme in the masthead — everything below is drawn from the
+          same tokens in both.
         </p>
       </header>
 
+      <Section
+        title="Colour tokens"
+        note="No component may contain a raw colour value. Oxblood is the only accent, and a view shows at most one accent element — it earns attention by scarcity."
+      >
+        <div className="surface grid gap-4 rounded-lg p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Swatch name="--bg" className="bg-bg" role="Page ground" />
+          <Swatch name="--surface" className="bg-surface" role="Cards, tables, overlays" />
+          <Swatch name="--fill" className="bg-fill" role="Zebra, hover, wells" />
+          <Swatch name="--border" className="bg-border" role="Every rule in the product" />
+          <Swatch name="--ink" className="bg-ink" role="Primary type" />
+          <Swatch name="--ink-muted" className="bg-ink-muted" role="Secondary type" />
+          <Swatch name="--ink-faint" className="bg-ink-faint" role="Tertiary type, null glyphs" />
+          <Swatch name="--accent" className="bg-accent" role="Oxblood — CTA fills, brand" />
+          <Swatch name="--accent-2" className="bg-accent-2" role="Burnt orange — live pulse" />
+        </div>
+      </Section>
+
+      <Section
+        title="Chart & data semantics — Wong palette, colourblind-safe"
+        note="From Wong, Nature Methods 8:441 (2011). Deliberately not red/green: roughly 8% of men have a colour-vision deficiency, and red–green is the axis most of them lose. Colour never carries meaning alone — every buy/sell distinction is also a glyph, a code letter, or a written label."
+      >
+        <div className="surface grid gap-4 rounded-lg p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Swatch name="--buy #D55E00" className="bg-buy" role="Vermillion · BUY · paired with ▲" />
+          <Swatch name="--sell #0072B2" className="bg-sell" role="Blue · SELL · paired with ▼" />
+          <Swatch name="--series-3 #009E73" className="bg-series-3" role="Bluish green" />
+          <Swatch name="--series-4 #E69F00" className="bg-series-4" role="Orange" />
+        </div>
+        <div className="surface rounded-lg p-4">
+          <p className="mb-3 text-2xs uppercase tracking-widest text-ink-faint">
+            Heatmap ramp — Viridis, perceptually uniform sequential
+          </p>
+          <div className="flex h-8 overflow-hidden rounded-md border border-border">
+            <span className="flex-1 bg-[var(--ramp-0)]" />
+            <span className="flex-1 bg-[var(--ramp-1)]" />
+            <span className="flex-1 bg-[var(--ramp-2)]" />
+            <span className="flex-1 bg-[var(--ramp-3)]" />
+            <span className="flex-1 bg-[var(--ramp-4)]" />
+            <span className="flex-1 bg-[var(--ramp-5)]" />
+          </div>
+          <p className="mt-2 text-2xs text-ink-faint">
+            A sequential quantity gets a sequential ramp. A red–green diverging scale here would be
+            wrong twice over.
+          </p>
+        </div>
+      </Section>
+
+      <Section
+        title="Type — Onest for interface, IBM Plex Mono for every figure"
+        note="Numbers are set in mono with tabular figures so a column of amounts aligns digit-for-digit, and so a ticking counter never changes width as it climbs. The scale has ten steps and nothing between them."
+      >
+        <div className="surface flex flex-col divide-y divide-border rounded-lg px-4">
+          {TYPE_SCALE.map((step) => (
+            <div key={step.cls} className="flex items-baseline gap-4 py-2.5">
+              <span className="num w-24 shrink-0 text-2xs text-ink-faint">{step.rem}rem</span>
+              <span className="num w-20 shrink-0 text-2xs text-ink-faint">{step.cls}</span>
+              <span className={`${step.cls} truncate font-medium tracking-tight text-ink`}>
+                Insider tape
+              </span>
+            </div>
+          ))}
+          <div className="flex items-baseline gap-4 py-3">
+            <span className="num w-24 shrink-0 text-2xs text-ink-faint">.num</span>
+            <span className="num w-20 shrink-0 text-2xs text-ink-faint">mono</span>
+            <span className="num text-base text-ink">1,204,880 · 0.00 · $2.79M · ₹24.5 Cr</span>
+          </div>
+        </div>
+      </Section>
+
       <Section title="Transaction codes — all 20, colored by signal weight">
-        <div className="glass flex flex-wrap gap-2 rounded-xl p-4">
+        <div className="surface flex flex-wrap gap-2 rounded-lg p-4">
           {Object.keys(SEC_TRANSACTION_CODES).map((code) => (
             <TransactionCodeBadge key={code} code={code} />
           ))}
@@ -224,21 +346,19 @@ export default function DesignPage() {
       </Section>
 
       <Section title="Currency values — native + USD, lakh/crore, not-disclosed">
-        <div className="glass flex flex-col gap-2 rounded-xl p-4 text-sm">
+        <div className="surface flex flex-col gap-2 rounded-lg p-4 text-sm">
           <CurrencyValue value={2_790_000} currency="USD" valueUsd={2_790_000} />
           <CurrencyValue value={245_000_000} currency="INR" valueUsd={2_793_000} />
           <CurrencyValue value={320_000} currency="INR" valueUsd={null} />
           <span className="inline-flex items-center gap-2">
             <CurrencyValue value={null} currency="INR" valueUsd={null} />
-            <span className="text-xs text-subtle-foreground">
-              (SAST rows carry no value by design)
-            </span>
+            <span className="text-xs text-ink-faint">(SAST rows carry no value by design)</span>
           </span>
         </div>
       </Section>
 
       <Section title="Badges, flags & status">
-        <div className="glass flex flex-wrap items-center gap-3 rounded-xl p-4">
+        <div className="surface flex flex-wrap items-center gap-3 rounded-lg p-4">
           <CountryFlag country="US" />
           <CountryFlag country="IN" />
           <CountryFlag country="BR" />
@@ -258,8 +378,36 @@ export default function DesignPage() {
         </div>
       </Section>
 
+      <Section
+        title="Controls — shape tells you what is clickable"
+        note="Rectangular 6px badges are static labels. Pill-shaped chips are interactive. That one distinction is the only cue a reader gets, so it is never decorative."
+      >
+        <div className="surface flex flex-wrap items-center gap-3 rounded-lg p-4">
+          <Button size="sm">Primary</Button>
+          <Button size="sm" variant="outline">
+            Outline
+          </Button>
+          <Button size="sm" variant="secondary">
+            Secondary
+          </Button>
+          <Button size="sm" variant="ghost">
+            Ghost
+          </Button>
+          <Button size="sm" variant="destructive">
+            Destructive
+          </Button>
+          <Button size="sm" variant="link">
+            Link
+          </Button>
+          <Badge>default</Badge>
+          <Badge variant="secondary">secondary</Badge>
+          <Badge variant="outline">outline</Badge>
+          <Badge variant="destructive">destructive</Badge>
+        </div>
+      </Section>
+
       <Section title="Stat cards — spring count-up (static under reduced motion)">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <StatCard label="Filings ingested" value={12_847} hint="last 30 days" accent />
           <StatCard
             label="Opportunistic buys"
@@ -271,23 +419,39 @@ export default function DesignPage() {
         </div>
       </Section>
 
+      <Section
+        title="Motion presets"
+        note="Springs, not durations: physical settling stays coherent when two animations of different distances run side by side. A component that hand-rolls its own spring is a bug. Everything honours prefers-reduced-motion — large transforms are dropped entirely, not merely shortened."
+      >
+        <div className="surface flex flex-col divide-y divide-border rounded-lg px-4">
+          {MOTION_PRESETS.map(([name, spring, role]) => (
+            <div key={name} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5">
+              <span className="num w-24 shrink-0 text-xs font-semibold text-ink">{name}</span>
+              <span className="num w-28 shrink-0 text-2xs text-ink-faint">{spring}</span>
+              <span className="text-xs text-ink-muted">{role}</span>
+            </div>
+          ))}
+        </div>
+      </Section>
+
       <Section title="Live feed row — animated insert">
         <div className="flex flex-col gap-3">
           <div>
             <Button
               size="sm"
               variant="outline"
-              className="glass border-white/10"
               onClick={() => setFeed((current) => [fakeTrade(), ...current].slice(0, 5))}
             >
               Inject demo trade
             </Button>
           </div>
-          <ul className="flex flex-col gap-2" data-testid="demo-feed">
-            {feed.map((trade) => (
-              <LiveFeedRow key={trade.id} trade={trade} />
-            ))}
-          </ul>
+          <div className="surface overflow-hidden rounded-lg">
+            <ul data-testid="demo-feed">
+              {feed.map((trade) => (
+                <LiveFeedRow key={trade.id} trade={trade} />
+              ))}
+            </ul>
+          </div>
         </div>
       </Section>
 
@@ -306,20 +470,41 @@ export default function DesignPage() {
             />
           </TabsContent>
           <TabsContent value="notes">
-            <p className="glass rounded-xl p-4 text-sm text-muted-foreground">
+            <p className="surface rounded-lg p-4 text-sm text-ink-muted">
               TanStack Table drives the model, TanStack Virtual windows the rows — only the visible
               slice exists in the DOM, so 10k rows scroll at 60fps. Headers expose aria-sort and
-              toggle on click.
+              toggle on click. Rows carry a hairline and a hover ground and nothing else: a shadow
+              or a blur per row is what turns a cheap scroll into a janky one.
             </p>
           </TabsContent>
         </Tabs>
+      </Section>
+
+      <Section
+        title="Empty states — honest, never fabricated"
+        note="A missing value is never a zero. When a source is unavailable the product says so plainly instead of drawing a flat line at nought, because a fabricated zero is indistinguishable from a real one."
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="surface rounded-lg p-4">
+            <p className="text-2xs uppercase tracking-widest text-ink-faint">Value not disclosed</p>
+            <p className="mt-2 text-sm text-ink">
+              <NotDisclosed />{" "}
+              <span className="text-ink-muted">— the filing carried no figure</span>
+            </p>
+          </div>
+          <div className="surface rounded-lg p-4">
+            <p className="text-2xs uppercase tracking-widest text-ink-faint">No rows</p>
+            <p className="mt-2 text-sm text-ink-muted">
+              No insider transactions on record for this company.
+            </p>
+          </div>
+        </div>
       </Section>
 
       <Section title="Toasts">
         <div>
           <Button
             variant="outline"
-            className="glass border-white/10"
             onClick={() => toast.success("Saved", { description: "This is the toast primitive." })}
           >
             Show toast

@@ -3,6 +3,10 @@ import { cn } from "@/lib/utils";
 /**
  * Routine = scheduled compensation plumbing (grants, withholding, 10b5-1).
  * Opportunistic = a discretionary trade — the ones worth watching.
+ *
+ * Encoded by weight and contrast rather than hue. This badge repeats on
+ * every row of every table, so giving it a colour would spend the one
+ * accent hundreds of times per view and leave nothing to draw the eye.
  */
 export function RelevanceBadge({
   relevance,
@@ -15,10 +19,10 @@ export function RelevanceBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium uppercase tracking-wide ring-1 ring-inset",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs uppercase tracking-wide",
         opportunistic
-          ? "bg-violet/15 text-[#b9a5ff] ring-violet/40"
-          : "bg-flat-soft text-flat ring-white/10",
+          ? "border-border bg-fill font-semibold text-ink"
+          : "border-transparent font-medium text-ink-faint",
         className,
       )}
     >

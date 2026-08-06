@@ -37,11 +37,9 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Live <span className="text-gradient">feed</span>
-        </h1>
-        <p className="text-sm text-muted-foreground">
+      <header className="flex flex-col gap-1 border-l-2 border-l-accent pl-5">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Live feed</h1>
+        <p className="max-w-[68ch] text-sm text-ink-muted">
           Every normalized insider trade, streaming as it is ingested. Not investment advice.
         </p>
       </header>
@@ -61,7 +59,7 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
           filters={{ ...filters, sort: query.sort, order: query.order, limit: 30 }}
         />
       ) : (
-        <p className="glass rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           History is unavailable right now — the live stream above keeps running.
         </p>
       )}

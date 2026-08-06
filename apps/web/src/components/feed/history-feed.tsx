@@ -14,7 +14,10 @@ import { fetchTrades } from "@/lib/api/client";
 import type { Paged, TradesParams } from "@/lib/api/client";
 import type { PageMeta, TradeRow } from "@/lib/api/queries";
 
-const ROW_HEIGHT = 48; // px, including the 8px gap
+// px. The tape has no gaps: rows butt against one another and are told
+// apart by a single hairline, so the virtualizer's estimate is the whole
+// row and nothing has to be subtracted back out.
+const ROW_HEIGHT = 44;
 
 export function HistoryFeed({
   initialPage,
@@ -70,15 +73,18 @@ export function HistoryFeed({
 
   return (
     <section aria-label="Trade history" data-testid="history-feed">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-ink-muted">
         History
       </h2>
       {rows.length === 0 ? (
-        <p className="glass rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           No trades match these filters.
         </p>
       ) : (
-        <div ref={listRef}>
+        // One surface around the whole run of rows. Each row carries only
+        // a hairline and a hover ground — no per-row border, shadow or
+        // blur, which is what keeps a ten-thousand-row scroll cheap.
+        <div ref={listRef} className="surface overflow-hidden rounded-lg">
           <ul
             className="relative"
             style={{ height: virtualizer.getTotalSize() }}
@@ -92,7 +98,7 @@ export function HistoryFeed({
                   trade={trade}
                   className="absolute inset-x-0 top-0"
                   style={{
-                    height: ROW_HEIGHT - 8,
+                    height: ROW_HEIGHT,
                     transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
                   }}
                 />
@@ -102,7 +108,7 @@ export function HistoryFeed({
         </div>
       )}
       <div ref={sentinelRef} aria-hidden className="h-2" />
-      <div className="flex items-center justify-center py-4 text-xs text-subtle-foreground">
+      <div className="flex items-center justify-center py-4 text-xs text-ink-faint">
         {loading ? (
           <span className="inline-flex items-center gap-2">
             <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…

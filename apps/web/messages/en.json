@@ -12,6 +12,12 @@
     "signIn": "Sign in",
     "skipToContent": "Skip to content",
     "language": "Language",
+    "themeToggle": "Switch theme",
+    "themeLight": "Switch to light",
+    "themeDark": "Switch to dark",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "menu": "Menu",
     "sections": {
       "app": "App",
       "analytics": "Analytics",
@@ -38,6 +44,17 @@
     "disclaimerLead": "Not investment advice.",
     "disclaimerBody": "Public regulatory filings, republished for research and education. Filings can be late, amended, or wrong.",
     "featuresLabel": "Features",
+    "kicker": "SEC EDGAR · NSE / BSE · US Congress",
+    "signatureLabel": "Today on the tape",
+    "tapeLabel": "Live filings",
+    "tapeEmpty": "No filings on the tape yet. New Form 4s appear here within about a minute of reaching EDGAR.",
+    "sparklinesLabel": "Net insider flow, last 30 days",
+    "stats": {
+      "filings": "Filings today",
+      "notional": "Total notional",
+      "clusters": "Cluster signals",
+      "hint": "Recomputed from the live database on every rebuild."
+    },
     "features": {
       "realtime": {
         "title": "Real-time EDGAR tape",

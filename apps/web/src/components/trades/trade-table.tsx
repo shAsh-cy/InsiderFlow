@@ -51,7 +51,7 @@ export function TradeTable({
         accessorKey: "txnDate",
         header: "Date",
         size: 104,
-        cell: ({ row }) => <span className="text-muted-foreground">{row.original.txnDate}</span>,
+        cell: ({ row }) => <span className="num text-ink-muted">{row.original.txnDate}</span>,
       },
     ];
     if (showCompany) {
@@ -66,7 +66,7 @@ export function TradeTable({
             {row.original.company.ticker ? (
               <Link
                 href={`/stock/${row.original.company.ticker}`}
-                className="font-mono text-xs font-semibold hover:text-teal"
+                className="num text-xs font-semibold text-ink transition-colors hover:text-accent-ink"
               >
                 {row.original.company.ticker}
               </Link>
@@ -92,13 +92,11 @@ export function TradeTable({
         cell: ({ row }) => (
           <Link
             href={`/insider/${row.original.insider.id}`}
-            className="inline-flex max-w-full items-center gap-1.5 hover:text-teal"
+            className="inline-flex max-w-full items-center gap-1.5 transition-colors hover:text-accent-ink"
           >
             <span className="truncate">{row.original.insider.name}</span>
             {row.original.insider.title ? (
-              <span className="text-2xs truncate text-subtle-foreground">
-                {row.original.insider.title}
-              </span>
+              <span className="truncate text-2xs text-ink-faint">{row.original.insider.title}</span>
             ) : null}
           </Link>
         ),
@@ -113,7 +111,7 @@ export function TradeTable({
           row.original.shares === null ? (
             <NotDisclosed />
           ) : (
-            row.original.shares.toLocaleString("en-US")
+            <span className="num">{row.original.shares.toLocaleString("en-US")}</span>
           ),
       },
       {
@@ -150,7 +148,7 @@ export function TradeTable({
           <span className="inline-flex items-center gap-1.5">
             <RelevanceBadge relevance={row.original.relevance} />
             {row.original.is10b51 ? (
-              <span className="text-2xs text-amber-200/70" title="Rule 10b5-1 plan">
+              <span className="num text-2xs text-ink-faint" title="Rule 10b5-1 plan">
                 10b5-1
               </span>
             ) : null}
@@ -166,7 +164,7 @@ export function TradeTable({
             <SourceBadge source={row.original.source} />
             {row.original.filing?.superseded ? (
               <span
-                className="text-2xs rounded border border-white/10 px-1 uppercase text-subtle-foreground"
+                className="rounded-sm border border-border px-1 text-2xs uppercase text-ink-faint"
                 title="Replaced by an amendment"
               >
                 superseded

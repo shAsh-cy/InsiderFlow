@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { IBM_Plex_Mono, Onest } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
 
@@ -8,6 +9,25 @@ import { SessionProvider } from "@/components/shell/session-provider";
 import { getSessionUser, isAuthConfigured } from "@/lib/auth/supabase-server";
 
 import "./globals.css";
+
+/**
+ * Self-hosted by next/font — no request to a third-party font CDN, so
+ * there is no render-blocking round trip and no external origin in the
+ * critical path. Onest carries the interface; Plex Mono carries every
+ * figure, ticker, and currency amount in the product.
+ */
+const onest = Onest({
+  subsets: ["latin"],
+  variable: "--font-onest",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -19,8 +39,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0A0B0F",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FBFAF7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0E0D0B" },
+  ],
 };
 
 export default async function RootLayout({
@@ -40,11 +62,19 @@ export default async function RootLayout({
   };
 
   return (
-    <html lang={locale} className="dark">
-      <body className="grain min-h-screen antialiased">
+    // suppressHydrationWarning: next-themes writes the class on <html>
+    // before React hydrates, which is the whole point — it prevents a
+    // flash of the wrong theme — but it means server and client markup
+    // legitimately differ on this one attribute.
+    <html
+      lang={locale}
+      suppressHydrationWarning
+      className={`${onest.variable} ${plexMono.variable}`}
+    >
+      <body className="paper-grain min-h-screen antialiased">
         <a
           href="#main"
-          className="sr-only z-[100] rounded-md bg-surface-2 px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+          className="sr-only z-100 rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-overlay focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
         >
           {t("skipToContent")}
         </a>

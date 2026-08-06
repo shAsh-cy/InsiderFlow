@@ -45,26 +45,28 @@ export function LiveTrades({
 
   return (
     <section aria-label="Live trades" data-testid="live-fold">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          Live
-        </h2>
+      <div className="mb-2 flex items-baseline justify-between border-b border-border pb-2">
+        <h2 className="text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">Live</h2>
         <LiveDot status={status} />
       </div>
       {rows.length === 0 ? (
-        <p className="glass rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           Nothing matches these filters yet — new trades stream in the moment they are ingested.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {rows.map(({ trade, streamed }) =>
-            streamed ? (
-              <LiveFeedRow key={trade.id} trade={trade} />
-            ) : (
-              <StaticFeedRow key={trade.id} trade={trade} />
-            ),
-          )}
-        </ul>
+        // One surface around the run of rows: the fold is a continuous
+        // tape, and a border between every filing would break the read.
+        <div className="surface overflow-hidden rounded-lg">
+          <ul>
+            {rows.map(({ trade, streamed }) =>
+              streamed ? (
+                <LiveFeedRow key={trade.id} trade={trade} />
+              ) : (
+                <StaticFeedRow key={trade.id} trade={trade} />
+              ),
+            )}
+          </ul>
+        </div>
       )}
     </section>
   );

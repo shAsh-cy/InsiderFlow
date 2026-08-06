@@ -78,11 +78,14 @@ export function DataTable<TData>({
     <div
       ref={scrollRef}
       data-testid="data-table-scroll"
-      className={cn("glass relative overflow-auto rounded-xl", className)}
+      className={cn("surface relative overflow-auto rounded-lg", className)}
       style={{ height }}
     >
       <Table aria-label={aria["aria-label"]} className="tnum">
-        <TableHeader className="sticky top-0 z-10 bg-surface-2/95 backdrop-blur">
+        {/* Opaque, not translucent: a blurred sticky header repaints the
+            rows beneath it on every scroll frame, which is the single
+            most expensive thing a virtualized table can do. */}
+        <TableHeader className="sticky top-0 z-10 bg-surface shadow-[0_1px_0_var(--border)]">
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id} className="hover:bg-transparent">
               {headerGroup.headers.map((header) => {
@@ -106,7 +109,7 @@ export function DataTable<TData>({
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
-                        className="inline-flex items-center gap-1 rounded text-left hover:text-foreground"
+                        className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-left uppercase tracking-wider transition-colors hover:text-ink"
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {sortDir === "asc" ? (
@@ -138,7 +141,10 @@ export function DataTable<TData>({
               <TableRow
                 key={row.id}
                 data-index={virtualRow.index}
-                className="hover:bg-white/4"
+                // Zebra keys off the data index, not DOM parity: the
+                // virtualizer's spacer rows would otherwise flip the
+                // banding every time the window moves.
+                className={cn(virtualRow.index % 2 === 1 && "bg-fill/55")}
                 style={{ height: virtualRow.size }}
               >
                 {row.getVisibleCells().map((cell) => (
@@ -156,10 +162,7 @@ export function DataTable<TData>({
           ) : null}
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="h-24 text-center text-muted-foreground"
-              >
+              <TableCell colSpan={columns.length} className="h-24 text-center text-ink-muted">
                 No rows.
               </TableCell>
             </TableRow>

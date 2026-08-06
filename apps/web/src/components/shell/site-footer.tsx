@@ -10,31 +10,34 @@ import Link from "next/link";
  */
 export function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-white/6 px-4 py-8 sm:px-8">
-      <div className="mx-auto flex max-w-6xl flex-col gap-3 text-xs leading-relaxed text-subtle-foreground">
-        <p data-testid="footer-disclaimer">
-          <strong className="text-muted-foreground">Not investment advice.</strong> InsiderFlow
-          republishes public regulatory filings for research and education. Filings can be late,
-          amended, incomplete, or wrong, and insider activity is not a reliable predictor of
-          returns. Analytics on this site are backward-looking descriptive statistics, not
+    <footer className="mt-16 border-t border-border px-4 py-8 sm:px-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 text-xs leading-relaxed text-ink-faint">
+        <p data-testid="footer-disclaimer" className="max-w-[68ch]">
+          <strong className="font-semibold text-ink-muted">Not investment advice.</strong>{" "}
+          InsiderFlow republishes public regulatory filings for research and education. Filings can
+          be late, amended, incomplete, or wrong, and insider activity is not a reliable predictor
+          of returns. Analytics on this site are backward-looking descriptive statistics, not
           forecasts.
         </p>
-        <nav aria-label="Legal and reference" className="flex flex-wrap gap-x-4 gap-y-1">
-          <Link href="/legal" className="hover:text-foreground">
+        <nav
+          aria-label="Legal and reference"
+          className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3"
+        >
+          <Link href="/legal" className="transition-colors hover:text-ink">
             Legal &amp; data sources
           </Link>
-          <Link href="/docs/methodology" className="hover:text-foreground">
+          <Link href="/docs/methodology" className="transition-colors hover:text-ink">
             Methodology
           </Link>
-          <Link href="/docs" className="hover:text-foreground">
+          <Link href="/docs" className="transition-colors hover:text-ink">
             API
           </Link>
-          <Link href="/status" className="hover:text-foreground">
+          <Link href="/status" className="transition-colors hover:text-ink">
             Status
           </Link>
           <a
             href="https://github.com/insiderflow/insiderflow"
-            className="hover:text-foreground"
+            className="transition-colors hover:text-ink"
             target="_blank"
             rel="noreferrer"
           >

@@ -7,6 +7,24 @@ const pct = (v: number | null, digits = 1): string =>
   v === null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(digits)}%`;
 
 /**
+ * Direction colour for a signed figure.
+ *
+ * Vermillion is this product's "up" and blue its "down", the same pair used
+ * for buys and sells — a reader who has learned it once on the trade tape
+ * should not have to learn a second scheme here. Never red/green.
+ *
+ * A null is neither: it takes the faint ink rather than being coloured as
+ * though it were a positive number, which is what `?? 0` would have done.
+ * The sign is also spelled out by the `+`/`−` prefix, so the hue is only
+ * ever agreeing with something already written down.
+ */
+const signInk = (v: number | null): string =>
+  v === null ? "text-ink-faint" : v >= 0 ? "text-buy-ink" : "text-sell-ink";
+
+const STAT_LABEL = "text-2xs font-medium uppercase tracking-widest text-ink-muted";
+const STAT_NOTE = "text-2xs mt-1 text-ink-faint";
+
+/**
  * Performance panel on an insider profile — the slot Phase 6 left as
  * "coming soon".
  *
@@ -23,16 +41,19 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
       <section aria-labelledby="score-heading" className="flex flex-col gap-3">
         <h2
           id="score-heading"
-          className="text-sm font-semibold uppercase tracking-widest text-muted-foreground"
+          className="text-sm font-semibold uppercase tracking-widest text-ink-muted"
         >
           Performance
         </h2>
-        <div className="glass rounded-xl px-4 py-8 text-center">
-          <p className="text-sm text-muted-foreground">Not enough scored trades yet.</p>
-          <p className="text-2xs mt-2 text-subtle-foreground">
+        <div className="surface rounded-lg px-4 py-8 text-center">
+          <p className="text-sm text-ink-muted">Not enough scored trades yet.</p>
+          <p className="text-2xs mt-2 text-ink-faint">
             Scoring needs a discretionary, non-superseded trade with at least 30 days of price
             history after it, plus a matching benchmark close.{" "}
-            <Link href="/docs/methodology" className="underline underline-offset-2">
+            <Link
+              href="/docs/methodology"
+              className="cursor-pointer underline underline-offset-2 hover:text-ink"
+            >
               How scoring works
             </Link>
           </p>
@@ -45,55 +66,46 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
     <section aria-labelledby="score-heading" className="flex flex-col gap-3">
       <h2
         id="score-heading"
-        className="text-sm font-semibold uppercase tracking-widest text-muted-foreground"
+        className="text-sm font-semibold uppercase tracking-widest text-ink-muted"
       >
         Performance
-        <span className="ml-2 normal-case tracking-normal text-subtle-foreground">
-          · {summary.scoredTrades} scored trade{summary.scoredTrades === 1 ? "" : "s"}
+        <span className="ml-2 normal-case tracking-normal text-ink-faint">
+          · <span className="num">{summary.scoredTrades}</span> scored trade
+          {summary.scoredTrades === 1 ? "" : "s"}
         </span>
       </h2>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="glass rounded-xl p-4">
-          <p className="text-2xs font-medium uppercase tracking-widest text-muted-foreground">
-            Score
-          </p>
-          <p
-            className={cn(
-              "tnum mt-1.5 text-2xl font-semibold",
-              (summary.score ?? 0) >= 0 ? "text-emerald-300" : "text-violet-300",
-            )}
-          >
+        <div className="surface rounded-lg p-4">
+          <p className={STAT_LABEL}>Score</p>
+          <p className={cn("num mt-1.5 text-2xl font-semibold", signInk(summary.score))}>
             {summary.score === null ? "—" : summary.score.toFixed(2)}
           </p>
-          <p className="text-2xs mt-1 text-subtle-foreground">Shrunk by sample size</p>
+          <p className={STAT_NOTE}>Shrunk by sample size</p>
         </div>
-        <div className="glass rounded-xl p-4">
-          <p className="text-2xs font-medium uppercase tracking-widest text-muted-foreground">
-            Avg excess 90d
-          </p>
-          <p className="tnum mt-1.5 text-2xl font-semibold">{pct(summary.avgExcess90d)}</p>
-          <p className="text-2xs mt-1 text-subtle-foreground">vs SPY, signed by direction</p>
+        <div className="surface rounded-lg p-4">
+          <p className={STAT_LABEL}>Avg excess 90d</p>
+          <p className="num mt-1.5 text-2xl font-semibold text-ink">{pct(summary.avgExcess90d)}</p>
+          <p className={STAT_NOTE}>vs SPY, signed by direction</p>
         </div>
-        <div className="glass rounded-xl p-4">
-          <p className="text-2xs font-medium uppercase tracking-widest text-muted-foreground">
-            Hit rate
-          </p>
-          <p className="tnum mt-1.5 text-2xl font-semibold">
+        <div className="surface rounded-lg p-4">
+          <p className={STAT_LABEL}>Hit rate</p>
+          <p className="num mt-1.5 text-2xl font-semibold text-ink">
             {summary.hitRate90d === null ? "—" : `${(summary.hitRate90d * 100).toFixed(0)}%`}
           </p>
-          <p className="text-2xs mt-1 text-subtle-foreground">
-            {summary.wins90d}/{summary.scoredTrades} beat the benchmark
+          <p className={STAT_NOTE}>
+            <span className="num">
+              {summary.wins90d}/{summary.scoredTrades}
+            </span>{" "}
+            beat the benchmark
           </p>
         </div>
-        <div className="glass rounded-xl p-4">
-          <p className="text-2xs font-medium uppercase tracking-widest text-muted-foreground">
-            Realised
-          </p>
-          <p className="tnum mt-1.5 text-2xl font-semibold">
+        <div className="surface rounded-lg p-4">
+          <p className={STAT_LABEL}>Realised</p>
+          <p className="num mt-1.5 text-2xl font-semibold text-ink">
             {summary.realizedTrades === 0 ? "—" : pct(summary.realizedReturnPct)}
           </p>
-          <p className="text-2xs mt-1 text-subtle-foreground">
+          <p className={STAT_NOTE}>
             {summary.realizedTrades === 0
               ? "No closed round trips"
               : `${summary.realizedTrades} closed round trip${summary.realizedTrades === 1 ? "" : "s"}`}
@@ -102,46 +114,45 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
       </div>
 
       {trades.length > 0 ? (
-        <details className="glass rounded-xl p-4">
-          <summary className="cursor-pointer text-sm font-medium">
+        <details className="surface rounded-lg p-4">
+          <summary className="cursor-pointer select-none text-sm font-medium">
             The trades behind these numbers ({trades.length})
           </summary>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
-                <tr className="text-left text-2xs uppercase tracking-widest text-subtle-foreground">
-                  <th className="pb-2 pr-3 font-medium">Date</th>
-                  <th className="pb-2 pr-3 font-medium">Company</th>
-                  <th className="pb-2 pr-3 font-medium">Side</th>
-                  <th className="pb-2 pr-3 text-right font-medium">Stock 90d</th>
-                  <th className="pb-2 pr-3 text-right font-medium">SPY 90d</th>
-                  <th className="pb-2 text-right font-medium">Excess</th>
+                <tr className="text-2xs border-b border-border text-left uppercase tracking-wider text-ink-muted">
+                  <th className="pb-2 pr-3 font-semibold">Date</th>
+                  <th className="pb-2 pr-3 font-semibold">Company</th>
+                  <th className="pb-2 pr-3 font-semibold">Side</th>
+                  <th className="pb-2 pr-3 text-right font-semibold">Stock 90d</th>
+                  <th className="pb-2 pr-3 text-right font-semibold">SPY 90d</th>
+                  <th className="pb-2 text-right font-semibold">Excess</th>
                 </tr>
               </thead>
-              <tbody className="tnum">
+              <tbody>
                 {trades.map((t) => (
-                  <tr key={t.transactionId} className="border-t border-white/5">
-                    <td className="py-1.5 pr-3 text-muted-foreground">{t.txnDate}</td>
+                  <tr
+                    key={t.transactionId}
+                    className="border-t border-border even:bg-fill/55 hover:bg-fill"
+                  >
+                    <td className="num py-1.5 pr-3 text-ink-muted">{t.txnDate}</td>
                     <td className="py-1.5 pr-3">
                       {t.ticker ? (
-                        <Link href={`/stock/${t.ticker}`} className="hover:text-brand-teal">
+                        <Link
+                          href={`/stock/${t.ticker}`}
+                          className="num cursor-pointer font-semibold underline-offset-2 hover:underline"
+                        >
                           {t.ticker}
                         </Link>
                       ) : (
                         t.companyName
                       )}
                     </td>
-                    <td className="py-1.5 pr-3 capitalize text-muted-foreground">{t.direction}</td>
-                    <td className="py-1.5 pr-3 text-right">{pct(t.ret90d)}</td>
-                    <td className="py-1.5 pr-3 text-right text-muted-foreground">
-                      {pct(t.bench90d)}
-                    </td>
-                    <td
-                      className={cn(
-                        "py-1.5 text-right font-medium",
-                        (t.excess90d ?? 0) >= 0 ? "text-emerald-300" : "text-violet-300",
-                      )}
-                    >
+                    <td className="py-1.5 pr-3 capitalize text-ink-muted">{t.direction}</td>
+                    <td className="num py-1.5 pr-3 text-right">{pct(t.ret90d)}</td>
+                    <td className="num py-1.5 pr-3 text-right text-ink-muted">{pct(t.bench90d)}</td>
+                    <td className={cn("num py-1.5 text-right font-medium", signInk(t.excess90d))}>
                       {pct(t.excess90d)}
                     </td>
                   </tr>
@@ -152,9 +163,12 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
         </details>
       ) : null}
 
-      <p className="text-2xs text-subtle-foreground">
+      <p className="text-2xs text-ink-faint">
         Informational only — backward-looking statistics on public filings, not a prediction.{" "}
-        <Link href="/docs/methodology" className="underline underline-offset-2">
+        <Link
+          href="/docs/methodology"
+          className="cursor-pointer underline underline-offset-2 hover:text-ink"
+        >
           Methodology
         </Link>{" "}
         · <strong>Not investment advice.</strong>
