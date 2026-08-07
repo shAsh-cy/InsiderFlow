@@ -103,10 +103,13 @@ export function TradeTable({
       });
     }
     cols.push(
+      // Numerics right-align so the digits stack on their own edge and a
+      // column can be compared by eye without reading any of it.
       {
         accessorKey: "shares",
         header: "Shares",
         size: 100,
+        meta: { align: "right" },
         cell: ({ row }) =>
           row.original.shares === null ? (
             <NotDisclosed />
@@ -118,6 +121,7 @@ export function TradeTable({
         accessorKey: "valueUsd",
         header: "Value",
         size: 160,
+        meta: { align: "right" },
         cell: ({ row }) => (
           <CurrencyValue
             value={row.original.value}
@@ -132,6 +136,7 @@ export function TradeTable({
         header: "vs close",
         size: 92,
         enableSorting: false,
+        meta: { align: "right" },
         cell: ({ row }) => {
           const point = priceByDate.get(row.original.txnDate);
           if (!point || row.original.price === null) {
@@ -140,10 +145,13 @@ export function TradeTable({
           return <TrendBadge value={point.diffPct} />;
         },
       },
+      // Relevance is a dot now, so the column only needs to be as wide as
+      // its own header. 10b5-1 rides alongside as microtext — it is a
+      // fact about the filing, not a second classification.
       {
         accessorKey: "relevance",
-        header: "Relevance",
-        size: 120,
+        header: "Type",
+        size: 72,
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1.5">
             <RelevanceBadge relevance={row.original.relevance} />
@@ -158,13 +166,13 @@ export function TradeTable({
       {
         accessorKey: "source",
         header: "Source",
-        size: 90,
+        size: 96,
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1.5">
             <SourceBadge source={row.original.source} />
             {row.original.filing?.superseded ? (
               <span
-                className="rounded-sm border border-border px-1 text-2xs uppercase text-ink-faint"
+                className="rounded-sm border border-border px-1 text-2xs text-ink-faint"
                 title="Replaced by an amendment"
               >
                 superseded

@@ -13,7 +13,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import type { ColumnDef, SortingState } from "@tanstack/react-table";
+import type { ColumnDef, RowData, SortingState } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useRef, useState } from "react";
@@ -27,6 +27,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+
+/**
+ * Column alignment rides on TanStack's own `meta`, which is part of the
+ * ColumnDef the caller already passes. That keeps alignment a property of
+ * the column (where it belongs — a column is right-aligned because it
+ * holds numbers) without adding a prop to this component's signature.
+ */
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    align?: "left" | "right";
+  }
+}
 
 export interface DataTableProps<TData> {
   columns: ColumnDef<TData, unknown>[];
@@ -43,7 +56,9 @@ export function DataTable<TData>({
   columns,
   data,
   height = 520,
-  estimateRowHeight = 40,
+  // Dense by default. A trading table is read by scanning a column, and
+  // every extra pixel of row height is one fewer row in the same glance.
+  estimateRowHeight = 38,
   initialSorting = [],
   className,
   ...aria
@@ -91,6 +106,10 @@ export function DataTable<TData>({
               {headerGroup.headers.map((header) => {
                 const sortDir = header.column.getIsSorted();
                 const canSort = header.column.getCanSort();
+                // A numeric column's header sits over its digits, so it
+                // right-aligns with them; anything else would put the
+                // label and the column it names on different edges.
+                const right = header.column.columnDef.meta?.align === "right";
                 return (
                   <TableHead
                     key={header.id}
@@ -103,13 +122,17 @@ export function DataTable<TData>({
                             ? "none"
                             : undefined
                     }
+                    className={right ? "text-right" : undefined}
                     style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                   >
                     {header.isPlaceholder ? null : canSort ? (
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-left uppercase tracking-wider transition-colors hover:text-ink"
+                        className={cn(
+                          "inline-flex cursor-pointer items-center gap-1 rounded-sm transition-colors hover:text-ink",
+                          right && "flex-row-reverse",
+                        )}
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {sortDir === "asc" ? (
@@ -148,7 +171,13 @@ export function DataTable<TData>({
                 style={{ height: virtualRow.size }}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="whitespace-nowrap">
+                  <TableCell
+                    key={cell.id}
+                    className={cn(
+                      "whitespace-nowrap",
+                      cell.column.columnDef.meta?.align === "right" && "text-right",
+                    )}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}
