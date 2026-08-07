@@ -121,9 +121,16 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
                 {t("settings")}
               </Link>
             ) : (
+              // The primary affordance in the masthead, and styled like
+              // it. On dark the accent is only 3.6:1 as a fill, so this
+              // is a bordered accent button with `--accent-bright` type
+              // (6.3:1); on light the accent is legible behind white, so
+              // it fills. Same weight in both, reached two different ways
+              // because the two grounds are not symmetric.
               <Link
                 href="/login"
-                className="hidden h-8 items-center rounded-md border border-border bg-surface px-3 text-xs text-ink-muted transition-colors hover:bg-fill hover:text-ink sm:inline-flex"
+                data-magnetic
+                className="inline-flex h-8 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
               >
                 {t("signIn")}
               </Link>

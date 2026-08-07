@@ -77,9 +77,30 @@
       "sourcesLead": "Data sources:",
       "sourcesBody": "US data comes from SEC EDGAR, a US-government service whose filings are in the public domain; access follows the SEC fair-access policy. NSE/BSE (India) data is subject to restrictive exchange terms and is not redistributed by this project.",
       "licence": "InsiderFlow is free software licensed under AGPL-3.0. Nothing on this site is investment advice or a recommendation to buy or sell any security."
-    }
+    },
+    "accessLead": "All insider data is free to read.",
+    "accessBody": "No account, no paywall, no row limits. Sign in only to save watchlists, set alerts, and get an API key."
   },
   "common": {
     "notAdvice": "Not investment advice."
+  },
+  "access": {
+    "bannerText": "Live data is free and public.",
+    "bannerCta": "Sign in to save & get alerts",
+    "bannerDismiss": "Dismiss",
+    "watchlistEmptyTitle": "Nothing tracked yet",
+    "watchlistEmptyBody": "Every trade on this site is already yours to read. A watchlist just keeps the companies and insiders you care about in one place, and tells you when they file.",
+    "alertsEmptyTitle": "No alerts yet",
+    "alertsEmptyBody": "Screens are free to run and free to share as a link. An alert re-runs one for you and sends it to Telegram or email the moment it matches.",
+    "signInToSave": "Sign in to save",
+    "signInPopoverTitle": "Sign in to save this alert",
+    "signInPopoverTitleWatch": "Sign in to track this",
+    "signInPopoverBody": "Reading stays free either way — this only saves it to your account.",
+    "continueGithub": "Continue with GitHub",
+    "continueEmail": "Email me a link",
+    "emailPlaceholder": "you@example.com",
+    "emailSent": "Check your email for the sign-in link.",
+    "emailFailed": "Could not send the link. Try again.",
+    "cancel": "Cancel"
   }
 }

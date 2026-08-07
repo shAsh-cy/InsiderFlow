@@ -6,8 +6,11 @@
  * "save as alert" slot (auth lands in Phase 7).
  */
 import { BellPlus, Download, FileSpreadsheet, Loader2, Rss } from "lucide-react";
-import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+
+import { SignInPopover } from "@/components/auth/sign-in-popover";
 
 import { TradeTable } from "@/components/trades/trade-table";
 import { Button } from "@/components/ui/button";
@@ -30,14 +33,16 @@ export function ScreenerResults({
   /** True when a signed-in session exists — enables "Save as alert". */
   canSaveAlert?: boolean;
 }) {
+  const t = useTranslations("access");
   const [rows, setRows] = useState<TradeRow[]>(initialPage.data);
   const [meta, setMeta] = useState<PageMeta>(initialPage.meta);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   /** Persists the CURRENT screen (preset params included) as an alert rule. */
-  const saveAsAlert = async () => {
+  const saveAsAlert = useCallback(async () => {
     setSaving(true);
     try {
       const { limit: _limit, offset: _offset, ...filters } = params;
@@ -72,7 +77,29 @@ export function ScreenerResults({
     } finally {
       setSaving(false);
     }
-  };
+  }, [params, preset]);
+
+  /**
+   * Replay after a contextual sign-in.
+   *
+   * The popover sends the reader away with `?pending=alert` on the URL
+   * they were already looking at, so when they come back the screen is
+   * identical AND the action they asked for still happens. Without this,
+   * "sign in to save" costs the reader the save.
+   *
+   * The flag is cleared from the URL first, so a refresh does not save a
+   * second copy of the same screen.
+   */
+  const replayed = useRef(false);
+  useEffect(() => {
+    if (replayed.current || !canSaveAlert) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("pending") !== "alert") return;
+    replayed.current = true;
+    url.searchParams.delete("pending");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    void saveAsAlert();
+  }, [canSaveAlert, saveAsAlert]);
 
   const fetcher = (p: TradesParams) => (preset ? fetchScreener(preset, { ...p }) : fetchTrades(p));
 
@@ -153,7 +180,7 @@ export function ScreenerResults({
           <FileSpreadsheet aria-hidden /> XLSX
         </Button>
         {preset ? (
-          <Button asChild variant="outline" size="sm" className="glass border-white/10">
+          <Button asChild variant="outline" size="sm">
             <a href={`/api/rss/${preset}`} target="_blank" rel="noreferrer">
               <Rss aria-hidden /> RSS
             </a>
@@ -162,7 +189,7 @@ export function ScreenerResults({
           <Tooltip>
             <TooltipTrigger asChild>
               <span tabIndex={0}>
-                <Button variant="outline" size="sm" className="glass border-white/10" disabled>
+                <Button variant="outline" size="sm" disabled>
                   <Rss aria-hidden /> RSS
                 </Button>
               </span>
@@ -182,16 +209,16 @@ export function ScreenerResults({
             Save as alert
           </Button>
         ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} data-testid="save-alert">
-                <Button variant="outline" size="sm" className="glass border-white/10" disabled>
-                  <BellPlus aria-hidden /> Save as alert
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Sign in to save this screen as an alert</TooltipContent>
-          </Tooltip>
+          // Signed out, the button is LIVE, not disabled. A disabled
+          // control reads as "this is not for you" — which is the exact
+          // misreading this product needs to avoid, because the screen
+          // itself was free to build and free to share. Clicking offers
+          // sign-in in place and then completes the save.
+          <SignInPopover open={signInOpen} onOpenChange={setSignInOpen} action="alert">
+            <Button variant="outline" size="sm" data-testid="save-alert">
+              <BellPlus aria-hidden /> {t("signInToSave")}
+            </Button>
+          </SignInPopover>
         )}
       </div>
 
@@ -213,9 +240,7 @@ export function ScreenerResults({
                 {loading ? <Loader2 className="animate-spin" aria-hidden /> : null} Load more
               </Button>
             ) : (
-              <span className="py-2 text-2xs uppercase tracking-widest text-ink-faint">
-                End of results
-              </span>
+              <span className="py-2 text-2xs text-ink-faint">End of results</span>
             )}
           </div>
         </>

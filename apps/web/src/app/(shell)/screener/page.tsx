@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AccessBanner } from "@/components/access/access-banner";
 import { FilterBar } from "@/components/feed/filter-bar";
 import { ScreenerResults } from "@/components/screener/screener-results";
 import { queryTrades } from "@/lib/api/queries";
@@ -39,13 +40,15 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-col gap-1 border-l-2 border-l-accent pl-5">
+      <header className="rail flex flex-col gap-1 pl-5">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Screener</h1>
         <p className="max-w-[68ch] text-sm text-ink-muted">
           Slice the tape. Every screen is a shareable URL
           {presetName ? "" : " — or start from a preset"}.
         </p>
       </header>
+
+      <AccessBanner signedIn={Boolean(user)} />
 
       {/* Pill-shaped because they are interactive; the active one is marked
           by weight and ground, not by colour. Seven oxblood chips would
