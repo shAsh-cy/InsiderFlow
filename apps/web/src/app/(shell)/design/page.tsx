@@ -204,9 +204,7 @@ function Section({
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <div className="border-b border-border pb-2">
-        <h2 className="text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">
-          {title}
-        </h2>
+        <h2 className="text-2xs font-semibold text-ink-faint">{title}</h2>
         {note ? <p className="mt-1.5 max-w-[68ch] text-xs text-ink-muted">{note}</p> : null}
       </div>
       {children}
@@ -231,17 +229,29 @@ function Swatch({ name, className, role }: { name: string; className: string; ro
 }
 
 const TYPE_SCALE = [
-  { cls: "text-2xs", rem: "0.75" },
-  { cls: "text-xs", rem: "0.8125" },
-  { cls: "text-sm", rem: "0.875" },
-  { cls: "text-base", rem: "1" },
+  { cls: "text-2xs", rem: "0.6875" },
+  { cls: "text-xs", rem: "0.75" },
+  { cls: "text-sm", rem: "0.8125" },
+  { cls: "text-base", rem: "0.875" },
+  { cls: "text-md", rem: "1" },
   { cls: "text-lg", rem: "1.125" },
   { cls: "text-xl", rem: "1.375" },
   { cls: "text-2xl", rem: "1.75" },
-  { cls: "text-3xl", rem: "2.25" },
-  { cls: "text-4xl", rem: "3" },
-  { cls: "text-5xl", rem: "4" },
+  { cls: "text-3xl", rem: "2.5" },
+  { cls: "text-4xl", rem: "3.5" },
 ];
+
+/** 4 / 6 / 8 / 12 / full — terminal corners are tight. */
+const RADII = [
+  { cls: "rounded-sm", px: "4", role: "Badges, code chips, microtags" },
+  { cls: "rounded-md", px: "6", role: "Inputs, buttons" },
+  { cls: "rounded-lg", px: "8", role: "Cards, tables, panels" },
+  { cls: "rounded-xl", px: "12", role: "The largest thing on any page" },
+  { cls: "rounded-full", px: "full", role: "Pills — and a pill is clickable" },
+];
+
+/** The 4px grid. Every gap and pad in the product is one of these. */
+const SPACING = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 
 const MOTION_PRESETS = [
   ["snappy", "400 / 17 / 1", "Hover lift — a small, deliberate overshoot"],
@@ -258,46 +268,79 @@ export default function DesignPage() {
 
   return (
     <div className="flex flex-col gap-12 pb-24">
-      <header className="border-l-2 border-l-accent pl-5">
-        <p className="num text-2xs uppercase tracking-[0.22em] text-ink-faint">Design language</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink">Design — Ledger</h1>
+      <header className="rail pl-5">
+        <p className="num text-2xs text-ink-faint">Design language</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink">Design — Terminal</h1>
         <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-ink-muted">
-          A paper terminal. Warm off-white stock, hairline rules, ink-black type, monospaced
-          figures, and exactly one accent. Light is the default; dark is warm near-black ink, not an
-          inverted neon skin. Toggle the theme in the masthead — everything below is drawn from the
-          same tokens in both.
+          A trading terminal, not a document. Cool near-black ground, hairline rules, racing-green
+          accent, monospaced figures. Dark is the default; light (“Graphite”) is a cool grey, not
+          warm paper. Toggle the theme in the masthead — everything below is drawn from the same
+          tokens in both.
+        </p>
+        <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-ink-muted">
+          Mono is reserved for numbers, tickers, SEC codes and microtext. Headings and body are
+          sentence-case Onest: a heading set in uppercase mono reads as a system message rather than
+          a sentence, and this product has enough machine output already.
         </p>
       </header>
 
       <Section
         title="Colour tokens"
-        note="No component may contain a raw colour value. Oxblood is the only accent, and a view shows at most one accent element — it earns attention by scarcity."
+        note="No component may contain a raw colour value. The accent means “actionable” and never encodes direction — buy and sell own the only two data colours."
       >
         <div className="surface grid gap-4 rounded-lg p-4 sm:grid-cols-2 lg:grid-cols-4">
           <Swatch name="--bg" className="bg-bg" role="Page ground" />
-          <Swatch name="--surface" className="bg-surface" role="Cards, tables, overlays" />
-          <Swatch name="--fill" className="bg-fill" role="Zebra, hover, wells" />
+          <Swatch name="--surface" className="bg-surface" role="Cards, tables" />
+          <Swatch name="--surface-raised" className="bg-surface-raised" role="Dialogs, popovers" />
+          <Swatch name="--surface-sunken" className="bg-fill" role="Zebra, hover, wells" />
           <Swatch name="--border" className="bg-border" role="Every rule in the product" />
-          <Swatch name="--ink" className="bg-ink" role="Primary type" />
-          <Swatch name="--ink-muted" className="bg-ink-muted" role="Secondary type" />
-          <Swatch name="--ink-faint" className="bg-ink-faint" role="Tertiary type, null glyphs" />
-          <Swatch name="--accent" className="bg-accent" role="Oxblood — CTA fills, brand" />
-          <Swatch name="--accent-2" className="bg-accent-2" role="Burnt orange — live pulse" />
+          <Swatch name="--border-strong" className="bg-border-strong" role="Raised-layer edges" />
+          <Swatch name="--text" className="bg-ink" role="Primary type" />
+          <Swatch name="--text-secondary" className="bg-ink-muted" role="Secondary type" />
+          <Swatch name="--text-muted" className="bg-ink-faint" role="Tertiary type, null glyphs" />
+          <Swatch name="--accent" className="bg-accent" role="Racing green — fills" />
+          <Swatch
+            name="--accent-bright"
+            className="bg-accent-bright"
+            role="Accent as type/border"
+          />
+          <Swatch name="--warning" className="bg-warning" role="Warning" />
+          <Swatch name="--danger" className="bg-danger" role="Destructive" />
         </div>
+        <p className="max-w-[76ch] text-xs leading-relaxed text-ink-muted">
+          <strong className="font-semibold text-ink">Why the accent is two tokens.</strong> On the
+          dark ground the accent is 3.6:1 — fine behind{" "}
+          <code className="num">--accent-contrast</code>, too low for small text.{" "}
+          <code className="num">--accent-bright</code> is 6.3:1 and is what type and borders use. On
+          Graphite the relationship inverts. One green cannot be both a fill and a legible label, so
+          it is not asked to be.
+        </p>
       </Section>
 
       <Section
         title="Chart & data semantics — Wong palette, colourblind-safe"
-        note="From Wong, Nature Methods 8:441 (2011). Deliberately not red/green: roughly 8% of men have a colour-vision deficiency, and red–green is the axis most of them lose. Colour never carries meaning alone — every buy/sell distinction is also a glyph, a code letter, or a written label."
+        note="From Wong, Nature Methods 8:441 (2011). Deliberately not red/green: roughly 8% of men have a colour-vision deficiency, and red–green is the axis most of them lose. It is also the axis the accent already occupies. Colour never carries meaning alone — every buy/sell distinction is also a glyph, a code letter, or a written label."
       >
         <div className="surface grid gap-4 rounded-lg p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Swatch name="--buy #D55E00" className="bg-buy" role="Vermillion · BUY · paired with ▲" />
-          <Swatch name="--sell #0072B2" className="bg-sell" role="Blue · SELL · paired with ▼" />
-          <Swatch name="--series-3 #009E73" className="bg-series-3" role="Bluish green" />
-          <Swatch name="--series-4 #E69F00" className="bg-series-4" role="Orange" />
+          <Swatch name="--buy" className="bg-buy" role="BUY · always paired with ▲" />
+          <Swatch name="--sell" className="bg-sell" role="SELL · always paired with ▼" />
+          <Swatch name="--neutral" className="bg-flat" role="No direction" />
+          <Swatch name="--series-3" className="bg-series-3" role="Third chart series" />
+        </div>
+        <div className="surface flex flex-wrap items-center gap-6 rounded-lg p-4">
+          <span className="inline-flex items-center gap-1.5 text-sm text-buy-ink">
+            <span aria-hidden>▲</span> Acquired
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-sm text-sell-ink">
+            <span aria-hidden>▼</span> Disposed
+          </span>
+          <span className="text-xs text-ink-muted">
+            The glyph is redundant with the colour on purpose. Remove the colour and the row still
+            says which way the money went.
+          </span>
         </div>
         <div className="surface rounded-lg p-4">
-          <p className="mb-3 text-2xs uppercase tracking-widest text-ink-faint">
+          <p className="mb-3 text-2xs text-ink-faint">
             Heatmap ramp — Viridis, perceptually uniform sequential
           </p>
           <div className="flex h-8 overflow-hidden rounded-md border border-border">
@@ -333,6 +376,52 @@ export default function DesignPage() {
             <span className="num w-24 shrink-0 text-2xs text-ink-faint">.num</span>
             <span className="num w-20 shrink-0 text-2xs text-ink-faint">mono</span>
             <span className="num text-base text-ink">1,204,880 · 0.00 · $2.79M · ₹24.5 Cr</span>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Shape, spacing and depth"
+        note="Radius carries meaning: rectangular things are labels, pills are controls. Depth is not decoration — on the dark ground it is a border plus a 1px inset highlight along the top edge, the way a physical panel catches light; a drop shadow on near-black does nothing at all."
+      >
+        <div className="surface flex flex-col divide-y divide-border rounded-lg px-4">
+          {RADII.map((r) => (
+            <div key={r.cls} className="flex items-center gap-4 py-3">
+              <span
+                aria-hidden
+                className={`size-9 shrink-0 border border-border-strong bg-fill ${r.cls}`}
+              />
+              <span className="num w-28 shrink-0 text-2xs text-ink-faint">{r.cls}</span>
+              <span className="num w-12 shrink-0 text-2xs text-ink-faint">{r.px}</span>
+              <span className="text-sm text-ink-muted">{r.role}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="surface rounded-lg p-4">
+          <p className="mb-3 text-2xs text-ink-faint">Spacing — the 4px grid</p>
+          <div className="flex flex-wrap items-end gap-3">
+            {SPACING.map((s) => (
+              <div key={s} className="flex flex-col items-center gap-1">
+                <span
+                  aria-hidden
+                  className="block bg-accent-bright"
+                  style={{ width: s * 4, height: s * 4 }}
+                />
+                <span className="num text-2xs text-ink-faint">{s * 4}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="surface rounded-lg p-6">
+            <p className="num text-2xs text-ink-faint">--shadow-card</p>
+            <p className="mt-1 text-sm text-ink-muted">Resting surfaces. This panel.</p>
+          </div>
+          <div className="surface-raised rounded-lg p-6">
+            <p className="num text-2xs text-ink-faint">--shadow-overlay</p>
+            <p className="mt-1 text-sm text-ink-muted">Dialogs, popovers, the palette.</p>
           </div>
         </div>
       </Section>
@@ -486,14 +575,14 @@ export default function DesignPage() {
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="surface rounded-lg p-4">
-            <p className="text-2xs uppercase tracking-widest text-ink-faint">Value not disclosed</p>
+            <p className="text-2xs text-ink-faint">Value not disclosed</p>
             <p className="mt-2 text-sm text-ink">
               <NotDisclosed />{" "}
               <span className="text-ink-muted">— the filing carried no figure</span>
             </p>
           </div>
           <div className="surface rounded-lg p-4">
-            <p className="text-2xs uppercase tracking-widest text-ink-faint">No rows</p>
+            <p className="text-2xs text-ink-faint">No rows</p>
             <p className="mt-2 text-sm text-ink-muted">
               No insider transactions on record for this company.
             </p>
