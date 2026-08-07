@@ -32,7 +32,7 @@ export default function DocsPage() {
   return (
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-10 px-6 pb-24 pt-20">
       <header className="flex flex-col gap-3 border-b border-border pb-8">
-        <p className="text-2xs font-semibold uppercase tracking-widest text-ink-faint">
+        <p className="text-2xs font-semibold text-ink-faint">
           {openApiSpec.info.title} · v<span className="num">{openApiSpec.info.version}</span>
         </p>
         <h1 className="text-3xl font-semibold tracking-tight text-ink">API documentation</h1>
@@ -76,7 +76,7 @@ export default function DocsPage() {
                 <div className="-mx-2 overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-border text-2xs uppercase tracking-widest text-ink-faint">
+                      <tr className="border-b border-border text-2xs text-ink-faint">
                         <th className="px-2 pb-1.5 font-medium">Param</th>
                         <th className="px-2 pb-1.5 font-medium">In</th>
                         <th className="px-2 pb-1.5 font-medium">Type</th>

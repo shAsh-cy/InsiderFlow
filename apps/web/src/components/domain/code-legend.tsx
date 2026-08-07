@@ -17,7 +17,7 @@ export function CodeLegend({ className }: { className?: string }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="inline-flex cursor-pointer items-center gap-1 text-2xs uppercase tracking-widest text-ink-faint transition-colors hover:text-ink"
+        className="inline-flex cursor-pointer items-center gap-1 text-2xs text-ink-faint transition-colors hover:text-ink"
       >
         Code legend
         <ChevronDown

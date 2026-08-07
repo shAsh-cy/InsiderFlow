@@ -351,7 +351,7 @@ function TreemapLegend() {
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-5 border-t border-border px-2 pt-4">
       <div className="flex flex-col gap-1.5">
-        <p className="text-2xs font-semibold uppercase tracking-widest text-ink-muted">
+        <p className="text-2xs font-semibold text-ink-muted">
           Fill — share of gross flow that is net
         </p>
         <div aria-hidden className="flex w-max overflow-hidden rounded-sm border border-border">
@@ -374,7 +374,7 @@ function TreemapLegend() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <p className="text-2xs font-semibold uppercase tracking-widest text-ink-muted">
+        <p className="text-2xs font-semibold text-ink-muted">
           Direction — read from the glyph, not the fill
         </p>
         <dl className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-2xs">

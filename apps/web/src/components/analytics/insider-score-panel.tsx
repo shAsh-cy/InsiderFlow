@@ -21,7 +21,7 @@ const pct = (v: number | null, digits = 1): string =>
 const signInk = (v: number | null): string =>
   v === null ? "text-ink-faint" : v >= 0 ? "text-buy-ink" : "text-sell-ink";
 
-const STAT_LABEL = "text-2xs font-medium uppercase tracking-widest text-ink-muted";
+const STAT_LABEL = "text-2xs font-medium text-ink-muted";
 const STAT_NOTE = "text-2xs mt-1 text-ink-faint";
 
 /**
@@ -39,10 +39,7 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
   if (!summary || summary.scoredTrades === 0) {
     return (
       <section aria-labelledby="score-heading" className="flex flex-col gap-3">
-        <h2
-          id="score-heading"
-          className="text-sm font-semibold uppercase tracking-widest text-ink-muted"
-        >
+        <h2 id="score-heading" className="text-sm font-semibold text-ink-muted">
           Performance
         </h2>
         <div className="surface rounded-lg px-4 py-8 text-center">
@@ -64,10 +61,7 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
 
   return (
     <section aria-labelledby="score-heading" className="flex flex-col gap-3">
-      <h2
-        id="score-heading"
-        className="text-sm font-semibold uppercase tracking-widest text-ink-muted"
-      >
+      <h2 id="score-heading" className="text-sm font-semibold text-ink-muted">
         Performance
         <span className="ml-2 normal-case tracking-normal text-ink-faint">
           · <span className="num">{summary.scoredTrades}</span> scored trade
@@ -121,7 +115,7 @@ export function InsiderScorePanel({ detail }: { detail: InsiderScoreDetail }) {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
-                <tr className="text-2xs border-b border-border text-left uppercase tracking-wider text-ink-muted">
+                <tr className="text-2xs border-b border-border text-left tracking-wider text-ink-muted">
                   <th className="pb-2 pr-3 font-semibold">Date</th>
                   <th className="pb-2 pr-3 font-semibold">Company</th>
                   <th className="pb-2 pr-3 font-semibold">Side</th>

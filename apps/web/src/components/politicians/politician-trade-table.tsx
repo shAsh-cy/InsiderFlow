@@ -52,7 +52,7 @@ export function PoliticianTradeTable({
       <table className="w-full min-w-[760px] text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="text-left text-2xs uppercase tracking-widest text-ink-muted">
+          <tr className="text-left text-2xs text-ink-muted">
             {showPolitician ? (
               <th scope="col" className={HEAD_CLASS}>
                 Filer
@@ -95,7 +95,7 @@ export function PoliticianTradeTable({
                   <Link href={`/politicians/${row.politician.id}`} className={LINK_CLASS}>
                     {row.politician.name}
                   </Link>
-                  <span className="ml-2 text-2xs uppercase text-ink-faint">
+                  <span className="ml-2 text-2xs text-ink-faint">
                     {row.politician.chamber}
                     {row.politician.party ? `-${row.politician.party}` : ""}
                     {row.politician.state ? ` · ${row.politician.state}` : ""}
@@ -126,7 +126,7 @@ export function PoliticianTradeTable({
                     never the only carrier of direction. */}
                 <span
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-2xs font-medium uppercase",
+                    "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-2xs font-medium",
                     row.direction === "buy"
                       ? "border-buy/40 bg-buy-soft text-buy-ink"
                       : row.direction === "sell"

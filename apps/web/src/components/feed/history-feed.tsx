@@ -73,9 +73,7 @@ export function HistoryFeed({
 
   return (
     <section aria-label="Trade history" data-testid="history-feed">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-ink-muted">
-        History
-      </h2>
+      <h2 className="mb-3 text-sm font-semibold text-ink-muted">History</h2>
       {rows.length === 0 ? (
         <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           No trades match these filters.

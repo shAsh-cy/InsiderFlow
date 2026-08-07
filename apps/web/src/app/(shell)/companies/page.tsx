@@ -16,7 +16,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Ne
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-col gap-1 border-l-2 border-l-accent pl-5">
+      <header className="flex flex-col gap-1 rail pl-5">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Companies</h1>
         <p className="max-w-[68ch] text-sm text-ink-muted">
           Every company with tracked insider activity, US and India.

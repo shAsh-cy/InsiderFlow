@@ -40,8 +40,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#FBFAF7" },
-    { media: "(prefers-color-scheme: dark)", color: "#0E0D0B" },
+    { media: "(prefers-color-scheme: light)", color: "#F6F8FA" },
+    { media: "(prefers-color-scheme: dark)", color: "#0C0F0E" },
   ],
 };
 
@@ -71,7 +71,7 @@ export default async function RootLayout({
       suppressHydrationWarning
       className={`${onest.variable} ${plexMono.variable}`}
     >
-      <body className="paper-grain min-h-screen antialiased">
+      <body className="screen-grain min-h-screen antialiased">
         <a
           href="#main"
           className="sr-only z-100 rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-overlay focus:not-sr-only focus:fixed focus:left-4 focus:top-4"

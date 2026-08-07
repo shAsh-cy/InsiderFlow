@@ -33,11 +33,9 @@ export function PoliticianCoverageBanner({ coverage }: { coverage: PoliticianCov
       <div
         role="status"
         data-testid="politician-coverage"
-        className="surface rounded-lg border-l-2 border-l-accent p-6 sm:p-8"
+        className="surface rounded-lg rail p-6 sm:p-8"
       >
-        <p className="text-2xs font-semibold uppercase tracking-widest text-ink-faint">
-          Source status
-        </p>
+        <p className="text-2xs font-semibold text-ink-faint">Source status</p>
         <p className="mt-2 text-xl font-semibold tracking-tight text-ink">
           No congressional disclosures ingested.
         </p>
@@ -48,9 +46,7 @@ export function PoliticianCoverageBanner({ coverage }: { coverage: PoliticianCov
 
         <dl className="mt-6 grid gap-x-10 gap-y-6 border-t border-border pt-6 sm:grid-cols-3">
           <div>
-            <dt className="text-2xs font-semibold uppercase tracking-widest text-ink-faint">
-              The source
-            </dt>
+            <dt className="text-2xs font-semibold text-ink-faint">The source</dt>
             <dd className="mt-1.5 text-sm text-ink-muted">
               The default upstream source is the community house/senate-stock-watcher datasets,
               which transcribe House and Senate periodic transaction reports into a machine-readable
@@ -58,9 +54,7 @@ export function PoliticianCoverageBanner({ coverage }: { coverage: PoliticianCov
             </dd>
           </div>
           <div>
-            <dt className="text-2xs font-semibold uppercase tracking-widest text-ink-faint">
-              Why nothing is shown
-            </dt>
+            <dt className="text-2xs font-semibold text-ink-faint">Why nothing is shown</dt>
             <dd className="mt-1.5 text-sm text-ink-muted">
               This deployment has not loaded any STOCK Act filings. That source is currently
               unavailable, and the official House and Senate portals publish periodic transaction
@@ -68,9 +62,7 @@ export function PoliticianCoverageBanner({ coverage }: { coverage: PoliticianCov
             </dd>
           </div>
           <div>
-            <dt className="text-2xs font-semibold uppercase tracking-widest text-ink-faint">
-              What you can do
-            </dt>
+            <dt className="text-2xs font-semibold text-ink-faint">What you can do</dt>
             <dd className="mt-1.5 text-sm text-ink-muted">
               An operator can point the ingestion job at any source they have the rights to use via{" "}
               <code className="rounded-sm border border-border bg-fill px-1 font-mono text-2xs text-ink">
@@ -114,7 +106,7 @@ export function PoliticianCoverageBanner({ coverage }: { coverage: PoliticianCov
       role="status"
       data-testid="politician-coverage"
       className={`surface-sunken flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3 text-sm ${
-        stale ? "border-l-2 border-l-accent" : ""
+        stale ? "rail" : ""
       }`}
     >
       <Icon

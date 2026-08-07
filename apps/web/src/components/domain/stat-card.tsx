@@ -102,11 +102,11 @@ export function StatCard({
         "surface rounded-lg p-4",
         // The accent card is the one figure on the page that matters
         // most; it earns a 2px oxblood rule down its left edge.
-        accent && "border-l-2 border-l-accent",
+        accent && "rail",
         className,
       )}
     >
-      <p className="text-2xs font-medium uppercase tracking-widest text-ink-muted">{label}</p>
+      <p className="text-2xs font-medium text-ink-muted">{label}</p>
       <p
         className={cn(
           "mt-2 text-xl font-semibold tracking-tight",

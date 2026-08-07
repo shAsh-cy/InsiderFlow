@@ -16,7 +16,7 @@ export const metadata = { title: "Politician profile" };
 export const revalidate = 3600;
 
 /** Section eyebrows, set the same way as on the index. */
-const EYEBROW = "text-xs font-semibold uppercase tracking-widest text-ink-muted";
+const EYEBROW = "text-xs font-semibold text-ink-muted";
 
 export default async function PoliticianPage({ params }: { params: Promise<{ id: string }> }) {
   const parsed = z

@@ -19,7 +19,7 @@ export function Sidebar() {
     <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-56 shrink-0 flex-col gap-7 overflow-y-auto border-r border-border px-3 py-6 lg:flex">
       {NAV.map((section) => (
         <nav key={section.section} aria-label={t(`sections.${section.section}`)}>
-          <p className="mb-2 px-2.5 text-2xs font-semibold uppercase tracking-widest text-ink-faint">
+          <p className="mb-2 px-2.5 text-2xs font-semibold text-ink-faint">
             {t(`sections.${section.section}`)}
           </p>
           <ul className="flex flex-col">
@@ -35,7 +35,7 @@ export function Sidebar() {
                     >
                       <Icon className="size-4" aria-hidden />
                       {itemLabel(item.key)}
-                      <span className="ml-auto rounded-sm border border-border px-1 text-2xs uppercase text-ink-faint">
+                      <span className="ml-auto rounded-sm border border-border px-1 text-2xs text-ink-faint">
                         soon
                       </span>
                     </span>
@@ -52,7 +52,7 @@ export function Sidebar() {
                       // the way a reader marks a page — not by a filled pill.
                       "flex items-center gap-2.5 border-l-2 py-1.5 pl-2.5 pr-2.5 text-sm transition-colors",
                       active
-                        ? "border-l-accent font-medium text-ink"
+                        ? "border-l-accent-bright font-medium text-ink"
                         : "border-l-transparent text-ink-muted hover:border-l-border hover:text-ink",
                     )}
                   >

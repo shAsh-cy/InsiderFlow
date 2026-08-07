@@ -103,7 +103,7 @@ export default async function HeatmapPage({
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <fieldset className="flex items-center gap-1.5">
           <legend className="sr-only">Group by</legend>
-          <span className="text-2xs uppercase tracking-widest text-ink-faint">Group</span>
+          <span className="text-2xs text-ink-faint">Group</span>
           {GROUPS.map((g) => (
             <Link
               key={g.key}
@@ -118,7 +118,7 @@ export default async function HeatmapPage({
 
         <fieldset className="flex items-center gap-1.5">
           <legend className="sr-only">Timeframe</legend>
-          <span className="text-2xs uppercase tracking-widest text-ink-faint">Range</span>
+          <span className="text-2xs text-ink-faint">Range</span>
           {TIMEFRAME_KEYS.map((tf) => (
             <Link
               key={tf}
@@ -166,7 +166,7 @@ export default async function HeatmapPage({
         <div className="mt-3 max-h-[26rem] overflow-auto">
           <table className="w-full min-w-[540px] text-sm">
             <thead>
-              <tr className="text-left text-2xs uppercase tracking-widest text-ink-muted">
+              <tr className="text-left text-2xs text-ink-muted">
                 <th scope="col" className={HEAD_CLASS}>
                   {query.group_by === "company"
                     ? "Company"

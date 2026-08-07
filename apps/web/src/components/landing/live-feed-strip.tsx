@@ -52,9 +52,7 @@ export function LiveFeedStrip({
   return (
     <section aria-label="Live insider trades" className="w-full">
       <div className="mb-2 flex items-baseline justify-between border-b border-border pb-2">
-        <h3 className="text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">
-          {label}
-        </h3>
+        <h3 className="text-2xs font-semibold text-ink-faint">{label}</h3>
         <LiveDot status={status} />
       </div>
       {rows.length === 0 ? (

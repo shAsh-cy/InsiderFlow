@@ -219,7 +219,7 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
         <button
           type="button"
           onClick={() => router.push(pathname, { scroll: false })}
-          className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2 text-2xs uppercase tracking-widest text-ink-faint transition-colors hover:text-ink"
+          className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2 text-2xs text-ink-faint transition-colors hover:text-ink"
         >
           <X className="size-3" aria-hidden /> Clear
         </button>

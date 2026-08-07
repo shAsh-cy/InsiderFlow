@@ -25,9 +25,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   // wide disclosure never drags the page sideways or clips the card padding.
   return (
     <section aria-label={title} className="surface rounded-lg p-4">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-ink-muted">
-        {title}
-      </h2>
+      <h2 className="mb-3 text-sm font-semibold text-ink-muted">{title}</h2>
       {children}
     </section>
   );
@@ -136,7 +134,7 @@ export function BulkBlockPanel({ rows }: { rows: BulkBlockRow[] }) {
             {rows.map((row) => (
               <TableRow key={row.id} className={ROW}>
                 <TableCell className="num text-ink-muted">{row.dealDate}</TableCell>
-                <TableCell className="num text-xs uppercase">{row.dealType}</TableCell>
+                <TableCell className="num text-xs">{row.dealType}</TableCell>
                 <TableCell className="max-w-52 truncate">{row.clientName}</TableCell>
                 <TableCell>
                   <span className={row.side === "sell" ? "text-sell-ink" : "text-buy-ink"}>

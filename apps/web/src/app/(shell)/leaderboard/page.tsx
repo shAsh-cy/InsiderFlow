@@ -120,7 +120,7 @@ export default async function LeaderboardPage({
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <fieldset className="flex flex-wrap items-center gap-1.5">
           <legend className="sr-only">Rank by</legend>
-          <span className="text-2xs uppercase tracking-widest text-ink-faint">Rank by</span>
+          <span className="text-2xs text-ink-faint">Rank by</span>
           {METRICS.map((m) => (
             <Link
               key={m.key}
@@ -136,7 +136,7 @@ export default async function LeaderboardPage({
 
         <fieldset className="flex items-center gap-1.5">
           <legend className="sr-only">Minimum scored trades</legend>
-          <span className="text-2xs uppercase tracking-widest text-ink-faint">Min trades</span>
+          <span className="text-2xs text-ink-faint">Min trades</span>
           {[3, 5, 10, 25].map((n) => (
             <Link
               key={n}
@@ -172,7 +172,7 @@ export default async function LeaderboardPage({
                 scrolls horizontally and `overflow-x` forces the vertical axis
                 to scroll with it — sticky would pin to a box that never moves. */}
             <thead>
-              <tr className="text-2xs border-b border-border bg-surface text-left uppercase tracking-wider text-ink-muted">
+              <tr className="text-2xs border-b border-border bg-surface text-left tracking-wider text-ink-muted">
                 <th scope="col" className="px-4 py-3 font-semibold">
                   #
                 </th>

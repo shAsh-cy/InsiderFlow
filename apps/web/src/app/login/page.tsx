@@ -92,7 +92,7 @@ export default function LoginPage() {
         ) : (
           <>
             <form onSubmit={sendMagicLink} className="mt-6 flex flex-col gap-3">
-              <label htmlFor="email" className="text-2xs uppercase tracking-widest text-ink-faint">
+              <label htmlFor="email" className="text-2xs text-ink-faint">
                 Email
               </label>
               <input
@@ -115,7 +115,7 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="my-5 flex items-center gap-3 text-2xs uppercase tracking-widest text-ink-faint">
+            <div className="my-5 flex items-center gap-3 text-2xs text-ink-faint">
               <span className="h-px flex-1 bg-border" /> or{" "}
               <span className="h-px flex-1 bg-border" />
             </div>

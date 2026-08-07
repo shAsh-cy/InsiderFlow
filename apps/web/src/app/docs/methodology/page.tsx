@@ -84,9 +84,7 @@ export default function MethodologyPage() {
       </div>
 
       <nav aria-label="Contents" className="border-y border-border py-4">
-        <p className="mb-2 text-2xs font-semibold uppercase tracking-widest text-ink-faint">
-          On this page
-        </p>
+        <p className="mb-2 text-2xs font-semibold text-ink-faint">On this page</p>
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {TOC.map(([id, label]) => (
             <li key={id}>
@@ -194,7 +192,7 @@ window_end   = max(txn_date) among those trades`}</Formula>
           <div className="-mx-2 mt-3 overflow-x-auto">
             <table className="w-full min-w-[420px] text-xs">
               <thead>
-                <tr className="border-b border-border text-left text-2xs uppercase tracking-widest text-ink-faint">
+                <tr className="border-b border-border text-left text-2xs text-ink-faint">
                   <th className="px-2 pb-2 font-medium">SIC range</th>
                   <th className="px-2 pb-2 font-medium">Sector</th>
                   <th className="px-2 pb-2 font-medium">Note</th>

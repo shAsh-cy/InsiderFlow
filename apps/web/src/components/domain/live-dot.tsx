@@ -25,7 +25,7 @@ export function LiveDot({
           status === "connecting" && "border border-ink-faint bg-transparent",
         )}
       />
-      <span className="uppercase tracking-widest">{label}</span>
+      <span className="tracking-widest">{label}</span>
     </span>
   );
 }

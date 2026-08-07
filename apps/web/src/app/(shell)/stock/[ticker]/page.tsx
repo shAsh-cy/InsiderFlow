@@ -111,7 +111,7 @@ export default async function StockPage({
                 not controls, and in this product a pill promises a click. */}
             {cluster && cluster.distinctBuyers >= 2 ? (
               <span
-                className="text-2xs rounded-sm border border-buy-ink/30 bg-buy-soft px-2 py-0.5 font-medium uppercase tracking-wide text-buy-ink"
+                className="text-2xs rounded-sm border border-buy-ink/30 bg-buy-soft px-2 py-0.5 font-medium tracking-wide text-buy-ink"
                 title={
                   cluster.windowStart && cluster.windowEnd
                     ? `${cluster.distinctBuyers} distinct insiders bought across ${cluster.tradeCount} trades between ${cluster.windowStart} and ${cluster.windowEnd}`
@@ -127,7 +127,7 @@ export default async function StockPage({
                 does not carry. Weight and ground do the work instead. */}
             {anomaly?.zScore !== null && anomaly && Math.abs(anomaly.zScore!) >= 2 ? (
               <span
-                className="text-2xs rounded-sm border border-border bg-fill px-2 py-0.5 font-medium uppercase tracking-wide text-ink-muted"
+                className="text-2xs rounded-sm border border-border bg-fill px-2 py-0.5 font-medium tracking-wide text-ink-muted"
                 title={`Net insider flow over the last ${anomaly.windowDays} days is ${anomaly.zScore!.toFixed(1)} standard deviations from this company's own trailing average, across ${anomaly.sampleSize} prior windows`}
               >
                 unusual flow ·{" "}
@@ -191,10 +191,7 @@ export default async function StockPage({
         aria-labelledby="price-overlay-heading"
         className="surface-sunken flex min-h-28 flex-col justify-center rounded-lg p-4"
       >
-        <h2
-          id="price-overlay-heading"
-          className="text-sm font-semibold uppercase tracking-widest text-ink-muted"
-        >
+        <h2 id="price-overlay-heading" className="text-sm font-semibold text-ink-muted">
           Trades vs price
         </h2>
         <p className="text-2xs mt-2 max-w-prose text-ink-faint">
@@ -205,15 +202,13 @@ export default async function StockPage({
       {/* Filing history */}
       <section aria-label="Insider trade history" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-ink-muted">
-            Insider trades
-          </h2>
+          <h2 className="text-sm font-semibold text-ink-muted">Insider trades</h2>
           {/* A control, so it takes the pill shape — its state is carried by
               the label flipping, which is why it needs no active styling. */}
           <Link
             href={showAmendments ? `/stock/${ticker}` : `/stock/${ticker}?amendments=1`}
             data-testid="amendments-toggle"
-            className="text-2xs inline-flex h-8 cursor-pointer items-center rounded-full border border-border bg-surface px-3 uppercase tracking-widest text-ink-muted transition-colors hover:bg-fill hover:text-ink"
+            className="text-2xs inline-flex h-8 cursor-pointer items-center rounded-full border border-border bg-surface px-3 text-ink-muted transition-colors hover:bg-fill hover:text-ink"
           >
             {showAmendments ? "Hide amendments" : "Show amendments"}
           </Link>
@@ -243,10 +238,7 @@ export default async function StockPage({
           data-testid="politician-overlay"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2
-              id="congress-heading"
-              className="text-sm font-semibold uppercase tracking-widest text-ink-muted"
-            >
+            <h2 id="congress-heading" className="text-sm font-semibold text-ink-muted">
               Congressional disclosures
             </h2>
             <Link
@@ -270,9 +262,7 @@ export default async function StockPage({
       {/* Ownership timeline */}
       {ownership.length > 0 ? (
         <section aria-label="Ownership timeline" className="surface rounded-lg p-4">
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-widest text-ink-muted">
-            Ownership timeline
-          </h2>
+          <h2 className="mb-1 text-sm font-semibold text-ink-muted">Ownership timeline</h2>
           <p className="text-2xs mb-3 text-ink-faint">
             First vs latest disclosed post-transaction holdings per insider — no interpolation.
           </p>
@@ -281,7 +271,7 @@ export default async function StockPage({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="text-2xs border-b border-border uppercase tracking-wider text-ink-muted">
+                <tr className="text-2xs border-b border-border tracking-wider text-ink-muted">
                   <th className="py-1.5 pr-4 font-semibold">Insider</th>
                   <th className="py-1.5 pr-4 font-semibold">First filing</th>
                   <th className="py-1.5 pr-4 font-semibold">Latest filing</th>

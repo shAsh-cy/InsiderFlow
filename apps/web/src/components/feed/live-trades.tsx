@@ -46,7 +46,7 @@ export function LiveTrades({
   return (
     <section aria-label="Live trades" data-testid="live-fold">
       <div className="mb-2 flex items-baseline justify-between border-b border-border pb-2">
-        <h2 className="text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">Live</h2>
+        <h2 className="text-2xs font-semibold text-ink-faint">Live</h2>
         <LiveDot status={status} />
       </div>
       {rows.length === 0 ? (

@@ -43,7 +43,7 @@ const SOURCE_LABEL: Record<string, string> = {
 /** Section caption. Small caps on a hairline — the panel's row of labels. */
 function PanelHeading({ id, children }: { id: string; children: React.ReactNode }) {
   return (
-    <h2 id={id} className="text-2xs font-semibold uppercase tracking-widest text-ink-muted">
+    <h2 id={id} className="text-2xs font-semibold text-ink-muted">
       {children}
     </h2>
   );
@@ -195,7 +195,7 @@ export default async function StatusPage() {
             ] as const
           ).map(([label, value]) => (
             <div key={label}>
-              <dt className="text-2xs uppercase tracking-widest text-ink-faint">{label}</dt>
+              <dt className="text-2xs text-ink-faint">{label}</dt>
               {/* null means the metric could not be read. Printing 0 would
                   turn a broken monitor into a reassuring dashboard. */}
               <dd className="num mt-0.5 text-lg font-semibold text-ink">

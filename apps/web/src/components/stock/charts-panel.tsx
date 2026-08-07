@@ -35,9 +35,7 @@ export function ChartsPanel({
   return (
     <div className="grid gap-5 lg:grid-cols-3">
       <section aria-label="Insider flow" className="surface rounded-lg p-4 lg:col-span-2">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-ink-muted">
-          Net insider flow
-        </h2>
+        <h2 className="mb-3 text-sm font-semibold text-ink-muted">Net insider flow</h2>
         {netFlow.length === 0 ? (
           <p className="py-16 text-center text-sm text-ink-faint">No priced trades to chart yet.</p>
         ) : (
@@ -46,9 +44,7 @@ export function ChartsPanel({
       </section>
       <section aria-label="Insider sentiment" className="surface rounded-lg p-4">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-ink-muted">
-            MSPR sentiment
-          </h2>
+          <h2 className="text-sm font-semibold text-ink-muted">MSPR sentiment</h2>
           {latestMspr !== null ? (
             <span className="num text-sm font-semibold text-ink">{latestMspr.toFixed(1)}</span>
           ) : null}

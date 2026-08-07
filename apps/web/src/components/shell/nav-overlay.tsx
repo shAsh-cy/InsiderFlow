@@ -64,9 +64,7 @@ export default function NavOverlay({
 
                 <div className="mx-auto flex min-h-full max-w-4xl flex-col px-6 py-5">
                   <div className="flex h-9 items-center justify-between">
-                    <span className="text-2xs uppercase tracking-[0.2em] text-ink-faint">
-                      {t("menu")}
-                    </span>
+                    <span className="text-2xs text-ink-faint">{t("menu")}</span>
                     <DialogPrimitive.Close
                       aria-label={t("closeMenu")}
                       className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-border text-ink-muted transition-colors hover:bg-fill hover:text-ink"
@@ -78,7 +76,7 @@ export default function NavOverlay({
                   <div className="mt-10 flex flex-col gap-10">
                     {NAV.map((section) => (
                       <nav key={section.section} aria-label={t(`sections.${section.section}`)}>
-                        <p className="mb-3 border-b border-border pb-2 text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">
+                        <p className="mb-3 border-b border-border pb-2 text-2xs font-semibold text-ink-faint">
                           {t(`sections.${section.section}`)}
                         </p>
                         <ul>

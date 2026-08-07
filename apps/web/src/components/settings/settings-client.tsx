@@ -56,7 +56,7 @@ function Section({
   return (
     <section aria-label={title} className="surface flex flex-col rounded-lg">
       <div className="border-b border-border px-5 py-4">
-        <h2 className="text-2xs font-semibold uppercase tracking-widest text-ink-muted">{title}</h2>
+        <h2 className="text-2xs font-semibold text-ink-muted">{title}</h2>
         {description ? (
           <p className="mt-1.5 max-w-[68ch] text-xs leading-relaxed text-ink-faint">
             {description}

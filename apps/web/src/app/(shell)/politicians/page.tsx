@@ -39,7 +39,7 @@ const PILL_ON = "border-border bg-fill font-semibold text-ink";
 const PILL_OFF = "border-transparent text-ink-muted hover:bg-fill hover:text-ink";
 
 /** Section eyebrows, set the same way across the page. */
-const EYEBROW = "text-xs font-semibold uppercase tracking-widest text-ink-muted";
+const EYEBROW = "text-xs font-semibold text-ink-muted";
 
 export default async function PoliticiansPage({
   searchParams,
@@ -126,7 +126,7 @@ export default async function PoliticiansPage({
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <fieldset className="flex items-center gap-1.5">
               <legend className="sr-only">Chamber</legend>
-              <span className="text-2xs uppercase tracking-widest text-ink-faint">Chamber</span>
+              <span className="text-2xs text-ink-faint">Chamber</span>
               {CHAMBERS.map((c) => (
                 <Link
                   key={c.key || "all"}
@@ -184,7 +184,7 @@ export default async function PoliticiansPage({
                         <span className="min-w-0 flex-1 truncate font-medium text-ink">
                           {f.name}
                         </span>
-                        <span className="text-2xs uppercase text-ink-faint">
+                        <span className="text-2xs text-ink-faint">
                           {f.chamber}
                           {f.party ? `-${f.party}` : ""}
                         </span>

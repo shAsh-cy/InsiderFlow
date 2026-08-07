@@ -79,7 +79,7 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
       <InsiderScorePanel detail={score} />
 
       <section aria-label="Trade history" className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-ink-muted">
+        <h2 className="text-sm font-semibold text-ink-muted">
           Cross-company trade history
           {stats.lastActivity ? (
             <span className="ml-2 normal-case tracking-normal text-ink-faint">
