@@ -56,7 +56,7 @@ export function LiveTrades({
       ) : (
         // One surface around the run of rows: the fold is a continuous
         // tape, and a border between every filing would break the read.
-        <div className="surface overflow-hidden rounded-lg">
+        <div className="surface @container overflow-hidden rounded-lg">
           <ul>
             {rows.map(({ trade, streamed }) =>
               streamed ? (

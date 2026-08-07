@@ -123,7 +123,7 @@ test.describe("stock page", () => {
 });
 
 test.describe("screener", () => {
-  test("presets, shareable URL state, export + disabled alert affordances", async ({ page }) => {
+  test("presets, shareable URL state, export + alert affordances", async ({ page }) => {
     await page.goto("/screener?preset=big-buys");
     await expect(page.getByRole("link", { name: "big-buys" })).toHaveAttribute(
       "aria-current",
@@ -134,7 +134,10 @@ test.describe("screener", () => {
       "href",
       "/api/rss/big-buys",
     );
-    await expect(page.getByTestId("save-alert").getByRole("button")).toBeDisabled();
+    // r2: the signed-out save affordance is LIVE, not disabled — see the
+    // rationale in auth.spec.ts. It offers sign-in in place and replays
+    // the save; the write itself is still refused without a session.
+    await expect(page.getByTestId("save-alert")).toBeEnabled();
 
     // Compose a filter on top of the preset; the URL carries the whole state.
     await page.getByRole("button", { name: "Executives only" }).click();

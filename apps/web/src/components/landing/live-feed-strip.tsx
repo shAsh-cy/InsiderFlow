@@ -52,7 +52,10 @@ export function LiveFeedStrip({
   return (
     <section aria-label="Live insider trades" className="w-full">
       <div className="mb-2 flex items-baseline justify-between border-b border-border pb-2">
-        <h3 className="text-2xs font-semibold text-ink-faint">{label}</h3>
+        {/* h2, not h3: on the landing this strip is a top-level section
+            sitting directly under the h1, and jumping to h3 would skip a
+            level for anyone navigating by headings. */}
+        <h2 className="text-2xs font-semibold text-ink-faint">{label}</h2>
         <LiveDot status={status} />
       </div>
       {rows.length === 0 ? (
@@ -63,7 +66,7 @@ export function LiveFeedStrip({
         // One surface around the whole run: rows are told apart by a
         // hairline, so the strip reads as a continuous tape rather than a
         // stack of separate cards.
-        <div className="surface overflow-hidden rounded-lg">
+        <div className="surface @container overflow-hidden rounded-lg">
           <ul data-testid="live-feed">
             {rows.map(({ trade, streamed }) =>
               streamed ? (

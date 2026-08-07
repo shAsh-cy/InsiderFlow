@@ -49,8 +49,13 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
 
       {/* Shares and value are the two things a reader compares between
           rows, so they get their own fixed columns rather than trailing
-          the insider's name at whatever width it leaves. */}
-      <span className="num hidden w-24 shrink-0 text-right text-2xs text-ink-faint sm:block">
+          the insider's name at whatever width it leaves.
+
+          The breakpoints are CONTAINER queries, not viewport ones. This
+          row renders both full-width on /trades and inside a narrow hero
+          column on the landing page; keyed to the viewport, the narrow
+          case shows every column on a wide screen and clips them. */}
+      <span className="num hidden w-24 shrink-0 text-right text-2xs text-ink-faint @md:block">
         {shares ? `${shares} sh` : ""}
       </span>
       {/* Direction gets its own glyph beside the money, not just the
@@ -70,14 +75,14 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
       {trade.is10b51 ? (
         <span
           title="Executed under a pre-scheduled Rule 10b5-1 trading plan"
-          className="num hidden shrink-0 text-2xs text-ink-faint sm:inline"
+          className="num hidden shrink-0 text-2xs text-ink-faint @2xl:inline"
         >
           10b5-1
         </span>
       ) : null}
-      <RelevanceBadge relevance={trade.relevance} className="hidden shrink-0 sm:inline-flex" />
-      <SourceBadge source={trade.source} className="hidden shrink-0 md:inline" />
-      <span className="num hidden w-16 shrink-0 text-right text-2xs text-ink-faint lg:block">
+      <RelevanceBadge relevance={trade.relevance} className="hidden shrink-0 @lg:inline-flex" />
+      <SourceBadge source={trade.source} className="hidden shrink-0 @2xl:inline" />
+      <span className="num hidden w-16 shrink-0 text-right text-2xs text-ink-faint @3xl:block">
         {timeAgo(trade.createdAt, now)}
       </span>
     </>

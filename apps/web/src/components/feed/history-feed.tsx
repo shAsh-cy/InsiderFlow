@@ -82,7 +82,7 @@ export function HistoryFeed({
         // One surface around the whole run of rows. Each row carries only
         // a hairline and a hover ground — no per-row border, shadow or
         // blur, which is what keeps a ten-thousand-row scroll cheap.
-        <div ref={listRef} className="surface overflow-hidden rounded-lg">
+        <div ref={listRef} className="surface @container overflow-hidden rounded-lg">
           <ul
             className="relative"
             style={{ height: virtualizer.getTotalSize() }}

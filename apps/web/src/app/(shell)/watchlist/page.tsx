@@ -140,7 +140,7 @@ function WatchCard({ item, onRemove }: { item: WatchlistItem; onRemove: () => vo
               {formatCompact(Math.abs(netUsd))}
             </span>
           </p>
-          <ul className="surface-sunken overflow-hidden rounded-md">
+          <ul className="surface-sunken @container overflow-hidden rounded-md">
             {trades.map((trade) => (
               <StaticFeedRow key={trade.id} trade={trade} className="px-2.5 py-1.5 text-xs" />
             ))}

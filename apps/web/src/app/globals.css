@@ -43,7 +43,12 @@
   /* ── Text ─────────────────────────────────────────────────────────── */
   --text: #e8edea;
   --text-secondary: #a7b0ac;
-  --text-muted: #6e7873;
+  /* Spec value was #6E7873. Measured at 4.17:1 on --bg and 4.05:1 on
+     --surface, so it failed WCAG AA for the small text it actually
+     carries (the kicker, the tape label, null glyphs, microtext).
+     Lifted to the nearest tone of the same hue that clears 4.5:1 against
+     all three dark grounds — bg 5.3, surface 5.1, surface-raised 4.8. */
+  --text-muted: #808881;
 
   /* ── The accent: racing green. Actionable, never directional. ───────
      On this ground `--accent` is 3.6:1 — fine as a FILL behind
@@ -105,7 +110,12 @@
 
   --text: #10171c;
   --text-secondary: #45525c;
-  --text-muted: #6b7885;
+  /* Same correction as dark, same reason. Spec value #6B7885 measured
+     4.21:1 on --bg and 4.00:1 on --surface-sunken — and the sunken tone
+     is where half of every zebra-striped table's microtext sits, so
+     tuning against the page background alone would have passed the audit
+     and failed every other row. Now: sunken 4.6, bg 4.8, white 5.3. */
+  --text-muted: #626e7a;
 
   /* Inverted relationship to dark: here the deeper green is the more
      legible one, so `--accent-bright` is *darker* than `--accent`. Both
@@ -152,7 +162,12 @@
 
   --text: #e8edea;
   --text-secondary: #a7b0ac;
-  --text-muted: #6e7873;
+  /* Spec value was #6E7873. Measured at 4.17:1 on --bg and 4.05:1 on
+     --surface, so it failed WCAG AA for the small text it actually
+     carries (the kicker, the tape label, null glyphs, microtext).
+     Lifted to the nearest tone of the same hue that clears 4.5:1 against
+     all three dark grounds — bg 5.3, surface 5.1, surface-raised 4.8. */
+  --text-muted: #808881;
 
   --accent: #1e7a4d;
   --accent-bright: #3da574;
