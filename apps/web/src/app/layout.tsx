@@ -38,6 +38,13 @@ export const metadata: Metadata = {
     "Open-source, real-time, multi-market insider-trading tracker. Normalized, classified, free. Not investment advice.",
 };
 
+/**
+ * The one place in the app allowed to name a colour literally.
+ *
+ * These become `<meta name="theme-color">`, which the browser reads
+ * before any stylesheet has been parsed — so it cannot be a CSS custom
+ * property. They must be kept in step with `--bg` in globals.css by hand.
+ */
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F6F8FA" },

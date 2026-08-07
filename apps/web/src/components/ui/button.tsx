@@ -22,8 +22,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // The fill differs by theme on purpose. `--accent-contrast` is
+        // near-black, and near-black on `--accent` is only 3.6:1 in dark
+        // — so dark fills with `--accent-bright` (6.3:1 against the same
+        // ink) and light fills with `--accent` (5.4:1 against white).
+        // Hover is a brightness shift rather than a second colour, which
+        // moves the fill AWAY from the ink in both themes and so can
+        // never drop the label below its resting contrast.
         default:
-          "border border-accent bg-accent text-[#FBFAF7] hover:bg-[#7A2525] hover:border-[#7A2525]",
+          "border border-transparent bg-accent-bright text-accent-contrast hover:brightness-115 light:bg-accent light:hover:brightness-90",
         destructive:
           "border border-accent/45 bg-surface text-accent-ink hover:bg-accent/8 hover:border-accent",
         outline: "border border-border bg-surface text-ink shadow-card hover:bg-fill",

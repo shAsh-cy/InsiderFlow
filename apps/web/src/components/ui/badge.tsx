@@ -14,7 +14,9 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-accent text-[#FBFAF7] [a&]:hover:bg-[#7A2525]",
+        // Same theme-asymmetric fill as Button — see the note there.
+        default:
+          "bg-accent-bright text-accent-contrast [a&]:hover:brightness-115 light:bg-accent light:[a&]:hover:brightness-90",
         secondary: "border-border bg-fill text-ink-muted [a&]:hover:text-ink",
         destructive: "border-accent/40 bg-accent/8 text-accent-ink",
         outline: "border-border text-ink [a&]:hover:bg-fill",
