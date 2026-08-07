@@ -73,30 +73,37 @@ export default async function Home() {
   return (
     <main id="main" className="relative min-h-screen overflow-x-clip pt-14">
       {/* ── Hero ──────────────────────────────────────────────────────────
-          Set against the left margin rule of a ledger sheet rather than
-          centred in space. The whole page hangs off that one oxblood
-          line. */}
-      <section className="mx-auto max-w-5xl px-6 pb-16 pt-20 sm:pt-28">
-        <div className="border-l-2 border-l-accent pl-6 sm:pl-8">
-          <p className="num text-2xs uppercase tracking-[0.22em] text-ink-faint">{t("kicker")}</p>
+          Editorial-left, not centred. Every block on this page — headline,
+          figures, tape, feature index — starts on the same left edge, and
+          the asymmetry is carried by what sits to the RIGHT of it: here,
+          the live tape. Centring a marketing hero puts the most valuable
+          words where the eye arrives last; an F-pattern reader takes the
+          top-left first (Nielsen Norman Group), so that is where the
+          product name and the one primary action go. */}
+      <section className="mx-auto grid max-w-6xl gap-10 px-6 pb-16 pt-20 lg:grid-cols-12 lg:gap-12 lg:pt-24">
+        <div className="rail pl-6 lg:col-span-7">
+          <p className="num text-2xs text-ink-faint">{t("kicker")}</p>
 
           {/* The product name is a proper noun — never translated. No
               text-balance: this is the LCP element, and balanced line
               breaking measurably delays its paint. */}
-          <h1 className="mt-5 text-5xl font-semibold tracking-tight text-ink">InsiderFlow</h1>
+          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-ink">InsiderFlow</h1>
 
           {/* The one text reveal on the site. */}
-          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-ink-muted">
+          <p className="mt-5 max-w-[54ch] text-lg leading-relaxed text-ink-muted">
             <LineReveal text={t("subhead")} />
           </p>
 
-          <p className="mt-6 border-t border-border pt-4 text-2xs uppercase tracking-[0.18em] text-ink-faint">
-            {t("badge")}
+          {/* The access promise, stated where it cannot be missed: this is
+              the product's whole wedge, and a reader who assumes the data
+              is gated never gets as far as the tape. */}
+          <p className="mt-6 max-w-[54ch] border-t border-border pt-4 text-sm text-ink-muted">
+            <strong className="font-semibold text-ink">{t("accessLead")}</strong> {t("accessBody")}
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-3">
             {/* The single accent element on this view. */}
-            <Button asChild size="lg">
+            <Button asChild size="lg" data-magnetic>
               <Link href="/trades">
                 {t("ctaPrimary")} <ArrowRight aria-hidden />
               </Link>
@@ -106,22 +113,31 @@ export default async function Home() {
             </Button>
           </div>
 
+          <p className="mt-6 text-2xs text-ink-faint">{t("badge")}</p>
+
           <p
             role="alert"
-            className="mt-9 max-w-2xl border-l-2 border-l-border pl-4 text-xs leading-relaxed text-ink-muted"
+            className="rail-quiet mt-8 max-w-[62ch] pl-4 text-xs leading-relaxed text-ink-muted"
           >
             <strong className="font-semibold text-ink">{t("disclaimerLead")}</strong>{" "}
             {t("disclaimerBody")}
           </p>
         </div>
+
+        {/* The right side is the live product, not decoration. */}
+        <div className="lg:col-span-5">
+          <LiveFeedStrip
+            initialTrades={initialTrades}
+            label={t("tapeLabel")}
+            emptyMessage={t("tapeEmpty")}
+          />
+        </div>
       </section>
 
-      {/* ── Signature panel: the product, running, on the marketing page ──
-          Real figures from the live database, the real SSE tape, and real
-          30-day flow. Nothing here is a mockup. */}
+      {/* ── Signature panel: real figures from the live database. ──────── */}
       <section
         aria-label={t("signatureLabel")}
-        className="mx-auto max-w-5xl border-t border-border px-6 py-14"
+        className="mx-auto max-w-6xl border-t border-border px-6 py-14"
       >
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-xl font-semibold tracking-tight text-ink">{t("signatureLabel")}</h2>
@@ -138,32 +154,24 @@ export default async function Home() {
           <StatCard label={t("stats.clusters")} value={stats.clusterSignals} preset="count" />
         </Reveal>
 
-        <div className="mt-10 grid gap-10 lg:grid-cols-[1.15fr_1fr]">
-          <LiveFeedStrip
-            initialTrades={initialTrades}
-            label={t("tapeLabel")}
-            emptyMessage={t("tapeEmpty")}
-          />
-
-          {sparks.length > 0 ? (
-            <div>
-              <h3 className="mb-2 border-b border-border pb-2 text-2xs font-semibold uppercase tracking-[0.2em] text-ink-faint">
-                {t("sparklinesLabel")}
-              </h3>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2">
-                {sparks.map((spark) => (
-                  <FlowSparkline key={spark.ticker} spark={spark} />
-                ))}
-              </div>
+        {sparks.length > 0 ? (
+          <div className="mt-10">
+            <h3 className="mb-2 border-b border-border pb-2 text-2xs font-semibold text-ink-faint">
+              {t("sparklinesLabel")}
+            </h3>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {sparks.map((spark) => (
+                <FlowSparkline key={spark.ticker} spark={spark} />
+              ))}
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </section>
 
       {/* ── Features, set as an index ─────────────────────────────────── */}
       <section
         aria-label={t("featuresLabel")}
-        className="mx-auto max-w-5xl border-t border-border px-6 py-14"
+        className="mx-auto max-w-6xl border-t border-border px-6 py-14"
       >
         <div className="grid gap-x-10 sm:grid-cols-2">
           {FEATURES.map((feature, i) => {
@@ -199,7 +207,7 @@ export default async function Home() {
             licence line that carries the "not investment advice" statement. */}
         <div
           data-testid="footer-disclaimer"
-          className="mx-auto flex max-w-5xl flex-col gap-3 text-xs leading-relaxed text-ink-faint"
+          className="mx-auto flex max-w-6xl flex-col gap-3 text-xs leading-relaxed text-ink-faint"
         >
           <p className="max-w-[80ch]">
             <strong className="text-ink-muted">{t("footer.sourcesLead")}</strong>{" "}
