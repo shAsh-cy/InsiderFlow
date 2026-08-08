@@ -3,6 +3,8 @@ import { formatShares, timeAgo } from "@/lib/format";
 
 import { cn } from "@/lib/utils";
 
+import { RowActions } from "@/components/feed/row-actions";
+
 import { CountryFlag } from "./country-flag";
 import { CurrencyValue } from "./currency-value";
 import { RelevanceBadge } from "./relevance-badge";
@@ -62,7 +64,16 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
           colour and not just the code letter. Whether a figure is cash
           coming in or going out is the first thing a reader needs, and
           ~8% of men cannot take it from hue. */}
-      <span className="flex w-32 shrink-0 items-center justify-end gap-1">
+      {/* `data-cell`/`data-direction` are the hooks the arrival flash
+          targets — see `.tape-arrival` in globals.css. Doing it in CSS off
+          the row's own class keeps the animation out of the render path:
+          a streamed row already re-renders, and nothing here should also
+          re-render to make a background fade. */}
+      <span
+        data-cell="value"
+        data-direction={trade.acquiredDisposed ?? undefined}
+        className="flex w-32 shrink-0 items-center justify-end gap-1 px-1"
+      >
         <DirectionGlyph direction={trade.acquiredDisposed} />
         <CurrencyValue
           value={trade.value}
@@ -85,6 +96,7 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
       <span className="num hidden w-16 shrink-0 text-right text-2xs text-ink-faint @3xl:block">
         {timeAgo(trade.createdAt, now)}
       </span>
+      <RowActions ticker={trade.company.ticker} label={trade.company.name} market={trade.market} />
     </>
   );
 }
@@ -101,3 +113,31 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
  */
 export const FEED_ROW_CLASS =
   "flex h-10 items-center gap-2.5 border-b border-border px-3 text-sm transition-colors last:border-b-0 hover:bg-fill";
+
+/**
+ * The attributes that make a row navigable from the keyboard.
+ *
+ * Attributes rather than props, deliberately: the row components' prop
+ * signatures are part of the design system's contract and are not
+ * changing to add an accelerator. TapeList reads these off the DOM, so a
+ * row rendered anywhere — the landing strip, /trades, the virtualized
+ * history — is navigable without any of them knowing about each other.
+ *
+ * `tabIndex: -1` because the LIST owns the tab stop; rows are reached
+ * with the arrow keys once you are inside it.
+ */
+export function tapeRowProps(trade: TradeRow) {
+  const ticker = trade.company.ticker;
+  return {
+    "data-tape-row": "",
+    "data-tape-ticker": ticker ?? undefined,
+    "data-tape-label": trade.company.name,
+    "data-tape-market": trade.market,
+    // Enter goes to the company page when there is one — the row's home
+    // inside this product — and to the filing itself when there is not.
+    "data-tape-href": ticker
+      ? `/stock/${encodeURIComponent(ticker)}`
+      : (trade.filing?.sourceUrl ?? undefined),
+    tabIndex: -1,
+  } as const;
+}

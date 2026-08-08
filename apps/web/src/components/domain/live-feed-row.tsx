@@ -6,7 +6,7 @@ import type { TradeRow } from "@/lib/api/queries";
 import { springs } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
-import { FEED_ROW_CLASS, FeedRowContent } from "./feed-row-content";
+import { FEED_ROW_CLASS, FeedRowContent, tapeRowProps } from "./feed-row-content";
 
 /**
  * One live-feed entry, struck onto the tape with `springs.feedRow`.
@@ -30,11 +30,15 @@ export function LiveFeedRow({
 
   return (
     <motion.li
+      {...tapeRowProps(trade)}
       layout={!reduced}
       initial={reduced ? false : { opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={springs.feedRow}
-      className={cn(FEED_ROW_CLASS, className)}
+      // `tape-arrival` is what distinguishes a row that just streamed in
+      // from one that was there already: only this component renders for
+      // an SSE arrival, so the flash needs no extra state to know.
+      className={cn(FEED_ROW_CLASS, "tape-arrival", className)}
     >
       <FeedRowContent trade={trade} now={now} />
     </motion.li>

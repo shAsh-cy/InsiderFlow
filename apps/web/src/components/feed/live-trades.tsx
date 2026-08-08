@@ -10,6 +10,8 @@ import { useMemo } from "react";
 
 import { LiveDot } from "@/components/domain/live-dot";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
+import { ShortcutSheet } from "@/components/feed/shortcut-sheet";
+import { TapeList } from "@/components/feed/tape-list";
 import { useTradeStream } from "@/hooks/use-trade-stream";
 import type { TradeRow } from "@/lib/api/queries";
 import { matchesTradeFilters } from "@/lib/api/trade-filter";
@@ -45,9 +47,12 @@ export function LiveTrades({
 
   return (
     <section aria-label="Live trades" data-testid="live-fold">
-      <div className="mb-2 flex items-baseline justify-between border-b border-border pb-2">
+      <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-border pb-2">
         <h2 className="text-2xs font-semibold text-ink-faint">Live</h2>
-        <LiveDot status={status} />
+        <span className="flex items-center gap-2">
+          <ShortcutSheet />
+          <LiveDot status={status} />
+        </span>
       </div>
       {rows.length === 0 ? (
         <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
@@ -57,7 +62,7 @@ export function LiveTrades({
         // One surface around the run of rows: the fold is a continuous
         // tape, and a border between every filing would break the read.
         <div className="surface @container overflow-hidden rounded-lg">
-          <ul>
+          <TapeList label="Live trades — use the arrow keys to move between rows">
             {rows.map(({ trade, streamed }) =>
               streamed ? (
                 <LiveFeedRow key={trade.id} trade={trade} />
@@ -65,7 +70,7 @@ export function LiveTrades({
                 <StaticFeedRow key={trade.id} trade={trade} />
               ),
             )}
-          </ul>
+          </TapeList>
         </div>
       )}
     </section>

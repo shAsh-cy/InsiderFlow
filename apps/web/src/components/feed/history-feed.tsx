@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
+import { TapeList } from "@/components/feed/tape-list";
 import { fetchTrades } from "@/lib/api/client";
 import type { Paged, TradesParams } from "@/lib/api/client";
 import type { PageMeta, TradeRow } from "@/lib/api/queries";
@@ -83,10 +84,11 @@ export function HistoryFeed({
         // a hairline and a hover ground — no per-row border, shadow or
         // blur, which is what keeps a ten-thousand-row scroll cheap.
         <div ref={listRef} className="surface @container overflow-hidden rounded-lg">
-          <ul
+          <TapeList
+            label="Trade history — use the arrow keys to move between rows"
             className="relative"
             style={{ height: virtualizer.getTotalSize() }}
-            data-testid="history-rows"
+            testId="history-rows"
           >
             {virtualizer.getVirtualItems().map((item) => {
               const trade = rows[item.index]!;
@@ -102,7 +104,7 @@ export function HistoryFeed({
                 />
               );
             })}
-          </ul>
+          </TapeList>
         </div>
       )}
       <div ref={sentinelRef} aria-hidden className="h-2" />

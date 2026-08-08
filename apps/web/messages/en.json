@@ -100,6 +100,23 @@
     "emailPlaceholder": "you@example.com",
     "emailSent": "Check your email for the sign-in link.",
     "emailFailed": "Could not send the link. Try again.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "rowWatch": "Track",
+    "rowUnwatch": "Stop tracking",
+    "rowAlert": "Alert me on",
+    "rowWatchSaved": "Tracking {ticker}",
+    "rowAlertSaved": "Alerting on {ticker} — tune delivery in Settings",
+    "rowAlertFailed": "Could not save that alert — try again"
+  },
+  "shortcuts": {
+    "open": "Keyboard shortcuts",
+    "title": "Keyboard shortcuts",
+    "body": "The tape takes one tab stop, then the arrow keys walk it.",
+    "rowMove": "Move between rows",
+    "rowEnds": "First row / last row",
+    "rowOpen": "Open the focused row",
+    "rowWatchKey": "Track or stop tracking the focused company",
+    "palette": "Open the command palette",
+    "thisSheet": "Open this sheet"
   }
 }

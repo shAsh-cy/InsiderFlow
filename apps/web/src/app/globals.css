@@ -503,25 +503,90 @@ body {
 
 /* A value that just changed flashes its ground once. Colour only — no
    transform, so it cannot cost layout inside a virtualized row. */
-@keyframes value-flash {
+/* ── The arrival flash ────────────────────────────────────────────────
+   A row that just streamed in flashes its VALUE cell in the direction's
+   own tint, then fades. Two reasons it is the direction and not the
+   accent: the accent means "actionable" everywhere else in this system
+   and must never read as a side, and the thing a reader wants from a new
+   row is which way the money went — so the flash carries information
+   rather than just drawing the eye.
+
+   12% alpha and 600ms: enough to catch peripheral vision on a tape that
+   updates every few seconds, not enough to leave an afterimage on one
+   that updates every few hundred milliseconds. Background only, so the
+   whole thing composites without touching layout or paint of the text. */
+@keyframes tape-flash-buy {
   from {
-    background-color: color-mix(in srgb, var(--accent-bright) 22%, transparent);
+    background-color: color-mix(in srgb, var(--buy) 12%, transparent);
   }
   to {
     background-color: transparent;
   }
 }
 
-.value-flash {
-  animation: value-flash 900ms ease-out 1;
+@keyframes tape-flash-sell {
+  from {
+    background-color: color-mix(in srgb, var(--sell) 12%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.tape-arrival [data-cell="value"] {
+  border-radius: var(--radius-sm);
+}
+
+.tape-arrival [data-cell="value"][data-direction="A"] {
+  animation: tape-flash-buy 600ms ease-out 1;
+}
+
+.tape-arrival [data-cell="value"][data-direction="D"] {
+  animation: tape-flash-sell 600ms ease-out 1;
+}
+
+/* ── Row quick-actions ────────────────────────────────────────────────
+   Revealed on hover, but ONLY where hovering is a thing the input device
+   can do. A hover-revealed control on a touchscreen is a control that
+   appears on the tap that was meant to activate it, so on coarse
+   pointers the actions are simply always present — the same actions,
+   reached without pretending a finger can hover.
+
+   `:focus-within` is in the reveal rule too: a keyboard user tabbing into
+   a row must be able to see what they have landed on. */
+.tape-actions {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tape-actions {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  [data-tape-row]:hover .tape-actions,
+  [data-tape-row]:focus .tape-actions,
+  [data-tape-row]:focus-within .tape-actions {
+    opacity: 1;
+  }
+}
+
+/* The focused row in the keyboard-navigable tape. The ring is the global
+   :focus-visible one; this adds the ground so the row reads as selected
+   while the eye is somewhere else on the page. */
+[data-tape-row]:focus-visible {
+  background: var(--surface-sunken);
 }
 
 /* ── Reduced motion: everything decorative stops. ───────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
   .live-pulse,
-  .value-flash {
+  .tape-arrival [data-cell="value"] {
     animation: none !important;
+  }
+  .tape-actions {
+    transition: none !important;
   }
   *,
   ::before,

@@ -19,7 +19,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
 
 export type PendingAction = "alert" | "watch";
@@ -28,13 +28,24 @@ export function SignInPopover({
   open,
   onOpenChange,
   action,
+  asAnchor = false,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Which sentence to show; also what gets replayed after sign-in. */
   action: PendingAction;
-  /** The control that triggered this — the popover anchors to it. */
+  /**
+   * Position against `children` without making them a trigger.
+   *
+   * A tape row's star and bell already decide for themselves whether an
+   * offer is needed — the same click both toggles a watch when signed in
+   * and opens this when signed out. A Radix trigger wrapped round them
+   * would toggle the sheet underneath that logic, so those callers anchor
+   * instead.
+   */
+  asAnchor?: boolean;
+  /** The control that triggered this — the popover positions against it. */
   children: React.ReactNode;
 }) {
   const t = useTranslations("access");
@@ -98,7 +109,11 @@ export function SignInPopover({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      {asAnchor ? (
+        <PopoverAnchor asChild>{children}</PopoverAnchor>
+      ) : (
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+      )}
       <PopoverContent align="end" className="w-80">
         <h3 className="text-sm font-semibold text-ink">
           {action === "alert" ? t("signInPopoverTitle") : t("signInPopoverTitleWatch")}

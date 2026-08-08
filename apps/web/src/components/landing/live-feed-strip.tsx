@@ -15,6 +15,7 @@ import { useMemo } from "react";
 
 import { LiveDot } from "@/components/domain/live-dot";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
+import { TapeList } from "@/components/feed/tape-list";
 import { useTradeStream } from "@/hooks/use-trade-stream";
 import type { TradeRow } from "@/lib/api/queries";
 
@@ -67,7 +68,7 @@ export function LiveFeedStrip({
         // hairline, so the strip reads as a continuous tape rather than a
         // stack of separate cards.
         <div className="surface @container overflow-hidden rounded-lg">
-          <ul data-testid="live-feed">
+          <TapeList label={label} testId="live-feed">
             {rows.map(({ trade, streamed }) =>
               streamed ? (
                 <LiveFeedRow key={trade.id} trade={trade} />
@@ -75,7 +76,7 @@ export function LiveFeedStrip({
                 <StaticFeedRow key={trade.id} trade={trade} />
               ),
             )}
-          </ul>
+          </TapeList>
         </div>
       )}
     </section>

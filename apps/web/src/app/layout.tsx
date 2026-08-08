@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, Onest } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { PendingWatchReplay } from "@/components/access/pending-watch-replay";
 import { ShellChrome } from "@/components/shell/chrome";
 import { Providers } from "@/components/shell/providers";
 import { SessionProvider } from "@/components/shell/session-provider";
@@ -89,6 +90,11 @@ export default async function RootLayout({
           <Providers>
             <SessionProvider session={session}>
               <ShellChrome session={session} />
+              {/* Mounted at the root, not in the tape: the auth callback
+                  can land the reader on any page, and an intent that
+                  expires because they came back somewhere else is the
+                  same broken promise as sending them to /login. */}
+              <PendingWatchReplay />
               {children}
             </SessionProvider>
           </Providers>
