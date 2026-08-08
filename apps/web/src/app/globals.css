@@ -43,11 +43,12 @@
   /* ── Text ─────────────────────────────────────────────────────────── */
   --text: #e8edea;
   --text-secondary: #a7b0ac;
-  /* Spec value was #6E7873. Measured at 4.17:1 on --bg and 4.05:1 on
-     --surface, so it failed WCAG AA for the small text it actually
-     carries (the kicker, the tape label, null glyphs, microtext).
-     Lifted to the nearest tone of the same hue that clears 4.5:1 against
-     all three dark grounds — bg 5.3, surface 5.1, surface-raised 4.8. */
+  /* RATIFIED (r3). The r2 spec value was #6E7873: measured 4.22:1 on
+     --bg, 4.00:1 on --surface and 3.78:1 on --surface-raised, so it
+     failed WCAG AA for the small text it actually carries (the kicker,
+     the tape label, null glyphs, microtext). This is the nearest tone of
+     the same hue that clears 4.5:1 against every dark ground —
+     bg 5.28, surface 5.00, surface-raised 4.73, sunken 5.35. */
   --text-muted: #808881;
 
   /* ── The accent: racing green. Actionable, never directional. ───────
@@ -114,11 +115,12 @@
 
   --text: #10171c;
   --text-secondary: #45525c;
-  /* Same correction as dark, same reason. Spec value #6B7885 measured
-     4.21:1 on --bg and 4.00:1 on --surface-sunken — and the sunken tone
-     is where half of every zebra-striped table's microtext sits, so
-     tuning against the page background alone would have passed the audit
-     and failed every other row. Now: sunken 4.6, bg 4.8, white 5.3. */
+  /* RATIFIED (r3). Same correction as dark, same reason. The r2 spec
+     value #6B7885 measured 4.24:1 on --bg and 3.98:1 on --surface-sunken
+     — and the sunken tone is where half of every zebra-striped table's
+     microtext sits, so tuning against the page background alone would
+     have passed the audit and failed every other row.
+     Now: sunken 4.60, bg 4.89, white 5.21. */
   --text-muted: #626e7a;
 
   /* Inverted relationship to dark: here the deeper green is the more
@@ -168,11 +170,7 @@
 
   --text: #e8edea;
   --text-secondary: #a7b0ac;
-  /* Spec value was #6E7873. Measured at 4.17:1 on --bg and 4.05:1 on
-     --surface, so it failed WCAG AA for the small text it actually
-     carries (the kicker, the tape label, null glyphs, microtext).
-     Lifted to the nearest tone of the same hue that clears 4.5:1 against
-     all three dark grounds — bg 5.3, surface 5.1, surface-raised 4.8. */
+  /* RATIFIED (r3) — see the `:root` block above for the measurements. */
   --text-muted: #808881;
 
   --accent: #1e7a4d;

@@ -253,6 +253,40 @@ const RADII = [
 /** The 4px grid. Every gap and pad in the product is one of these. */
 const SPACING = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 
+/**
+ * The tertiary-ink ratification (r3).
+ *
+ * The r2 spec named a darker tone in both themes. Measured against the
+ * grounds it actually sits on, both failed WCAG AA for small text — so
+ * the values below are canonical and the spec values are recorded as
+ * what they were: a near miss. Ratios are 1dp-rounded relative-luminance
+ * contrast per WCAG 2.1 §1.4.3.
+ */
+const MUTED_INK = [
+  {
+    theme: "Terminal (dark)",
+    value: "#808881",
+    spec: "#6E7873",
+    grounds: [
+      ["--bg", "5.28", "4.22"],
+      ["--surface", "5.00", "4.00"],
+      ["--surface-raised", "4.73", "3.78"],
+      ["--surface-sunken", "5.35", "4.27"],
+    ],
+  },
+  {
+    theme: "Graphite (light)",
+    value: "#626E7A",
+    spec: "#6B7885",
+    grounds: [
+      ["--bg", "4.89", "4.24"],
+      ["--surface", "5.21", "4.52"],
+      ["--surface-raised", "5.21", "4.52"],
+      ["--surface-sunken", "4.60", "3.98"],
+    ],
+  },
+];
+
 const MOTION_PRESETS = [
   ["snappy", "400 / 17 / 1", "Hover lift — a small, deliberate overshoot"],
   ["press", "400 / 30", "Press. Critically damped: never bounces under a finger"],
@@ -315,6 +349,60 @@ export default function DesignPage() {
           Graphite the relationship inverts. One green cannot be both a fill and a legible label, so
           it is not asked to be.
         </p>
+
+        <div className="surface flex flex-col gap-4 rounded-lg p-4">
+          <p className="max-w-[76ch] text-xs leading-relaxed text-ink-muted">
+            <strong className="font-semibold text-ink">
+              <code className="num">--text-muted</code> is ratified at the values below.
+            </strong>{" "}
+            It is the tertiary ink — the kicker, the tape label, the null glyph, every line of
+            microtext — so it is small text, and small text owes 4.5:1. Measured against the four
+            grounds it actually sits on, the tone originally specified cleared none of them
+            reliably. These are the nearest tones of the same hue that clear all four.
+          </p>
+          {MUTED_INK.map((theme) => (
+            <div key={theme.theme} className="min-w-0 overflow-x-auto">
+              <table className="w-full min-w-[26rem] text-2xs">
+                <caption className="mb-2 text-left text-2xs text-ink-faint">
+                  {theme.theme} — <span className="num text-ink">{theme.value}</span> ratified,{" "}
+                  <span className="num">{theme.spec}</span> as originally specified
+                </caption>
+                <thead>
+                  <tr className="border-b border-border text-ink-faint">
+                    <th scope="col" className="py-1.5 text-left font-medium">
+                      Ground
+                    </th>
+                    <th scope="col" className="py-1.5 text-right font-medium">
+                      Ratified
+                    </th>
+                    <th scope="col" className="py-1.5 text-right font-medium">
+                      As specified
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {theme.grounds.map(([ground, ratified, spec]) => (
+                    <tr key={ground} className="border-b border-border last:border-b-0">
+                      <th scope="row" className="num py-1.5 text-left font-normal text-ink-muted">
+                        {ground}
+                      </th>
+                      <td className="num py-1.5 text-right text-ink">{ratified}:1</td>
+                      {/* Colour is not the signal — the word is. A ratio that
+                          fails says so in text, for anyone who cannot see the
+                          tint or is reading this printed. */}
+                      <td className="num py-1.5 text-right text-ink-faint">
+                        {spec}:1{" "}
+                        <span className={Number(spec) >= 4.5 ? "text-ink-muted" : "text-buy-ink"}>
+                          {Number(spec) >= 4.5 ? "pass" : "fail"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
       </Section>
 
       <Section
