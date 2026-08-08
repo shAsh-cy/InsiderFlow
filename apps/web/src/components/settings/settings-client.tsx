@@ -66,8 +66,65 @@ function Section({
           </p>
         ) : null}
       </div>
-      <div className="px-5 py-4">{children}</div>
+      <div className="px-5 py-2">{children}</div>
     </section>
+  );
+}
+
+/**
+ * One setting: its name on the left, its control on the right.
+ *
+ * A definition grid rather than a flex row per setting. Flex rows put
+ * every control wherever its own label happened to end, so the digest
+ * time floated to the far right while the quiet-hours pair sat inline
+ * next to their words — three settings, three different left edges for
+ * the thing you actually operate. A shared column means you scan the
+ * names down one edge and the controls down another.
+ *
+ * `min-h-11` (44px) on every row: the same rhythm whether the control is
+ * a time input, a switch or a sentence, and comfortably past the 24px
+ * minimum target size in WCAG 2.2 §2.5.8.
+ *
+ * `<label>` when the row drives a single control and `<div role=group>`
+ * when it drives several, so a label never claims to name two inputs.
+ */
+function Field({
+  label,
+  hint,
+  htmlFor,
+  children,
+  asGroup = false,
+}: {
+  label: React.ReactNode;
+  hint?: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+  asGroup?: boolean;
+}) {
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-2.5 text-sm text-ink">
+        {label}
+        {hint ? <span className="text-2xs text-ink-faint">{hint}</span> : null}
+      </span>
+      <span className="flex min-w-0 flex-wrap items-center gap-2.5">{children}</span>
+    </>
+  );
+  const className =
+    "grid min-h-11 grid-cols-1 items-center gap-x-4 gap-y-1.5 border-b border-border py-2.5 last:border-b-0 sm:grid-cols-[minmax(7rem,12rem)_1fr]";
+
+  return asGroup ? (
+    <div
+      role="group"
+      aria-label={typeof label === "string" ? label : undefined}
+      className={className}
+    >
+      {body}
+    </div>
+  ) : (
+    <label htmlFor={htmlFor} className={className}>
+      {body}
+    </label>
   );
 }
 
@@ -205,51 +262,63 @@ export function SettingsClient({
         title="Alert channels"
         description="Telegram is the primary channel — free, unlimited, and real-time. Email is reserved for digests and rules that explicitly opt into instant delivery."
       >
-        {/* Hairline-separated rows rather than boxed cards: two channels on
+        {/* Ruled rows on a shared column, not boxed cards: two channels on
             one sheet are a list, and a list is ruled, not framed. */}
-        <div className="flex flex-col divide-y divide-border">
-          <div className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
-            <Send className="size-4 shrink-0 text-ink-muted" aria-hidden />
-            <span className="text-sm text-ink">Telegram</span>
-            <StateTag on={Boolean(telegram?.verified)}>
-              {telegram?.verified ? "linked" : "not linked"}
-            </StateTag>
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-auto"
-              onClick={() => void linkTelegram()}
-              disabled={linking}
-              data-testid="link-telegram"
-            >
-              {linking ? <Loader2 className="animate-spin" aria-hidden /> : null}
-              {telegram?.verified ? "Re-link" : "Link Telegram"}
-            </Button>
-          </div>
+        <Field
+          asGroup
+          label={
+            <>
+              <Send className="size-4 shrink-0 text-ink-muted" aria-hidden />
+              Telegram
+            </>
+          }
+        >
+          <StateTag on={Boolean(telegram?.verified)}>
+            {telegram?.verified ? "linked" : "not linked"}
+          </StateTag>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void linkTelegram()}
+            disabled={linking}
+            data-testid="link-telegram"
+          >
+            {linking ? <Loader2 className="animate-spin" aria-hidden /> : null}
+            {telegram?.verified ? "Re-link" : "Link Telegram"}
+          </Button>
+        </Field>
 
-          <div className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
-            <BellRing className="size-4 shrink-0 text-ink-muted" aria-hidden />
-            <span className="text-sm text-ink">Email</span>
-            {/* An unset destination is an em dash, never a blank cell — the
-                same rule the tables follow. */}
-            <span className="truncate font-mono text-2xs text-ink-faint">
-              {email?.destination ?? "—"}
-            </span>
-            <StateTag on={Boolean(email?.verified)}>
-              {email?.verified ? "subscribed" : "unsubscribed"}
-            </StateTag>
-            <label className="text-2xs ml-auto flex cursor-pointer items-center gap-2 text-ink-faint">
-              Digest at
-              <input
-                type="time"
-                value={email?.digestHour ?? "08:00"}
-                onChange={(e) => void patchChannel("email", { digestHour: e.target.value })}
-                className={TIME_INPUT_CLASS}
-                aria-label="Daily digest time"
-              />
-            </label>
-          </div>
-        </div>
+        <Field
+          asGroup
+          label={
+            <>
+              <BellRing className="size-4 shrink-0 text-ink-muted" aria-hidden />
+              Email
+            </>
+          }
+        >
+          <StateTag on={Boolean(email?.verified)}>
+            {email?.verified ? "subscribed" : "unsubscribed"}
+          </StateTag>
+          {/* An unset destination is an em dash, never a blank cell — the
+              same rule the tables follow. */}
+          <span className="min-w-0 truncate font-mono text-2xs text-ink-faint">
+            {email?.destination ?? "—"}
+          </span>
+        </Field>
+
+        {/* Its own row rather than a control floated to the right of the
+            Email line: the digest time is a setting, and it belongs on the
+            same column as every other control on this sheet. */}
+        <Field label="Daily digest" htmlFor="digest-hour" hint="email only">
+          <input
+            id="digest-hour"
+            type="time"
+            value={email?.digestHour ?? "08:00"}
+            onChange={(e) => void patchChannel("email", { digestHour: e.target.value })}
+            className={TIME_INPUT_CLASS}
+          />
+        </Field>
       </Section>
 
       <Section
@@ -269,11 +338,14 @@ export function SettingsClient({
             }
           />
         ) : (
-          <ul className="flex flex-col divide-y divide-border" data-testid="alert-rules">
+          <ul className="flex flex-col" data-testid="alert-rules">
             {rules.map((rule) => (
               <li
                 key={rule.id}
-                className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0"
+                // Same 44px rhythm as the definition rows in every other
+                // section, so the sheet reads as one column of settings
+                // rather than a form with a table dropped into the middle.
+                className="flex min-h-11 flex-wrap items-center gap-3 border-b border-border py-2.5 last:border-b-0"
               >
                 {/* On is ink, off is a hairline ground. Oxblood is spent once
                     per view and a column of rules would spend it every row. */}
@@ -341,45 +413,73 @@ export function SettingsClient({
         title="Quiet hours"
         description="Instant alerts inside this window roll into the next digest instead of waking you."
       >
-        <div className="flex flex-wrap items-center gap-3 text-xs text-ink-muted">
-          <label className="flex cursor-pointer items-center gap-2">
-            From
-            <input
-              type="time"
-              defaultValue={rules[0]?.quietHoursStart ?? "22:00"}
-              onChange={(e) =>
-                rules.forEach((r) => void patchRule(r.id, { quietHoursStart: e.target.value }))
-              }
-              className={TIME_INPUT_CLASS}
-              aria-label="Quiet hours start"
-            />
-          </label>
-          <label className="flex cursor-pointer items-center gap-2">
-            to
-            <input
-              type="time"
-              defaultValue={rules[0]?.quietHoursEnd ?? "07:00"}
-              onChange={(e) =>
-                rules.forEach((r) => void patchRule(r.id, { quietHoursEnd: e.target.value }))
-              }
-              className={TIME_INPUT_CLASS}
-              aria-label="Quiet hours end"
-            />
-          </label>
-          <span className="text-ink-faint">
-            Timezone: <span className="num">{telegram?.timezone ?? email?.timezone ?? "UTC"}</span>
+        {/* Both times on one baseline, in one row, on the same column as
+            the digest time above — a window is one setting with two ends,
+            not two settings that happen to sit near each other. */}
+        <Field asGroup label="Window">
+          <input
+            type="time"
+            defaultValue={rules[0]?.quietHoursStart ?? "22:00"}
+            onChange={(e) =>
+              rules.forEach((r) => void patchRule(r.id, { quietHoursStart: e.target.value }))
+            }
+            className={TIME_INPUT_CLASS}
+            aria-label="Quiet hours start"
+          />
+          <span className="text-xs text-ink-faint">to</span>
+          <input
+            type="time"
+            defaultValue={rules[0]?.quietHoursEnd ?? "07:00"}
+            onChange={(e) =>
+              rules.forEach((r) => void patchRule(r.id, { quietHoursEnd: e.target.value }))
+            }
+            className={TIME_INPUT_CLASS}
+            aria-label="Quiet hours end"
+          />
+        </Field>
+
+        <Field asGroup label="Timezone">
+          <span className="num text-xs text-ink-muted">
+            {telegram?.timezone ?? email?.timezone ?? "UTC"}
           </span>
-        </div>
+        </Field>
       </Section>
 
       <Section
         title="Watchlist"
         description="Synced to your account and used by watchlist alert rules."
       >
-        <p className="text-sm text-ink-muted">
-          <span className="num text-ink">{watchlist.length}</span> tracked{" "}
-          {watchlist.length === 1 ? "item" : "items"}.
-        </p>
+        <Field asGroup label="Tracked">
+          <span className="text-sm text-ink-muted">
+            <span className="num text-ink">{watchlist.length}</span>{" "}
+            {watchlist.length === 1 ? "item" : "items"}
+          </span>
+        </Field>
+      </Section>
+
+      {/* An honest placeholder. The public API is already open and needs no
+          key; what does not exist yet is self-serve key issuance, so this
+          card says exactly that and offers no control that would pretend
+          otherwise. A disabled "Generate key" button here would be a
+          promise the backend cannot keep. */}
+      <Section
+        title="API"
+        description="The public API is already open — 60 requests/min per IP, no key required. A key only raises that ceiling."
+      >
+        <Field asGroup label="Personal keys">
+          <StateTag on={false}>not yet available</StateTag>
+          <span className="text-xs text-ink-muted">
+            Self-serve key issuance is not built. Until it is, higher limits are arranged by opening
+            an issue — see the{" "}
+            <Link
+              href="/docs"
+              className="text-accent-ink underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
+            >
+              API docs
+            </Link>
+            .
+          </span>
+        </Field>
       </Section>
     </div>
   );
