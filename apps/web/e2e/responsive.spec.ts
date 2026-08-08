@@ -229,3 +229,77 @@ test.describe("wide tables on a narrow screen @mobile", () => {
     await expect(scroller).toHaveRole("region");
   });
 });
+
+test.describe("the screener's filters on a phone @mobile", () => {
+  test("the primary axis stays on the page and scrolls sideways", async ({ page }) => {
+    await page.goto("/screener");
+    const row = page.getByTestId("filter-primary");
+    await expect(row).toBeVisible();
+
+    // One line, not six. Market and side are the taps a reader makes
+    // constantly, so they stay reachable without opening anything.
+    const lines = await row.evaluate(
+      (el) =>
+        new Set(Array.from(el.children).map((c) => Math.round(c.getBoundingClientRect().y))).size,
+    );
+    expect(lines, "the primary row does not wrap").toBe(1);
+
+    // …and it is the row that scrolls, not the page.
+    const scrollable = await row.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+    const pageWidth = await page.evaluate(() => ({
+      doc: document.documentElement.scrollWidth,
+      vw: window.innerWidth,
+    }));
+    expect(pageWidth.doc).toBeLessThanOrEqual(pageWidth.vw + 1);
+    expect(scrollable || (await row.boundingBox())!.width <= pageWidth.vw).toBe(true);
+  });
+
+  test("the rest opens in a bottom sheet and applies on a button", async ({ page }) => {
+    await page.goto("/screener");
+    const trigger = page.getByTestId("filter-sheet-trigger");
+    await expect(trigger).toBeVisible();
+    const triggerBox = await trigger.boundingBox();
+    expect(Math.round(triggerBox!.height)).toBeGreaterThanOrEqual(43);
+
+    await trigger.tap();
+    const sheet = page.getByTestId("filter-sheet");
+    await expect(sheet).toBeVisible();
+
+    // A sheet: anchored to the bottom, where a thumb is.
+    const viewport = page.viewportSize()!;
+    const box = await sheet.boundingBox();
+    expect(Math.round(box!.y + box!.height), "flush to the bottom").toBeGreaterThanOrEqual(
+      viewport.height - 2,
+    );
+    expect(Math.round(box!.width), "full width").toBeGreaterThanOrEqual(viewport.width - 2);
+
+    // Draft state: choosing does nothing until Apply. The bar writes to the
+    // URL on every change, which would leave one history entry per control.
+    await sheet.locator("#sheet-min-value").selectOption("1000000");
+    expect(page.url()).not.toContain("min_value_usd");
+
+    await page.getByTestId("filter-sheet-apply").tap();
+    await expect(sheet).toBeHidden();
+    await page.waitForURL(/min_value_usd=1000000/);
+  });
+
+  test("the trigger says how many filters are hidden inside it", async ({ page }) => {
+    // A collapsed filter set with filters silently applied is a screen you
+    // cannot explain to yourself.
+    await page.goto("/screener");
+    await expect(page.getByTestId("filter-count")).toHaveCount(0);
+
+    await page.goto("/screener?min_value_usd=1000000&side=buy");
+    await expect(page.getByTestId("filter-count")).toHaveText("2");
+  });
+
+  test("clear all empties the draft without leaving the sheet", async ({ page }) => {
+    await page.goto("/screener?min_value_usd=1000000");
+    await page.getByTestId("filter-sheet-trigger").tap();
+    const sheet = page.getByTestId("filter-sheet");
+    await expect(sheet.locator("#sheet-min-value")).toHaveValue("1000000");
+    await page.getByTestId("filter-sheet-clear").tap();
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator("#sheet-min-value")).toHaveValue("");
+  });
+});
