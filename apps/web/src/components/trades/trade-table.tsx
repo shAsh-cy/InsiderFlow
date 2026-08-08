@@ -78,7 +78,7 @@ export function TradeTable({
             {row.original.company.ticker ? (
               <Link
                 href={`/stock/${row.original.company.ticker}`}
-                className="num text-xs font-semibold text-ink transition-colors hover:text-accent-ink"
+                className="num inline-flex h-full min-h-11 min-w-11 items-center text-xs font-semibold text-ink transition-colors hover:text-accent-ink md:min-h-0 md:min-w-0"
               >
                 {row.original.company.ticker}
               </Link>

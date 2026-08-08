@@ -133,7 +133,9 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
             href="/"
             data-brand
             style={{ marginInlineStart: "var(--shell-nav-inset)" }}
-            className="flex shrink-0 items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink"
+            // `min-h-11`: with the wordmark `sr-only` below sm the link is only
+            // as tall as the 20px mark, and it is a navigation target.
+            className="flex min-h-11 min-w-11 shrink-0 items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink sm:min-w-0 md:min-h-0"
           >
             <BrandMark />
             {/* `sr-only`, not `hidden`: the wordmark IS this link's

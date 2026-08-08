@@ -27,7 +27,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Ne
       <form
         method="get"
         role="search"
-        className="surface flex h-10 max-w-md items-center gap-2 rounded-md px-3"
+        className="surface flex h-11 max-w-md items-center gap-2 rounded-md px-3 md:h-10"
       >
         <Search className="size-4 text-ink-faint" aria-hidden />
         <input
@@ -36,7 +36,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Ne
           defaultValue={q ?? ""}
           placeholder="Search by name or ticker…"
           aria-label="Search companies"
-          className="h-full w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
+          className="h-full min-h-11 w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint md:min-h-0"
         />
       </form>
 

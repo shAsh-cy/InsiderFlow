@@ -35,7 +35,10 @@ const CHAMBERS = [
  * one is marked by weight and ground rather than by colour, so the page's one
  * accent is still available for something that matters more.
  */
-const PILL_BASE = "cursor-pointer rounded-full border px-3 py-1 text-xs transition-colors";
+const PILL_BASE =
+  // 44px of hit area below md and the r3 density above it. A 24px pill
+  // is a WCAG 2.5.5 failure on the one input device that cannot aim.
+  "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3.5 text-xs transition-colors md:min-h-0 md:px-3 md:py-1";
 const PILL_ON = "border-border bg-fill font-semibold text-ink";
 const PILL_OFF = "border-transparent text-ink-muted hover:bg-fill hover:text-ink";
 
@@ -160,7 +163,7 @@ export default async function PoliticiansPage({
               href={rssHref}
               target="_blank"
               rel="noreferrer"
-              className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink"
+              className="ml-auto flex min-h-11 cursor-pointer items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink md:min-h-0"
             >
               <Rss className="size-3.5" aria-hidden /> RSS
             </a>
@@ -189,7 +192,7 @@ export default async function PoliticiansPage({
                     <li key={f.id} className="border-b border-border last:border-0">
                       <Link
                         href={`/politicians/${f.id}`}
-                        className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-fill"
+                        className="flex min-h-11 cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-fill md:min-h-0"
                       >
                         <span className="min-w-0 flex-1 truncate font-medium text-ink">
                           {f.name}
@@ -224,7 +227,7 @@ export default async function PoliticiansPage({
                     <li key={t.ticker} className="border-b border-border last:border-0">
                       <Link
                         href={`/stock/${t.ticker}`}
-                        className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-fill"
+                        className="flex min-h-11 cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-fill md:min-h-0"
                       >
                         <span className="num w-16 font-semibold text-ink">{t.ticker}</span>
                         <span className="min-w-0 flex-1 truncate text-ink-muted">

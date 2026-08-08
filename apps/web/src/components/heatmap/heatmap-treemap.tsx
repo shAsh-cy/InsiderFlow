@@ -33,7 +33,7 @@ import { Group } from "@visx/group";
 import { Treemap, stratify, treemapSquarify } from "@visx/hierarchy";
 import { ParentSize } from "@visx/responsive";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { HeatmapCell } from "@/lib/api/queries";
 import { cn } from "@/lib/utils";
@@ -130,6 +130,17 @@ function TreemapCanvas({
 }: HeatmapTreemapProps & { width: number; height: number }) {
   const router = useRouter();
   const [hovered, setHovered] = useState<HeatmapCell | null>(null);
+  /**
+   * Whether the last press came from something that cannot hover.
+   *
+   * The tooltip is the only place Bought / Sold / Direction / Net share /
+   * Trades / MSPR can be read, and it was bound solely to `mouseenter` and
+   * `focus`. On a touch device the first tap fired `onClick` and navigated
+   * to the screener, so the figures behind every tile were unreachable —
+   * not hard to reach, unreachable. A coarse pointer now inspects on the
+   * first tap and opens on the second, and the tooltip says so.
+   */
+  const coarse = useRef(false);
 
   const root = useMemo(() => {
     const nodes: TreemapNode[] = [
@@ -215,11 +226,23 @@ function TreemapCanvas({
                         tabIndex={0}
                         role="button"
                         aria-label={`${cell.label}: net ${compactUsd(cell.netValueUsd)} across ${cell.trades} trades`}
+                        onPointerDown={(e) => {
+                          coarse.current = e.pointerType !== "mouse";
+                        }}
                         onMouseEnter={() => setHovered(cell)}
                         onMouseLeave={() => setHovered(null)}
                         onFocus={() => setHovered(cell)}
                         onBlur={() => setHovered(null)}
-                        onClick={() => drillDown(cell)}
+                        onClick={() => {
+                          // Tap to inspect, tap again to open. A single tap
+                          // that navigates makes the tile's own figures
+                          // unreadable on every touch device there is.
+                          if (coarse.current && hovered?.key !== cell.key) {
+                            setHovered(cell);
+                            return;
+                          }
+                          drillDown(cell);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
@@ -335,7 +358,14 @@ function TreemapCanvas({
               </>
             ) : null}
           </dl>
-          <p className="mt-2 text-2xs text-ink-faint">Click to open in the screener</p>
+          <p className="mt-2 text-2xs text-ink-faint">
+            <span className="hidden [@media(hover:hover)_and_(pointer:fine)]:inline">
+              Click to open in the screener
+            </span>
+            <span className="[@media(hover:hover)_and_(pointer:fine)]:hidden">
+              Tap again to open in the screener
+            </span>
+          </p>
         </div>
       ) : null}
     </div>
@@ -422,7 +452,6 @@ function isoDaysAgo(days: number): string {
 }
 
 export function HeatmapTreemap(props: HeatmapTreemapProps) {
-  const height = props.height ?? 520;
   if (props.cells.length === 0) {
     return (
       <p className="surface-sunken rounded-lg px-4 py-16 text-center text-sm text-ink-muted">
@@ -432,9 +461,27 @@ export function HeatmapTreemap(props: HeatmapTreemapProps) {
   }
   return (
     <div className="flex flex-col gap-1">
-      <div style={{ height }}>
+      {/* The wrapper's height follows the canvas rather than pinning it, so
+          `ParentSize` measures a width first and the height derives from it. */}
+      {/*
+        A DEFINITE height, stepped by breakpoint rather than fixed at 520.
+
+        Definite because `ParentSize` renders a `height: 100%` child and
+        measures THAT: inside an auto-height parent it resolves to zero, the
+        observer never reports a usable box, and the canvas comes back blank.
+        A `min-height` on the parent is not a height for this purpose.
+
+        Stepped because area is the encoding. A canvas that keeps 520px while
+        losing a third of its width does not shrink the picture, it stretches
+        it — and the label gate (72x40px) then demands a larger share of total
+        flow before a tile will say its own name.
+      */}
+      <div
+        className="h-80 sm:h-96 lg:h-[32.5rem]"
+        style={props.height === undefined ? undefined : { height: props.height }}
+      >
         <ParentSize>
-          {({ width }) => <TreemapCanvas {...props} width={width} height={height} />}
+          {({ width, height }) => <TreemapCanvas {...props} width={width} height={height} />}
         </ParentSize>
       </div>
       <TreemapLegend />

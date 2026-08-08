@@ -54,14 +54,22 @@ export function ShortcutSheet() {
         aria-label={t("open")}
         title={t("open")}
         data-testid="shortcut-sheet-open"
-        className="num inline-flex size-5 cursor-pointer items-center justify-center rounded-sm border border-border text-2xs text-ink-faint transition-colors hover:bg-fill hover:text-ink"
+        // 44px of hit area below md around a 20px drawn box: the border stays
+        // on the inner span so the control does not become the heaviest
+        // object on a phone tape header.
+        className="inline-flex size-11 cursor-pointer items-center justify-center text-ink-faint transition-colors hover:text-ink md:size-5 md:rounded-sm md:border md:border-border md:hover:bg-fill"
       >
         {/* A glyph, not a word: `aria-hidden` so the button reads as an
             icon control named by its label. Left visible it would be a
             control whose visible text ("?") is absent from its accessible
             name ("Keyboard shortcuts") — WCAG 2.5.3 — and a voice-control
             user would have nothing sayable to activate it with. */}
-        <span aria-hidden>?</span>
+        <span
+          aria-hidden
+          className="num grid size-5 place-items-center rounded-sm border border-border text-2xs md:size-full md:border-0"
+        >
+          ?
+        </span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>

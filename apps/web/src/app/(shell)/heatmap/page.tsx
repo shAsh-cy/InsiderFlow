@@ -33,7 +33,10 @@ const TIMEFRAME_KEYS = Object.keys(TIMEFRAMES) as Array<keyof typeof TIMEFRAMES>
  * The selected one is marked by weight and ground, never by the accent. A row
  * of oxblood pills would spend the page's one accent six times over.
  */
-const PILL_BASE = "cursor-pointer rounded-full border px-3 py-1 text-xs transition-colors";
+const PILL_BASE =
+  // 44px of hit area below md and the r3 density above it. A 24px pill
+  // is a WCAG 2.5.5 failure on the one input device that cannot aim.
+  "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3.5 text-xs transition-colors md:min-h-0 md:px-3 md:py-1";
 const PILL_ON = "border-border bg-fill font-semibold text-ink";
 const PILL_OFF = "border-transparent text-ink-muted hover:bg-fill hover:text-ink";
 
@@ -149,7 +152,20 @@ export default async function HeatmapPage({
       {/* The chart and its legend share one sheet of paper — a key that sits
           on a different surface from the thing it explains reads as a caption
           for the page rather than for the chart. */}
-      <div className="surface rounded-lg p-3">
+      {/*
+        Hidden below md, and the ranked list below takes over.
+
+        The choice the brief asks for, and the reasoning: a treemap's area
+        IS its message, and at 358px there is not enough area to divide.
+        The label gate needs a tile of 72x40px, which on a 286x520 canvas
+        is 1.9% of total gross flow — fewer than ten of a hundred and
+        twenty cells clear it, and the rest are unlabelled colour blocks
+        below any tappable size. Raising the minimum cell size instead
+        would mean showing fewer companies without saying so, which is the
+        one thing this page must not do. The list shows every cell with
+        its figures, and it is the view that was already here.
+      */}
+      <div className="surface hidden rounded-lg p-3 md:block">
         <HeatmapTreemap
           cells={cells}
           groupBy={query.group_by}
@@ -158,10 +174,15 @@ export default async function HeatmapPage({
         />
       </div>
 
-      {/* A table view of the same data: identity is never colour-alone. */}
-      <details className="surface rounded-lg p-4">
+      {/* The same data as a ranked list: identity is never colour-alone,
+          and below md this is not a second view but the only one. Open by
+          default, because a chart's accessible twin behind a disclosure is
+          a twin most readers never meet — and because below md there is
+          nothing above it to disclose. */}
+      <details open className="surface rounded-lg p-4" data-testid="heatmap-table">
         <summary className="cursor-pointer text-sm font-medium text-ink">
-          Table view ({cells.length} rows)
+          <span className="md:hidden">Ranked list — every cell, with figures</span>
+          <span className="hidden md:inline">Table view ({cells.length} rows)</span>
         </summary>
         <div className="mt-3 max-h-[26rem] overflow-auto">
           <table className="w-full min-w-[540px] text-sm">
@@ -198,7 +219,9 @@ export default async function HeatmapPage({
                     {c.ticker ? (
                       <Link
                         href={`/stock/${c.ticker}`}
-                        className="num cursor-pointer font-medium text-ink underline-offset-4 transition-colors hover:underline"
+                        // Below md this list IS the chart, so its rows are the tap
+                        // targets the tiles would have been.
+                        className="num inline-flex min-h-11 cursor-pointer items-center font-medium text-ink underline-offset-4 transition-colors hover:underline md:min-h-0"
                       >
                         {c.label}
                       </Link>

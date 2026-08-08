@@ -61,7 +61,7 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
             title={def.description}
             aria-current={presetName === name ? "page" : undefined}
             className={cn(
-              "h-8 cursor-pointer rounded-full border px-3 text-xs leading-[1.85rem] transition-colors",
+              "inline-flex h-11 cursor-pointer items-center rounded-full border px-3.5 text-xs transition-colors md:h-8 md:px-3",
               presetName === name
                 ? "border-border bg-fill font-semibold text-ink"
                 : "border-transparent text-ink-muted hover:bg-fill hover:text-ink",

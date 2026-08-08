@@ -102,7 +102,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="h-10 rounded-md border border-border bg-surface px-3 text-sm text-ink outline-none placeholder:text-ink-faint"
+                className="h-11 rounded-md border border-border bg-surface px-3 text-sm text-ink outline-none placeholder:text-ink-faint md:h-10"
               />
               {/* The one oxblood fill on the page. */}
               <Button type="submit" disabled={status === "sending"}>
@@ -137,7 +137,7 @@ export default function LoginPage() {
         <p className="mt-6 text-xs text-ink-faint">
           <Link
             href="/"
-            className="cursor-pointer underline decoration-border underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
+            className="inline-flex min-h-11 cursor-pointer items-center underline decoration-border underline-offset-4 transition-colors hover:text-ink hover:decoration-ink md:min-h-0"
           >
             Back to InsiderFlow
           </Link>

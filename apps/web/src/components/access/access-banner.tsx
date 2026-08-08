@@ -66,7 +66,7 @@ export function AccessBanner({ signedIn }: { signedIn: boolean }) {
         onClick={dismiss}
         data-testid="access-banner-dismiss"
         aria-label={t("bannerDismiss")}
-        className="shrink-0 cursor-pointer rounded-sm p-1 text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+        className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-sm text-ink-faint md:size-auto md:p-1 transition-colors hover:bg-surface hover:text-ink"
       >
         <X className="size-3.5" aria-hidden />
       </button>

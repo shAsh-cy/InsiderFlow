@@ -250,13 +250,22 @@ export default async function Home() {
                 aria-label="Legal and reference"
                 className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3"
               >
-                <Link href="/legal" className="transition-colors hover:text-ink">
+                <Link
+                  href="/legal"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
+                >
                   Legal &amp; data sources
                 </Link>
-                <Link href="/docs/methodology" className="transition-colors hover:text-ink">
+                <Link
+                  href="/docs/methodology"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
+                >
                   Methodology
                 </Link>
-                <Link href="/status" className="transition-colors hover:text-ink">
+                <Link
+                  href="/status"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
+                >
                   Status
                 </Link>
               </nav>

@@ -53,7 +53,7 @@ function AddCompany() {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Add a company — search name or ticker…"
         aria-label="Search companies to watch"
-        className="surface h-10 w-full rounded-md px-3 text-sm text-ink outline-none placeholder:text-ink-faint"
+        className="surface h-11 w-full rounded-md px-3 text-sm text-ink outline-none placeholder:text-ink-faint md:h-10"
       />
       {hits.length > 0 ? (
         <ul className="surface-raised absolute inset-x-0 top-11 z-20 overflow-hidden rounded-md">

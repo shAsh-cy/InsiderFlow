@@ -16,7 +16,10 @@ import {
 import type { ColumnDef, RowData, SortingState } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+/** `useLayoutEffect` on the client, `useEffect` on the server render. */
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 import {
   Table,
@@ -102,13 +105,37 @@ export function DataTable<TData>({
     getSortedRowModel: getSortedRowModel(),
   });
 
+  /**
+   * A 38px row is dense on a desktop and unusable on a phone: the links
+   * inside it are 16px tall, which is below WCAG 2.2 2.5.8 on both axes,
+   * and there is no way to give them a target without giving the row one.
+   * Below 640px the floor is 44.
+   *
+   * Read in a layout effect so the correction lands before paint — a plain
+   * effect would draw the first frame at the desktop height and then jump,
+   * which is a layout shift introduced while removing others.
+   */
+  const [compact, setCompact] = useState(false);
+  useIsomorphicLayoutEffect(() => {
+    const query = window.matchMedia("(max-width: 639px)");
+    const apply = () => setCompact(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
+  const rowHeight = compact ? Math.max(estimateRowHeight, 44) : estimateRowHeight;
+
   const { rows } = table.getRowModel();
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => estimateRowHeight,
+    estimateSize: () => rowHeight,
     overscan: 8,
   });
+
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   // A horizontally scrollable region has to announce itself, or it is a
   // column of data nobody knows is there. The fade is the visible half; the
@@ -153,7 +180,7 @@ export function DataTable<TData>({
           // Only where columns are actually being withheld. On a wide
           // screen every column is on the page and a control offering to
           // show them would be describing something that has not happened.
-          className="inline-flex min-h-9 cursor-pointer items-center self-start rounded-full border border-border px-3 text-2xs text-ink-muted transition-colors hover:bg-fill hover:text-ink lg:hidden"
+          className="inline-flex min-h-11 cursor-pointer items-center self-start rounded-full border border-border px-3.5 text-2xs text-ink-muted transition-colors hover:bg-fill hover:text-ink lg:hidden"
         >
           {showAllColumns ? "Key columns" : `All columns (+${hiddenBelow})`}
         </button>
@@ -219,7 +246,9 @@ export function DataTable<TData>({
                             type="button"
                             onClick={header.column.getToggleSortingHandler()}
                             className={cn(
-                              "inline-flex cursor-pointer items-center gap-1 rounded-sm transition-colors hover:text-ink",
+                              // `h-full`: a sort control that is only as tall as its own label is
+                              // a 14px target sitting inside a 44px header cell.
+                              "inline-flex h-full min-h-11 min-w-11 cursor-pointer items-center gap-1 rounded-sm transition-colors hover:text-ink md:min-h-0 md:min-w-0",
                               right && "flex-row-reverse",
                             )}
                           >

@@ -177,7 +177,10 @@ export function PoliticianTradeTable({
                     href={row.sourceUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="cursor-pointer text-2xs text-ink-muted underline underline-offset-2 transition-colors hover:text-ink"
+                    // A 20x14 link to the original PDF. It is the row's provenance and
+                    // the whole reason the row can be checked, so on a phone it
+                    // gets a real target; the row grows with it.
+                    className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center text-2xs text-ink-muted underline underline-offset-2 transition-colors hover:text-ink md:min-h-0 md:min-w-0"
                   >
                     PTR
                   </a>

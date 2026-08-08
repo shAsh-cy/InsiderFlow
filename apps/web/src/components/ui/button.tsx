@@ -39,13 +39,17 @@ const buttonVariants = cva(
         link: "text-accent-ink underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-sm px-2 text-2xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 px-3 text-xs has-[>svg]:px-2.5",
+        // Every size gains a 44px floor below md. WCAG 2.5.5 asks for
+        // 44x44 of hit area on touch, and this product had nothing in it
+        // taller than 36px. Above md the r3 densities are unchanged —
+        // a mouse can aim, and a data-dense page should let it.
+        default: "h-11 px-4 py-2 has-[>svg]:px-3 md:h-9",
+        xs: "h-9 gap-1 rounded-sm px-2 text-2xs has-[>svg]:px-1.5 md:h-6 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-11 gap-1.5 px-3 text-xs has-[>svg]:px-2.5 md:h-8",
         lg: "h-11 px-6 text-base has-[>svg]:px-5",
-        icon: "size-9",
-        "icon-xs": "size-6 rounded-sm [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
+        icon: "size-11 md:size-9",
+        "icon-xs": "size-9 rounded-sm md:size-6 [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm": "size-11 md:size-8",
         "icon-lg": "size-11",
       },
     },

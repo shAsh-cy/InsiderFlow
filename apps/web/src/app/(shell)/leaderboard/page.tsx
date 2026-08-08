@@ -36,7 +36,9 @@ const pct = (v: number | null, digits = 1): string =>
  */
 const chip = (selected: boolean): string =>
   cn(
-    "inline-flex h-8 cursor-pointer items-center rounded-full border px-3 text-xs transition-colors",
+    // 44px below md, r3 density above. Same rule as the heatmap and
+    // politicians pills; three copies of one shape is a note for r5.
+    "inline-flex h-11 min-w-11 cursor-pointer items-center justify-center rounded-full border px-3.5 text-xs transition-colors md:h-8 md:min-w-0 md:px-3",
     selected
       ? "border-border bg-fill font-semibold text-ink"
       : "border-transparent text-ink-muted hover:bg-fill hover:text-ink",
@@ -212,7 +214,9 @@ export default async function LeaderboardPage({
                   <td className="px-4 py-2.5">
                     <Link
                       href={`/insider/${row.insiderId}`}
-                      className="cursor-pointer font-medium underline-offset-2 hover:underline"
+                      // The row is auto-height here, so a 44px link simply makes the row
+                      // 44px on a phone rather than forcing a scroll.
+                      className="inline-flex min-h-11 cursor-pointer items-center font-medium underline-offset-2 hover:underline md:min-h-0"
                     >
                       {row.name}
                     </Link>

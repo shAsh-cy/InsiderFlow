@@ -303,3 +303,67 @@ test.describe("the screener's filters on a phone @mobile", () => {
     await expect(sheet.locator("#sheet-min-value")).toHaveValue("");
   });
 });
+
+test.describe("touch targets @mobile", () => {
+  /**
+   * Every standalone control is at least 44x44 at a phone width.
+   *
+   * Two documented exemptions, both narrow:
+   *
+   *   The skip link is `sr-only` until focused; its hidden box is not its
+   *   target.
+   *
+   *   The transaction-code badge is a tooltip trigger sized to a tape row.
+   *   At 24x25 it clears WCAG 2.2 2.5.8 (AA, 24x24); taking it to 44 would
+   *   double the height of every row in the product, and the full code
+   *   description is also printed on the code legend.
+   *
+   * Inline links inside prose are exempt by the specification itself.
+   */
+  const ROUTES_TO_SWEEP = [
+    "/",
+    "/trades",
+    "/screener",
+    "/heatmap",
+    "/politicians",
+    "/leaderboard",
+    "/companies",
+    "/watchlist",
+    "/settings",
+    "/docs",
+    "/status",
+    "/legal",
+    "/login",
+  ];
+
+  test("nothing standalone is under 44px", async ({ page }) => {
+    for (const route of ROUTES_TO_SWEEP) {
+      await page.goto(route);
+      const small = await page.evaluate(() => {
+        const SELECTOR =
+          "a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link]";
+        const out: string[] = [];
+        for (const el of Array.from(document.querySelectorAll(SELECTOR))) {
+          const style = getComputedStyle(el);
+          if (style.display === "none" || style.visibility === "hidden") continue;
+          const box = el.getBoundingClientRect();
+          if (box.width === 0 || box.height === 0) continue;
+          const cls = String(el.className);
+          if (cls.includes("sr-only") || cls.includes("cursor-help")) continue;
+          const own = el.textContent?.trim() ?? "";
+          const parent = el.parentElement?.textContent?.trim() ?? "";
+          // The specification's own inline exception: a link inside a
+          // sentence is measured by the sentence, not by itself.
+          if (style.display.startsWith("inline") && parent.length > own.length + 12) continue;
+          if (box.width >= 43 && box.height >= 43) continue;
+          out.push(
+            `${Math.round(box.width)}x${Math.round(box.height)} <${el.tagName.toLowerCase()}> ` +
+              `"${(el.getAttribute("aria-label") ?? own).slice(0, 28)}"`,
+          );
+        }
+        return out;
+      });
+      expect(small, `${route}: targets under 44px`).toEqual([]);
+    }
+  });
+});

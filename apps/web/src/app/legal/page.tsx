@@ -26,7 +26,7 @@ function Section({
       <h2 className="text-xl font-semibold tracking-tight text-ink">
         <a
           href={`#${id}`}
-          className="cursor-pointer decoration-border underline-offset-4 hover:underline"
+          className="inline-flex min-h-11 cursor-pointer items-center decoration-border underline-offset-4 hover:underline md:min-h-0"
         >
           {title}
         </a>

@@ -36,7 +36,11 @@ export function TransactionCodeBadge({ code, className }: { code: string; classN
   const badge = (
     <span
       className={cn(
-        "inline-flex h-5 min-w-5 items-center justify-center rounded-sm border px-1 font-mono text-2xs font-semibold tabular-nums",
+        // 24x24 minimum: WCAG 2.2 2.5.8 (AA) and the smallest this can be
+        // without the tape row growing around it. Not 44 — a 44px badge
+        // would double the height of every row in the product, and the
+        // full description is also on the code legend.
+        "inline-flex h-6 min-w-6 items-center justify-center rounded-sm border px-1 font-mono text-2xs font-semibold tabular-nums",
         toneFor(weight),
         className,
       )}
