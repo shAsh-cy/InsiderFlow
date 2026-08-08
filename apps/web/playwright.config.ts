@@ -18,7 +18,34 @@ export default defineConfig({
     baseURL: externalBaseUrl ?? "http://localhost:3000",
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  /**
+   * Two projects, because one test measures the MACHINE.
+   *
+   * The 10k-row scroll asserts a frame budget. Run alongside seven other
+   * Chromium instances on the same box it measures how oversubscribed the
+   * CPU is, which is a true fact about the runner and no fact at all
+   * about the product — it failed under eight workers and passed alone,
+   * every time. Loosening the budget to accommodate that would delete the
+   * only thing the test is for.
+   *
+   * So the perf test runs in its own project, gated behind the rest via
+   * `dependencies`. By the time it starts, nothing else is running and
+   * the number means what it claims to.
+   */
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      grepInvert: /60fps/,
+    },
+    {
+      name: "perf",
+      use: { ...devices["Desktop Chrome"] },
+      grep: /60fps/,
+      fullyParallel: false,
+      dependencies: ["chromium"],
+    },
+  ],
   ...(externalBaseUrl
     ? {}
     : {

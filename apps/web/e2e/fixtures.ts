@@ -52,22 +52,41 @@ export function createSyntheticCompany(prefix = "ZZTEST"): SyntheticCompany {
   return { ticker, companyId: companyId!, insiderId: insiderId! };
 }
 
-/** Insert a transaction for a synthetic company; returns its dedup key. */
+/**
+ * Insert a transaction for a synthetic company; returns its dedup key.
+ *
+ * `ingestedDaysAgo` backdates `created_at`. The live stream is ordered by
+ * arrival, so a fixture inserted at `now()` is broadcast to every tape open
+ * in every parallel worker — a spec that needs thirty rows of HISTORY will
+ * otherwise flood a six-row live strip and evict the row another spec is
+ * waiting on. Backdate whenever the rows are scenery rather than events.
+ */
 export function insertSyntheticTrade(
   target: SyntheticCompany,
-  options: { shares?: number; price?: number; code?: string; tag?: string } = {},
+  options: {
+    shares?: number;
+    price?: number;
+    code?: string;
+    tag?: string;
+    ingestedDaysAgo?: number;
+  } = {},
 ): string {
   const shares = options.shares ?? 1000;
   const price = options.price ?? 10;
   const code = options.code ?? "P";
   const dedupKey = `e2e-${options.tag ?? target.ticker}-${shares}#0`;
+  const createdAt =
+    options.ingestedDaysAgo === undefined
+      ? "now()"
+      : `now() - interval '${Number(options.ingestedDaysAgo)} days'`;
   psql(
     `INSERT INTO transactions (source, insider_id, company_id, txn_date, code, shares, price,
         value, currency, price_usd, value_usd, acquired_disposed, is_10b5_1, is_derivative,
-        relevance, dedup_key, country)
+        relevance, dedup_key, country, created_at)
       VALUES ('edgar', '${target.insiderId}', '${target.companyId}', CURRENT_DATE, '${code}',
         ${shares}, ${price}, ${shares * price}, 'USD', ${price}, ${shares * price},
-        '${code === "S" ? "D" : "A"}', false, false, 'opportunistic', '${dedupKey}', 'US')
+        '${code === "S" ? "D" : "A"}', false, false, 'opportunistic', '${dedupKey}', 'US',
+        ${createdAt})
       ON CONFLICT (dedup_key) DO NOTHING;`,
   );
   return dedupKey;

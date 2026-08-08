@@ -40,7 +40,10 @@ test.describe("loading", () => {
   test.beforeAll(() => {
     bulk = createSyntheticCompany("ZZPAGE");
     for (let i = 0; i < 34; i += 1) {
-      insertSyntheticTrade(bulk, { shares: 1000 + i, tag: `page-${i}` });
+      // Backdated: these are depth, not events. Inserted at `now()` they
+      // would broadcast over SSE into every tape open in every parallel
+      // worker and push other specs' rows out of a six-row live strip.
+      insertSyntheticTrade(bulk, { shares: 1000 + i, tag: `page-${i}`, ingestedDaysAgo: 2 });
     }
   });
 
