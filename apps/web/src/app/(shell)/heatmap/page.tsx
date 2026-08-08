@@ -88,7 +88,7 @@ export default async function HeatmapPage({
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-col gap-1">
+      <header className="rail-bleed flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Insider flow heatmap</h1>
         <p className="max-w-2xl text-sm text-ink-muted">
           Area is gross notional traded; fill is how one-sided that flow was, on a sequential ramp.

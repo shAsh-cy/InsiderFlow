@@ -42,7 +42,7 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-wrap items-center gap-4">
+      <header className="rail-bleed flex flex-wrap items-center gap-4">
         {/* A stamped tile, matching the ticker monogram on the stock page.
             Square rather than circular on purpose: this is a filer's mark on
             paper, and the round shape in this product means "clickable". */}

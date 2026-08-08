@@ -85,7 +85,7 @@ export default async function LeaderboardPage({
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-col gap-1">
+      <header className="rail-bleed flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Insider leaderboard</h1>
         <p className="max-w-3xl text-sm text-ink-muted">
           How insiders&rsquo; discretionary trades performed against the S&amp;P 500 over the

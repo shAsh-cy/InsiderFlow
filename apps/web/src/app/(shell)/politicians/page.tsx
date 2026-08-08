@@ -100,7 +100,7 @@ export default async function PoliticiansPage({
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-col gap-1">
+      <header className="rail-bleed flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Congressional trading</h1>
         <p className="max-w-3xl text-sm text-ink-muted">
           Periodic transaction reports filed under the STOCK Act. Members must disclose any

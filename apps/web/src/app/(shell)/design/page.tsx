@@ -302,7 +302,7 @@ export default function DesignPage() {
 
   return (
     <div className="flex flex-col gap-12 pb-24">
-      <header className="rail pl-5">
+      <header className="rail-bleed">
         <p className="num text-2xs text-ink-faint">Design language</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink">Design — Terminal</h1>
         <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-ink-muted">

@@ -58,7 +58,9 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
+        {/* Full-bleed, and padded to 24px so the brand lands on exactly the
+            x the sidebar's own item labels start from. */}
+        <div className="flex h-14 items-center gap-3 px-6">
           <Link
             href="/"
             className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-ink"

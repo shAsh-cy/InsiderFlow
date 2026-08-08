@@ -76,7 +76,7 @@ export default async function SettingsPage() {
     <div className="flex flex-col gap-8 pb-24">
       {/* Masthead: who you are, and the one way out. Ruled off from the form
           groups below so the page reads as sections on a sheet. */}
-      <header className="flex flex-wrap items-center gap-3 border-b border-border pb-6">
+      <header className="rail-bleed flex flex-wrap items-center gap-3 border-b border-border pb-6">
         <div className="min-w-0 flex-1">
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Settings</h1>
           <p className="mt-1 truncate font-mono text-sm text-ink-muted">{user.email}</p>

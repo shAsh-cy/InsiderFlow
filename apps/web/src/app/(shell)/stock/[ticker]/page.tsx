@@ -93,7 +93,7 @@ export default async function StockPage({
   return (
     <div className="flex flex-col gap-8 pb-24">
       {/* Header */}
-      <header className="flex flex-wrap items-center gap-4">
+      <header className="rail-bleed flex flex-wrap items-center gap-4">
         {/* A tile of stock with the symbol stamped on it — not a gradient
             chip and not the page's accent. The accent is already spent, once,
             on the net-flow stat card below. */}

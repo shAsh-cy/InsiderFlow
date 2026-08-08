@@ -304,6 +304,70 @@
   --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* ═════════════════════════════════════════════════════════════════════════
+   THE LEFT EDGE (r3)
+
+   Every app page keys to one vertical line. The line is `--shell-gutter`
+   from the start of the content region — inside the sidebar on wide
+   viewports, inside the viewport on narrow ones — and the page heading,
+   the cards, the forms and the tables all begin on it. What varies is
+   what sits to the RIGHT: a rail, a panel, or nothing.
+
+   `margin-inline: auto` is forbidden on app pages. A readability
+   max-width is not: a measure of 72–80rem keeps prose and wide tables
+   legible, but it is applied as a right-hand LIMIT, never as a pair of
+   equal margins. Centring a data page means the left edge moves every
+   time the window is resized, and a moving left edge is one you cannot
+   scan down.
+
+   Centring survives in exactly two places: authentication screens, and
+   true empty / error states — the cases where there is one thing on the
+   page and no column to scan.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Within the 32–40px band the brief specifies, on the 4px grid. */
+  --shell-gutter: 1.5rem;
+  /* How far the hanging rail reaches back into the gutter. Always leaves
+     8–12px of air between the rule and the region edge. */
+  --shell-rail-inset: 1rem;
+  /* The readability limit. Left-anchored, so it only ever trims the
+     right-hand side. */
+  --shell-measure: 78rem;
+  /* The sidebar's width, or zero where it is not rendered. Full-width
+     bands below the shell (the footer) use it to reach the same left
+     edge as the content region above them. */
+  --shell-sidebar: 0rem;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --shell-gutter: 2.25rem;
+    --shell-rail-inset: 1.5rem;
+    --shell-sidebar: 14rem;
+  }
+}
+
+/* The content region: gutter left, matching air right. */
+.shell-gutter {
+  padding-inline: var(--shell-gutter);
+}
+
+/* A full-width band that still lands on the content region's left edge. */
+.shell-aligned {
+  padding-inline-start: calc(var(--shell-sidebar) + var(--shell-gutter));
+  padding-inline-end: var(--shell-gutter);
+}
+
+/* The measure. Deliberately `margin-inline-end: auto` and nothing on the
+   start side — written out rather than left to the initial value so that
+   the asymmetry is visible in the source, not inferred from its absence. */
+.shell-measure {
+  max-width: var(--shell-measure);
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+
 /* ── Base ─────────────────────────────────────────────────────────────── */
 
 body {
@@ -371,6 +435,31 @@ body {
 
 .rail-quiet {
   border-left: 1px solid var(--border);
+}
+
+/* The hanging rail.
+   `.rail` indents the text it marks by its own padding, which puts a
+   page heading 20px right of the cards beneath it — the rail wins and
+   the left edge loses. This variant hangs the rule out into the shell
+   gutter instead, so the heading it marks starts on exactly the same
+   x as every card, form and table on the page. Use this on app pages;
+   plain `.rail` remains correct inside a column that has no gutter to
+   hang into.
+
+   The negative margin includes the rule's own width, so the CONTENT box
+   of a `.rail-bleed` element starts on exactly the same x as an unrailed
+   sibling — not two pixels right of it. Off-by-the-border is the most
+   common way a "one left edge" system quietly stops having one. */
+.rail-bleed {
+  border-left: 2px solid var(--accent-bright);
+  margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 2px));
+  padding-inline-start: var(--shell-rail-inset);
+}
+
+.rail-bleed-quiet {
+  border-left: 1px solid var(--border);
+  margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 1px));
+  padding-inline-start: var(--shell-rail-inset);
 }
 
 /* ── Screen grain — one very quiet texture layer over the page ─────────

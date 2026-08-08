@@ -49,7 +49,7 @@ export default async function PoliticianPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-wrap items-center gap-4">
+      <header className="rail-bleed flex flex-wrap items-center gap-4">
         <span
           aria-hidden
           className="surface-sunken flex size-12 items-center justify-center rounded-full text-lg font-semibold text-ink-muted"

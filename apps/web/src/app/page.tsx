@@ -80,8 +80,8 @@ export default async function Home() {
           words where the eye arrives last; an F-pattern reader takes the
           top-left first (Nielsen Norman Group), so that is where the
           product name and the one primary action go. */}
-      <section className="mx-auto grid max-w-6xl gap-10 px-6 pb-16 pt-20 lg:grid-cols-12 lg:gap-12 lg:pt-24">
-        <div className="rail pl-6 lg:col-span-7">
+      <section className="shell-gutter grid max-w-6xl gap-10 pt-20 pb-16 lg:grid-cols-12 lg:gap-12 lg:pt-24">
+        <div className="rail-bleed lg:col-span-7">
           <p className="num text-2xs text-ink-faint">{t("kicker")}</p>
 
           {/* The product name is a proper noun — never translated. No
@@ -137,7 +137,7 @@ export default async function Home() {
       {/* ── Signature panel: real figures from the live database. ──────── */}
       <section
         aria-label={t("signatureLabel")}
-        className="mx-auto max-w-6xl border-t border-border px-6 py-14"
+        className="shell-gutter max-w-6xl border-t border-border py-14"
       >
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-xl font-semibold tracking-tight text-ink">{t("signatureLabel")}</h2>
@@ -171,7 +171,7 @@ export default async function Home() {
       {/* ── Features, set as an index ─────────────────────────────────── */}
       <section
         aria-label={t("featuresLabel")}
-        className="mx-auto max-w-6xl border-t border-border px-6 py-14"
+        className="shell-gutter max-w-6xl border-t border-border py-14"
       >
         <div className="grid gap-x-10 sm:grid-cols-2">
           {FEATURES.map((feature, i) => {
@@ -202,12 +202,12 @@ export default async function Home() {
       </section>
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
-      <footer className="border-t border-border px-6 py-10">
+      <footer className="shell-gutter border-t border-border py-10">
         {/* The testid spans both paragraphs: sources first, then the
             licence line that carries the "not investment advice" statement. */}
         <div
           data-testid="footer-disclaimer"
-          className="mx-auto flex max-w-6xl flex-col gap-3 text-xs leading-relaxed text-ink-faint"
+          className="flex max-w-6xl flex-col gap-3 text-xs leading-relaxed text-ink-faint"
         >
           <p className="max-w-[80ch]">
             <strong className="text-ink-muted">{t("footer.sourcesLead")}</strong>{" "}
