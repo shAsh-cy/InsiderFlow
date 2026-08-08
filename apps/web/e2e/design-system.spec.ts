@@ -142,3 +142,91 @@ test("keyboard access: skip link, palette shortcut, focus rings", async ({ page 
   await page.keyboard.press("Escape");
   await expect(palette).not.toBeVisible();
 });
+
+/**
+ * The same frame budget at a phone viewport (60fps).
+ *
+ * The tape row folds to two lines below 640px and the virtualizer's height
+ * estimate follows it, so the windowing arithmetic is a different code path
+ * on a phone than on a desktop — and a wrong estimate degrades gradually
+ * with scroll distance rather than failing outright, which is exactly the
+ * kind of thing a suite pinned to 1280px never sees.
+ *
+ * Runs in the `perf` project, alone, after everything else: this measures a
+ * frame budget, and under eight concurrent workers it measures how
+ * oversubscribed the CPU is instead.
+ */
+test("scrolling 10k rows sustains ~60fps at a phone width (60fps)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/design", { waitUntil: "networkidle" });
+  const scroller = page.getByTestId("data-table-scroll");
+
+  const result = await scroller.evaluate(async (el: HTMLElement) => {
+    const frames: number[] = [];
+    let last = performance.now();
+    let raf = 0;
+    const tick = () => {
+      const now = performance.now();
+      frames.push(now - last);
+      last = now;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    const start = performance.now();
+    while (performance.now() - start < 1200) {
+      el.scrollTop += 60;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    cancelAnimationFrame(raf);
+
+    const sorted = [...frames].sort((a, b) => a - b);
+    return {
+      frames: frames.length,
+      median: sorted[Math.floor(sorted.length / 2)] ?? 0,
+      p95: sorted[Math.floor(sorted.length * 0.95)] ?? 0,
+    };
+  });
+
+  expect(result.frames).toBeGreaterThan(30);
+  expect(result.median).toBeLessThan(20);
+  expect(result.p95).toBeLessThan(50);
+});
+
+/** The tape's own virtualizer, at the width where its rows are two lines (60fps). */
+test("scrolling the virtualized tape stays smooth at 390px (60fps)", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/trades", { waitUntil: "networkidle" });
+  await expect(page.locator("[data-tape-row]").first()).toBeVisible();
+
+  const result = await page.evaluate(async () => {
+    const frames: number[] = [];
+    let last = performance.now();
+    let raf = 0;
+    const tick = () => {
+      const now = performance.now();
+      frames.push(now - last);
+      last = now;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    const start = performance.now();
+    while (performance.now() - start < 1200) {
+      window.scrollBy(0, 60);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    cancelAnimationFrame(raf);
+
+    const sorted = [...frames].sort((a, b) => a - b);
+    return {
+      frames: frames.length,
+      median: sorted[Math.floor(sorted.length / 2)] ?? 0,
+      p95: sorted[Math.floor(sorted.length * 0.95)] ?? 0,
+    };
+  });
+
+  expect(result.frames).toBeGreaterThan(30);
+  expect(result.median).toBeLessThan(20);
+  expect(result.p95).toBeLessThan(50);
+});

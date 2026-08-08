@@ -36,20 +36,55 @@ export interface SyntheticCompany {
   insiderId: string;
 }
 
-/** Create an isolated synthetic company + insider. Always ZZ-prefixed. */
+/** Bumped per call so two fixtures in one process can never draw the same. */
+let fixtureSeq = 0;
+
+/**
+ * Create an isolated synthetic company + insider. Always ZZ-prefixed.
+ *
+ * The suffix used to be `Date.now() % 100000` alone. Playwright starts its
+ * workers together, so two of them reaching this line inside the same
+ * millisecond drew the identical ticker and the second died on
+ * `companies_external_key_unique` — inside `beforeAll`, which takes the
+ * whole file's tests with it and leaves the first worker's rows behind for
+ * the next run to collide with again. It is rare enough to read as
+ * "flaky" and structural enough to keep coming back, so the suffix now
+ * mixes the clock with the process and a per-process counter, and a
+ * collision retries instead of failing.
+ *
+ * Kept to five characters: the stock route truncates a ticker at twelve,
+ * so a longer fixture name resolves to a company that does not exist and
+ * the page 404s for reasons that have nothing to do with the test.
+ */
 export function createSyntheticCompany(prefix = "ZZTEST"): SyntheticCompany {
-  const ticker = `${prefix}${Date.now() % 100000}`;
-  const out = psql(
-    `WITH co AS (INSERT INTO companies (external_key, ticker, name, country, sector)
-        VALUES ('ticker:US:${ticker}', '${ticker}', 'ZZ Synthetic Test Corp', 'US', 'Testing')
-        RETURNING id),
-      ins AS (INSERT INTO insiders (external_key, name, is_officer, officer_title)
-        VALUES ('name:US:ZZ TESTER ${ticker}', 'ZZ TESTER ${ticker}', true, 'Chief Test Officer')
-        RETURNING id)
-      SELECT co.id || ' ' || ins.id FROM co, ins;`,
-  );
-  const [companyId, insiderId] = out.split(" ");
-  return { ticker, companyId: companyId!, insiderId: insiderId! };
+  const base36 = (n: number, width: number) =>
+    Math.floor(n).toString(36).toUpperCase().slice(-width).padStart(width, "0");
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    fixtureSeq += 1;
+    const ticker =
+      `${prefix}` +
+      base36(Date.now() % 46656, 3) +
+      base36((process.pid + fixtureSeq * 37 + attempt) % 1296, 2);
+    try {
+      const out = psql(
+        `WITH co AS (INSERT INTO companies (external_key, ticker, name, country, sector)
+            VALUES ('ticker:US:${ticker}', '${ticker}', 'ZZ Synthetic Test Corp', 'US', 'Testing')
+            RETURNING id),
+          ins AS (INSERT INTO insiders (external_key, name, is_officer, officer_title)
+            VALUES ('name:US:ZZ TESTER ${ticker}', 'ZZ TESTER ${ticker}', true, 'Chief Test Officer')
+            RETURNING id)
+          SELECT co.id || ' ' || ins.id FROM co, ins;`,
+      );
+      const [companyId, insiderId] = out.split(" ");
+      if (!companyId || !insiderId) throw new Error(`unexpected psql output: ${out}`);
+      return { ticker, companyId, insiderId };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("duplicate key")) throw error;
+    }
+  }
+  throw new Error("could not mint a unique synthetic ticker after 6 attempts");
 }
 
 /**

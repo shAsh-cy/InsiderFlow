@@ -14,14 +14,10 @@ import { EmptyState } from "@/components/domain/empty-state";
 import { RowSkeleton } from "@/components/domain/row-skeleton";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { TapeList } from "@/components/feed/tape-list";
+import { useTapeRowHeight } from "@/hooks/use-tape-row-height";
 import { fetchTrades } from "@/lib/api/client";
 import type { Paged, TradesParams } from "@/lib/api/client";
 import type { PageMeta, TradeRow } from "@/lib/api/queries";
-
-// px. The tape has no gaps: rows butt against one another and are told
-// apart by a single hairline, so the virtualizer's estimate is the whole
-// row and nothing has to be subtracted back out.
-const ROW_HEIGHT = 44;
 
 export function HistoryFeed({
   initialPage,
@@ -68,12 +64,24 @@ export function HistoryFeed({
     return () => observer.disconnect();
   }, [loadMore]);
 
+  // The tape has no gaps: rows butt against one another and are told apart
+  // by a single hairline, so the estimate is the whole row and nothing has
+  // to be subtracted back out. Two lines below 640px, one above.
+  const rowHeight = useTapeRowHeight();
+
   const virtualizer = useWindowVirtualizer({
     count: rows.length,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 12,
     scrollMargin: listRef.current?.offsetTop ?? 0,
   });
+
+  // The estimator is captured at construction, so rotating a phone (or
+  // dragging a window across 640px) has to re-run it explicitly or every
+  // row below the fold stays positioned for the old height.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   return (
     <section aria-label="Trade history" data-testid="history-feed">
@@ -103,7 +111,7 @@ export function HistoryFeed({
                   trade={trade}
                   className="absolute inset-x-0 top-0"
                   style={{
-                    height: ROW_HEIGHT,
+                    height: rowHeight,
                     transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
                   }}
                 />
@@ -118,7 +126,7 @@ export function HistoryFeed({
           rows land. */}
       {loading ? (
         <div className="surface @container mt-2 overflow-hidden rounded-lg" aria-busy>
-          <RowSkeleton rows={5} height={ROW_HEIGHT} />
+          <RowSkeleton rows={5} height={rowHeight} />
           <span className="sr-only" role="status">
             Loading more trades
           </span>

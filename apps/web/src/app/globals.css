@@ -616,6 +616,24 @@ body {
   animation: tape-flash-sell 600ms ease-out 1;
 }
 
+/* ── The tape row's height ────────────────────────────────────────────
+   One number, declared once, read by both the CSS that draws the row and
+   the JS that virtualizes it. The window virtualizer needs a pixel
+   estimate up front — it cannot ask the layout — so if the row's height
+   lived only in a Tailwind class the two would drift and every scroll
+   position past the first screen would be wrong by the difference.
+
+   60px below 640, because the row is two lines there; 44px above it. */
+:root {
+  --tape-row-h: 60px;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --tape-row-h: 44px;
+  }
+}
+
 /* ── Row quick-actions ────────────────────────────────────────────────
    Revealed on hover, but ONLY where hovering is a thing the input device
    can do. A hover-revealed control on a touchscreen is a control that
@@ -633,12 +651,18 @@ body {
   .tape-actions {
     opacity: 0;
     transition: opacity 120ms ease-out;
+    /* An invisible control that still takes clicks is worse than a hidden
+       one. Hybrid laptops report `pointer: fine` and also have a
+       touchscreen, so without this a stray tap on an unhovered row hits a
+       button nobody can see. */
+    pointer-events: none;
   }
 
   [data-tape-row]:hover .tape-actions,
   [data-tape-row]:focus .tape-actions,
   [data-tape-row]:focus-within .tape-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 

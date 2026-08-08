@@ -177,6 +177,14 @@ test.describe("tape quick actions", () => {
   test("the copy never frames free data as gated", async ({ page }) => {
     await gotoTape(page);
     const row = page.locator("[data-tape-row]").first();
+    // Hover the ROW first, as a mouse user does. The hidden state of
+    // `.tape-actions` is now `pointer-events: none` as well as transparent —
+    // an invisible control that still takes clicks is worse than a hidden
+    // one, and hybrid laptops report `pointer: fine` while also having a
+    // touchscreen. Playwright hit-tests before it moves the mouse, so
+    // without this it waits forever for a button that is only clickable
+    // once the pointer is on its way to it.
+    await row.hover();
     await row.getByTestId("row-watch").click();
 
     const offer = page.getByRole("dialog");
@@ -235,5 +243,91 @@ test.describe("arrival flash", () => {
       return getComputedStyle(cell).animationName;
     });
     expect(name).toBe("none");
+  });
+});
+
+test.describe("the tape on a phone @mobile", () => {
+  test("the row folds to two lines and the insider's name is readable", async ({ page }) => {
+    await gotoTape(page);
+    const row = page.locator("[data-tape-row]").first();
+
+    // The failure this replaces: at 360px the name column was the only
+    // flexible cell in a row whose fixed siblings already consumed the
+    // width, so `flex-1` resolved to about twelve pixels and `truncate`
+    // rendered a single ellipsis. Nothing overflowed — `overflow: hidden`
+    // zeroes a flex item's automatic minimum size — so the page looked
+    // fine and the subject of every row was simply gone.
+    const geometry = await row.evaluate((el) => {
+      const cell = (name: string) =>
+        el.querySelector(`[data-cell="${name}"]`)!.getBoundingClientRect();
+      const ticker = cell("ticker");
+      const insider = cell("insider");
+      const value = cell("value");
+      return {
+        rowHeight: el.getBoundingClientRect().height,
+        // Line 1 and line 2 are on different baselines…
+        foldedBelow: Math.round(insider.top - ticker.top),
+        // …and the value stays on line 1, right of the ticker.
+        valueOnLineOne: Math.abs(value.top - ticker.top) < 4 && value.left > ticker.left,
+        insiderWidth: Math.round(insider.width),
+        insiderTruncated: false,
+      };
+    });
+
+    expect(geometry.foldedBelow, "the insider line sits below the ticker line").toBeGreaterThan(10);
+    expect(geometry.valueOnLineOne, "the amount stays on line one, right-aligned").toBe(true);
+    expect(geometry.rowHeight, "two lines need real height").toBeGreaterThan(48);
+    // The name column, measured. Twelve pixels was the r3 number.
+    expect(geometry.insiderWidth, "the insider name column").toBeGreaterThan(120);
+
+    // And the name is actually shown, not ellipsed away.
+    const insiderText = await row.locator('[data-cell="insider"]').innerText();
+    expect(insiderText.replace(/…|\.\.\./g, "").trim().length).toBeGreaterThan(6);
+  });
+
+  test("the quick actions are reachable by tapping, not by hovering", async ({ page }) => {
+    await gotoTape(page);
+    const row = page.locator("[data-tape-row]").first();
+
+    // r3 gated the whole action group behind an `@lg` container query, so
+    // below a 512px container it was `display: none` — the feature was not
+    // hard to reach on a phone, it was absent from the page.
+    const menu = row.getByTestId("row-menu");
+    await expect(menu).toBeVisible();
+    const box = await menu.boundingBox();
+    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(43);
+    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(43);
+
+    await menu.tap();
+    const content = page.getByTestId("row-menu-content");
+    await expect(content).toBeVisible();
+    await expect(content.getByTestId("row-menu-watch")).toBeVisible();
+    await expect(content.getByTestId("row-menu-alert")).toBeVisible();
+    // 44px rows in the menu too.
+    const itemBox = await content.getByTestId("row-menu-watch").boundingBox();
+    expect(Math.round(itemBox!.height)).toBeGreaterThanOrEqual(43);
+  });
+
+  test("tapping track while signed out offers sign-in rather than refusing", async ({ page }) => {
+    await gotoTape(page);
+    const row = page.locator("[data-tape-row]").first();
+    await row.getByTestId("row-menu").tap();
+    await page.getByTestId("row-menu-watch").tap();
+
+    // By test id, not by role: the row menu is itself a Radix popover with
+    // `role="dialog"` and stays mounted when closed, so `getByRole("dialog")`
+    // matches two elements here and fails strict mode on an app that is
+    // behaving correctly.
+    const offer = page.getByTestId("sign-in-offer");
+    await expect(offer).toBeVisible();
+    await expect(offer).toContainText(/sign in/i);
+    await expect(offer).not.toContainText(/unlock|upgrade|premium|paywall/i);
+  });
+
+  test("the hover-revealed pair is not rendered at all", async ({ page }) => {
+    await gotoTape(page);
+    // A hover-revealed control on a touchscreen appears on the tap meant
+    // to activate it. Below sm the pair is not merely transparent.
+    await expect(page.locator("[data-tape-row]").first().getByTestId("row-watch")).toBeHidden();
   });
 });

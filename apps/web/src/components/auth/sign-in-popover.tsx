@@ -114,7 +114,7 @@ export function SignInPopover({
       ) : (
         <PopoverTrigger asChild>{children}</PopoverTrigger>
       )}
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent align="end" className="w-80" data-testid="sign-in-offer">
         <h3 className="text-sm font-semibold text-ink">
           {action === "alert" ? t("signInPopoverTitle") : t("signInPopoverTitleWatch")}
         </h3>

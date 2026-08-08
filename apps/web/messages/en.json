@@ -110,7 +110,8 @@
     "rowAlert": "Alert me on",
     "rowWatchSaved": "Tracking {ticker}",
     "rowAlertSaved": "Alerting on {ticker} — tune delivery in Settings",
-    "rowAlertFailed": "Could not save that alert — try again"
+    "rowAlertFailed": "Could not save that alert — try again",
+    "rowActions": "Actions for {ticker}"
   },
   "shortcuts": {
     "open": "Keyboard shortcuts",

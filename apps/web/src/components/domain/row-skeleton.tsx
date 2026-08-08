@@ -31,23 +31,27 @@ export function RowSkeleton({
   return (
     <div aria-hidden data-testid="row-skeleton" className={cn("flex flex-col", className)}>
       {Array.from({ length: rows }, (_, i) => (
+        // The same two-line grid the real row folds into below 640px, so the
+        // placeholder still stands in for the thing arriving rather than for
+        // the thing it used to be. A skeleton that keeps the desktop shape on
+        // a phone is a layout shift dressed as a loading state.
         <div
           key={i}
           style={{ height }}
-          className="flex items-center gap-2.5 border-b border-border px-3 last:border-b-0"
+          className="grid grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[auto_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 last:border-b-0 sm:flex sm:items-center sm:gap-2.5"
         >
-          <Skeleton className="h-3.5 w-5 rounded-sm" />
-          <Skeleton className="h-3 w-3 rounded-sm" />
-          <Skeleton className="h-3 w-[4.5rem] rounded-sm" />
+          <Skeleton className="col-start-1 row-start-1 h-3.5 w-5 rounded-sm" />
+          <Skeleton className="col-start-1 row-start-2 h-3 w-3 rounded-sm" />
+          <Skeleton className="col-start-2 row-start-1 h-3 w-[4.5rem] rounded-sm" />
           {/* The name column is the ragged one in real rows too, so the
               placeholder varies with it rather than drawing a suspiciously
               even stack of identical bars. */}
           <Skeleton
-            className="h-3 flex-1 rounded-sm"
+            className="col-start-2 row-start-2 h-3 flex-1 rounded-sm"
             style={{ maxWidth: `${45 + ((i * 13) % 30)}%` }}
           />
           <Skeleton className="hidden h-3 w-24 rounded-sm @md:block" />
-          <Skeleton className="h-3 w-32 rounded-sm" />
+          <Skeleton className="col-start-3 row-start-1 h-3 w-24 rounded-sm sm:w-32" />
         </div>
       ))}
     </div>
