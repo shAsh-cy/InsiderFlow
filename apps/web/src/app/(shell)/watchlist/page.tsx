@@ -189,7 +189,10 @@ export default function WatchlistPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2" data-testid="watchlist-items">
+        <div
+          className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+          data-testid="watchlist-items"
+        >
           {items.map((item) => (
             <WatchCard key={item.id} item={item} onRemove={() => remove(item.id)} />
           ))}

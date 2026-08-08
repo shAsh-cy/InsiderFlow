@@ -60,8 +60,21 @@ interface OverflowReport {
 }
 
 async function measureOverflow(page: Page): Promise<OverflowReport> {
-  return page.evaluate(() => {
-    const viewport = window.innerWidth;
+  /**
+   * The width Playwright was ASKED for, not the one the page reports.
+   *
+   * With `isMobile: true` Chromium honours the meta viewport, and content
+   * wider than the layout viewport widens the layout viewport rather than
+   * overflowing it. So `document.scrollWidth <= window.innerWidth` is
+   * trivially true on exactly the configuration where overflow matters
+   * most: /politicians was 408px wide inside a 360px window and this
+   * assertion passed, because `innerWidth` had quietly become 408 too.
+   *
+   * Measuring against the requested viewport is what closes that.
+   */
+  const configured = page.viewportSize()?.width ?? 0;
+  return page.evaluate((configuredWidth) => {
+    const viewport = configuredWidth || window.innerWidth;
     const clipsHorizontally = (el: Element): boolean => {
       let node = el.parentElement;
       while (node && node !== document.documentElement) {
@@ -84,7 +97,7 @@ async function measureOverflow(page: Page): Promise<OverflowReport> {
       if (culprits.length >= 6) break;
     }
     return { doc: document.documentElement.scrollWidth, viewport, culprits };
-  });
+  }, configured);
 }
 
 /** Scroll the whole page once — lazy content can only overflow once it exists. */

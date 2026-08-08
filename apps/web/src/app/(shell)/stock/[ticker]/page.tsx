@@ -230,13 +230,27 @@ export default async function StockPage({
         </section>
       </aside>
 
-      {/* ── The record ──────────────────────────────────────────────── */}
+      {/* ── The charts, beside the rail ─────────────────────────────── */}
       <div
         data-testid="stock-record"
         className="flex min-w-0 flex-col gap-8 xl:col-start-1 xl:row-start-2"
       >
         <ChartsPanel netFlow={netFlow} sentiment={sentiment} />
+      </div>
 
+      {/*
+       * ── The record, across the whole frame ───────────────────────────
+       *
+       * The tables get both columns back. The insider-trade table's columns
+       * sum to about 1016px; beside a 21rem rail the main column is 732px at
+       * 1920, so putting them there would have made a table that fitted at
+       * 1440 scroll at every width — a dead right zone traded for a hidden
+       * one. A rail is for figures and notes; the record is the page.
+       */}
+      <div
+        data-testid="stock-tables"
+        className="flex min-w-0 flex-col gap-8 xl:col-span-2 xl:row-start-3"
+      >
         {/* Filing history */}
         <section aria-label="Insider trade history" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

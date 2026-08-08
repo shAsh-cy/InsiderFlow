@@ -412,6 +412,23 @@ test.describe("detail routes key to the same edge", () => {
     );
     expect(wide.sameRow, "record and rail start on the same line").toBe(true);
 
+    // …and the tables get the whole frame back. The insider-trade table's
+    // columns sum to ~1016px: beside a 21rem rail the main column is 732px
+    // at 1920, so leaving them there would trade a dead right zone for a
+    // hidden one — a table that fits at 1440 scrolling at every width.
+    const tables = await page.evaluate(() => {
+      const region = document.querySelector("[data-content-region]")!;
+      const block = document.querySelector("[data-testid='stock-tables']")!;
+      return {
+        regionWidth: region.getBoundingClientRect().width,
+        blockWidth: block.getBoundingClientRect().width,
+      };
+    });
+    expect(
+      tables.blockWidth / tables.regionWidth,
+      "the record spans the frame, not the column beside the rail",
+    ).toBeGreaterThan(0.98);
+
     // Below xl it is one column, and — the part that matters — the rail's
     // figures still come BEFORE the tables in reading order.
     await page.setViewportSize({ width: 900, height: 900 });

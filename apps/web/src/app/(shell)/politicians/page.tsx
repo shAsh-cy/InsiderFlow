@@ -176,8 +176,13 @@ export default async function PoliticiansPage({
             <PoliticianTradeTable rows={trades} caption="Recent congressional disclosures" />
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section aria-labelledby="filers-heading" className="flex flex-col gap-3">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            {/* `min-w-0`: a grid item's default `min-width` is `auto`, which
+                resolves to its MIN-CONTENT width — so a list of names and
+                figures sets a floor the column cannot go below and the
+                whole page is dragged sideways to accommodate it. At 360px
+                this made the document 408px wide. */}
+            <section aria-labelledby="filers-heading" className="flex min-w-0 flex-col gap-3">
               <h2 id="filers-heading" className={EYEBROW}>
                 Most active filers
               </h2>
@@ -211,7 +216,7 @@ export default async function PoliticiansPage({
               )}
             </section>
 
-            <section aria-labelledby="tickers-heading" className="flex flex-col gap-3">
+            <section aria-labelledby="tickers-heading" className="flex min-w-0 flex-col gap-3">
               <h2 id="tickers-heading" className={EYEBROW}>
                 Top-traded tickers <span className="normal-case tracking-normal">(90 days)</span>
               </h2>
