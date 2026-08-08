@@ -13,16 +13,27 @@ import { expect, test } from "@playwright/test";
  * Driven from inside the page so the connections are genuinely concurrent and
  * genuinely share one client identity. `fetch` resolves as soon as the headers
  * arrive, so we never have to read a 25-second body.
+ *
+ * The ceiling is READ from the environment rather than assumed, so a
+ * deployment that tunes SSE_MAX_CONCURRENT_PER_IP still has its real ceiling
+ * asserted instead of a number this file happened to be written against.
+ *
+ * It cannot be raised far, and that is a property of the BROWSER, not the
+ * server: one origin gets six concurrent HTTP/1.1 connections, so a cap above
+ * that would leave the surplus attempts queued behind streams that hold for
+ * 25 seconds, and the test would time out having proved nothing.
  */
+
+const CAP = Number(process.env.SSE_MAX_CONCURRENT_PER_IP ?? 4);
 
 test("refuses excess concurrent streams with 503 and Retry-After", async ({ page, request }) => {
   await page.goto("/");
 
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (cap: number) => {
     const controllers: AbortController[] = [];
     try {
-      // Comfortably above the default per-client ceiling of 4.
-      const attempts = Array.from({ length: 8 }, () => {
+      // Comfortably above whatever the per-client ceiling actually is.
+      const attempts = Array.from({ length: cap + 4 }, () => {
         const controller = new AbortController();
         controllers.push(controller);
         return fetch("/api/stream", { signal: controller.signal }).then((r) => ({
@@ -35,7 +46,7 @@ test("refuses excess concurrent streams with 503 and Retry-After", async ({ page
       // Hand the slots back so the rest of the suite is unaffected.
       for (const controller of controllers) controller.abort();
     }
-  });
+  }, CAP);
 
   const refused = result.filter((r) => r.status === 503);
   const accepted = result.filter((r) => r.status === 200);

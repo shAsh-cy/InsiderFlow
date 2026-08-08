@@ -138,7 +138,10 @@ test.describe("tape keyboard", () => {
     // The command palette is the text field that is always present, and
     // it is exactly where a stolen "?" would be most annoying.
     await page.keyboard.press("ControlOrMeta+k");
-    const field = page.getByRole("combobox").or(page.locator("[cmdk-input]")).first();
+    // `[cmdk-input]` specifically: getByRole("combobox") also matches the
+    // filter bar's <select>, and pressing a key on a select is not the
+    // thing under test.
+    const field = page.locator("[cmdk-input]").first();
     await expect(field).toBeVisible();
     await field.press("?");
     await expect(page.getByTestId("shortcut-sheet")).toBeHidden();
@@ -190,6 +193,9 @@ test.describe("arrival flash", () => {
   // Long enough to outlive a full ~25s server SSE window, as live-stream
   // does — the row has to arrive over the wire for the flash to be real.
   test.setTimeout(120_000);
+  // And retried for the same reason live-stream is: the four-per-client SSE
+  // ceiling is shared with every other worker. See e2e/live-stream.spec.ts.
+  test.describe.configure({ retries: 2 });
 
   test("a streamed row flashes its value in the direction's own tint", async ({ page }) => {
     await gotoTape(page);

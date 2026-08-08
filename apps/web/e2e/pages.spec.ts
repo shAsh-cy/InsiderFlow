@@ -171,7 +171,12 @@ test.describe("watchlist", () => {
       "SELECT c.ticker FROM companies c JOIN transactions t ON t.company_id=c.id WHERE c.ticker IS NOT NULL GROUP BY c.ticker ORDER BY count(*) DESC LIMIT 1;",
     );
     await page.goto("/watchlist");
-    await expect(page.getByText("Nothing watched yet")).toBeVisible();
+    // r3 replaced the ad-hoc empty panel with the shared EmptyState.
+    // Assert the STRUCTURE as well as the words, so a future rewording
+    // does not quietly let a bespoke empty panel back in.
+    const empty = page.locator("[data-empty-state]");
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText("Nothing tracked yet");
 
     await page.getByLabel("Search companies to watch").fill(ticker.slice(0, 3));
     await page
@@ -188,7 +193,8 @@ test.describe("watchlist", () => {
       .getByRole("button", { name: /Remove/ })
       .first()
       .click();
-    await expect(page.getByText("Nothing watched yet")).toBeVisible();
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText("Nothing tracked yet");
   });
 });
 

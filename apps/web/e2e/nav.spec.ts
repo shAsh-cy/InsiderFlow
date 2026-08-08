@@ -64,11 +64,21 @@ test.describe("navigation state", () => {
       );
       // It must also not carry the marker the sidebar uses for state — a
       // left accent rule beside a label is what made it read as active.
-      const borders = await brand.evaluate((el) => {
+      // Re-queried inside the page rather than through an element handle:
+      // a handle captured before hydration can be detached by the time it
+      // is measured, and getComputedStyle on a detached node returns empty
+      // strings that fail for reasons that have nothing to do with borders.
+      const rule = await page.evaluate(() => {
+        const el = document.querySelector("[data-brand]");
+        if (!el) return null;
         const s = getComputedStyle(el);
-        return { width: s.borderLeftWidth, style: s.borderLeftStyle };
+        return { width: parseFloat(s.borderLeftWidth) || 0, style: s.borderLeftStyle };
       });
-      expect(borders.width === "0px" || borders.style === "none").toBe(true);
+      expect(rule, `${route}: the brand must be in the DOM`).not.toBeNull();
+      expect(
+        rule!.width === 0 || rule!.style === "none",
+        `${route}: the brand must not carry a left rule`,
+      ).toBe(true);
     }
   });
 
