@@ -58,6 +58,35 @@ const log = (event, data = {}) =>
 
 const day = (offset) => new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
 
+/**
+ * INGESTION TIME, spread across the last day and a bit.
+ *
+ * `created_at` is when the ingester SAW a filing, which is a different
+ * fact from when the trade happened, and it is the one the landing page
+ * counts: "filings today" is a claim about the last 24 hours of
+ * ingestion. Left to the column default, every seeded row lands in the
+ * same second — so the tape shows twenty rows all "just now", their
+ * relative order is whatever the insert loop happened to do, and the
+ * count falls to zero the day after seeding and never recovers.
+ *
+ * So each row gets an explicit arrival time, newest first, stepping back
+ * over ~30 hours. Deterministic (index-derived, no randomness), and
+ * weighted so most rows land inside the 24-hour window — a clean
+ * `docker compose up` therefore shows a real non-zero figure, computed
+ * by the same query production uses, from timestamps that are true.
+ *
+ * This does not fabricate freshness: it makes the fixture's arrival
+ * times as relative-to-now as its trade dates already were. A seed whose
+ * timestamps are frozen at build time is the thing that lies.
+ */
+const INGEST_SPAN_MINUTES = 30 * 60;
+const ingestedAt = (index, total) => {
+  // 8 minutes ago for the newest, then evenly back. `total - 1` so the
+  // oldest lands exactly on the far edge rather than past it.
+  const step = total > 1 ? INGEST_SPAN_MINUTES / (total - 1) : 0;
+  return new Date(Date.now() - (8 + index * step) * 60_000).toISOString();
+};
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Shaped to exercise every feature: a cluster, a dip buy, routine vs
 // opportunistic, an amendment, multi-currency, and an India-market company.
@@ -292,6 +321,12 @@ try {
   log("seeded", { filings: 2, amendment: true });
 
   // ── Transactions ──────────────────────────────────────────────────────────
+  //
+  // Ordered newest-trade-first before assigning arrival times, so a filing
+  // about a recent trade arrives more recently than one about an old
+  // trade. That is how the real pipeline behaves, and it means the tape
+  // sorted by `created_at` reads in a sensible order out of the box.
+  const ARRIVALS = [...TRADES].sort((a, b) => a.day - b.day);
   let n = 0;
   for (const t of TRADES) {
     const ccy = t.ccy ?? "USD";
@@ -303,19 +338,26 @@ try {
     const priceUsd = !hasPrice ? null : ccy === "INR" ? t.price * INR_USD : t.price;
     const valueUsd = value === null ? null : ccy === "INR" ? value * INR_USD : value;
     const country = COMPANIES.find((c) => c.key === t.co).country;
+    const createdAt = ingestedAt(ARRIVALS.indexOf(t), ARRIVALS.length);
     await sql`
       insert into transactions (source, insider_id, company_id, txn_date, code, shares, price,
         value, currency, price_usd, value_usd, acquired_disposed, is_10b5_1, is_derivative,
-        relevance, dedup_key, country)
+        relevance, dedup_key, country, created_at)
       values ('edgar', ${insiderIds.get(t.who)}, ${companyIds.get(t.co)}, ${day(t.day)},
         ${t.code}, ${t.shares}, ${t.price}, ${value}, ${ccy}, ${priceUsd}, ${valueUsd},
         ${["P", "A", "M"].includes(t.code) ? "A" : "D"}, false, false,
         ${t.routine ? "routine" : "opportunistic"},
-        ${`e2e-seed-${t.co}-${t.who.replaceAll(" ", "")}-${t.day}-${t.code}#0`}, ${country})
-      on conflict (dedup_key) do nothing`;
+        ${`e2e-seed-${t.co}-${t.who.replaceAll(" ", "")}-${t.day}-${t.code}#0`}, ${country},
+        ${createdAt})
+      on conflict (dedup_key) do update set created_at = excluded.created_at`;
     n++;
   }
-  log("seeded", { transactions: n });
+  // Report the figure the landing page will show, so a seed run that
+  // would leave "filings today" at zero says so in its own output.
+  const withinDay = ARRIVALS.filter(
+    (_, i) => Date.now() - Date.parse(ingestedAt(i, ARRIVALS.length)) < 86_400_000,
+  ).length;
+  log("seeded", { transactions: n, ingestedWithin24h: withinDay });
 
   // ── Daily prices ──────────────────────────────────────────────────────────
   // Enough history for the dip / near-low screens and for forward-return

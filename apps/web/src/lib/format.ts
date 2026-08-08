@@ -78,6 +78,23 @@ export function formatPct(value: number, digits = 1): string {
 }
 
 /** "2m ago" style timestamps for the live feed. */
+/**
+ * An absolute instant, in UTC, for "as of …" microtext.
+ *
+ * UTC rather than the reader's locale, and hand-formatted rather than
+ * `toLocaleTimeString`: this string is rendered on the server and again
+ * on the client, and any format that depends on the machine's timezone
+ * or ICU data produces two different strings and a hydration mismatch.
+ * The suffix is written out so the reader knows it is not their clock.
+ */
+export function utcClock(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const hh = String(at.getUTCHours()).padStart(2, "0");
+  const mm = String(at.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} UTC`;
+}
+
 export function timeAgo(iso: string, now: Date = new Date()): string {
   const seconds = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 1000));
   if (seconds < 5) return "just now";

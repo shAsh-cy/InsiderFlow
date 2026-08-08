@@ -52,7 +52,9 @@
       "filings": "Filings today",
       "notional": "Total notional",
       "clusters": "Cluster signals",
-      "hint": "Recomputed from the live database on every rebuild."
+      "hint": "Recomputed from the live database on every rebuild.",
+      "asOf": "as of {time}",
+      "neverIngested": "no filings ingested yet"
     },
     "features": {
       "realtime": {

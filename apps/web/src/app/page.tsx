@@ -14,6 +14,7 @@ import { queryTrades } from "@/lib/api/queries";
 import { tradesQuerySchema } from "@/lib/api/schemas";
 import type { TradeRow } from "@/lib/api/queries";
 import { getDb } from "@/lib/db";
+import { utcClock } from "@/lib/format";
 
 /**
  * Statically rendered and regenerated every 60s: the tape and the figures
@@ -42,7 +43,7 @@ async function landingStats(): Promise<LandingStats> {
   try {
     return await queryLandingStats(getDb());
   } catch {
-    return { filingsToday: 0, notionalUsd: 0, clusterSignals: 0 };
+    return { filingsToday: 0, notionalUsd: 0, clusterSignals: 0, latestIngestAt: null };
   }
 }
 
@@ -141,7 +142,24 @@ export default async function Home() {
       >
         <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-xl font-semibold tracking-tight text-ink">{t("signatureLabel")}</h2>
-          <p className="text-2xs text-ink-faint">{t("stats.hint")}</p>
+          <p className="text-2xs text-ink-faint">
+            {t("stats.hint")}
+            {/* The window these figures cover is 24 hours, so a zero is
+                ambiguous on its own: it could be a quiet day or a dead
+                pipeline. This says which. It is max(created_at), not the
+                request time — if the last row landed three days ago, the
+                page says three days ago. */}
+            {stats.latestIngestAt ? (
+              <>
+                {" · "}
+                <span className="num" title={new Date(stats.latestIngestAt).toUTCString()}>
+                  {t("stats.asOf", { time: utcClock(stats.latestIngestAt) })}
+                </span>
+              </>
+            ) : (
+              <> · {t("stats.neverIngested")}</>
+            )}
+          </p>
         </div>
 
         <div className="mb-4">
