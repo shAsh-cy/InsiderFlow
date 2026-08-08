@@ -431,6 +431,19 @@ export default function DesignPage() {
             says which way the money went.
           </span>
         </div>
+        <p className="max-w-[76ch] text-xs leading-relaxed text-ink-muted">
+          <strong className="font-semibold text-ink">
+            Ink is measured against the tint, not the page.
+          </strong>{" "}
+          A direction badge sits on <code className="num">--buy-soft</code> or{" "}
+          <code className="num">--sell-soft</code> — the same hue as its own ink, at 10% — and on a
+          zebra row that tint composites over <code className="num">--surface-sunken</code> as well.
+          The tint lifts the ground toward the type and eats the margin, so an ink checked against
+          white can read 5.5:1 there and 4.0:1 where it is actually used. Both light inks are tuned
+          against that worst case. <code className="num">--buy</code> and{" "}
+          <code className="num">--sell</code> themselves keep the canonical Wong values: a mark owes
+          3:1, and the palette should not be distorted where identification happens.
+        </p>
         <div className="surface rounded-lg p-4">
           <p className="mb-3 text-2xs text-ink-faint">
             Heatmap ramp — Viridis, perceptually uniform sequential

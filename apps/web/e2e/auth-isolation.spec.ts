@@ -216,7 +216,8 @@ function tamperSignature(jwt: string): string {
   // Decoding to bytes and flipping one makes the change unambiguous, and
   // the assertion below refuses to run at all if it somehow did not.
   const bytes = Buffer.from(signature, "base64url");
-  bytes[Math.floor(bytes.length / 2)] ^= 0xff;
+  const mid = Math.floor(bytes.length / 2);
+  bytes[mid] = (bytes[mid] ?? 0) ^ 0xff;
   const tampered = bytes.toString("base64url");
   if (tampered === signature) throw new Error("tamperSignature did not change the signature");
 
