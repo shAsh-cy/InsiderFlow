@@ -134,12 +134,23 @@
   /* Vermillion is only 3.9:1 on white, so the TEXT variant is a darkened
      tone of the same hue. The mark keeps the canonical Wong value —
      large areas need 3:1, not 4.5:1, so the palette is never distorted
-     where identification actually happens. */
+     where identification actually happens.
+
+     Both inks are darker again in r3, because the ground that matters is
+     not white. A direction badge sits on `--*-soft`, which is the SAME
+     hue as its ink, so the tint lifts the background toward the
+     foreground and eats the margin — and on a zebra row the tint
+     composites over `--surface-sunken` as well. Measured against that
+     worst case (#ECE2DC buy, #D6E4ED sell) the r2 values were 4.31 and
+     4.01, both short of 4.5, while measuring the same text against plain
+     white said 5.49 and 5.19 and looked fine. Lighthouse caught the sell
+     badge on the stock page; the buy badge was the same bug one row
+     away. Now 4.81 and 4.77 on the worst tint, 6.12 and 6.17 on white. */
   --buy: #d55e00;
-  --buy-ink: #b04a00;
+  --buy-ink: #a44500;
   --buy-soft: rgba(213, 94, 0, 0.1);
   --sell: #0072b2;
-  --sell-ink: #0072b2;
+  --sell-ink: #00669f;
   --sell-soft: rgba(0, 114, 178, 0.1);
   --neutral: #6b7885;
   --neutral-soft: rgba(107, 120, 133, 0.12);

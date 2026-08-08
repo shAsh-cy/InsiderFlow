@@ -56,7 +56,12 @@ export function ShortcutSheet() {
         data-testid="shortcut-sheet-open"
         className="num inline-flex size-5 cursor-pointer items-center justify-center rounded-sm border border-border text-2xs text-ink-faint transition-colors hover:bg-fill hover:text-ink"
       >
-        ?
+        {/* A glyph, not a word: `aria-hidden` so the button reads as an
+            icon control named by its label. Left visible it would be a
+            control whose visible text ("?") is absent from its accessible
+            name ("Keyboard shortcuts") — WCAG 2.5.3 — and a voice-control
+            user would have nothing sayable to activate it with. */}
+        <span aria-hidden>?</span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>

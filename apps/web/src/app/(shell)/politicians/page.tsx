@@ -140,9 +140,17 @@ export default async function PoliticiansPage({
               ))}
             </fieldset>
 
+            {/* A link, not a toggle button — it navigates, and the filter
+                lives in the URL. `aria-pressed` is only defined for
+                role="button", so on an anchor it is an attribute a screen
+                reader is entitled to ignore or announce wrongly; axe flags
+                it as aria-allowed-attr. `aria-current` is the attribute
+                that means "this is the view you are on", and it is valid
+                here. The word "Showing" carries the same fact visibly, so
+                the state is never colour alone. */}
             <Link
               href={href({ late_only: query.late_only ? "" : "true" })}
-              aria-pressed={query.late_only ? "true" : "false"}
+              aria-current={query.late_only ? "true" : undefined}
               className={cn(PILL_BASE, query.late_only ? PILL_ON : PILL_OFF)}
             >
               Late filings only
