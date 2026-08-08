@@ -17,16 +17,17 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
 import { LocaleSwitcher } from "./locale-switcher";
 import type { SessionInfo } from "./session-provider";
+import { ShellMenu } from "./shell-menu";
 import { ThemeToggle } from "./theme-toggle";
 
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
-const NavOverlay = dynamic(() => import("./nav-overlay"), { ssr: false });
+const NavDrawer = dynamic(() => import("./nav-drawer"), { ssr: false });
 
 /**
  * The mark.
@@ -70,6 +71,8 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
   /** Stays true after first open so the chunk isn't re-requested. */
   const [paletteLoaded, setPaletteLoaded] = useState(false);
   const [menuLoaded, setMenuLoaded] = useState(false);
+  /** Handed to the drawer so Escape returns focus here — see NavDrawer. */
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -102,7 +105,28 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
             then indented by `--shell-nav-inset` — the exact distance from the
             frame edge to a sidebar item's LABEL — so the wordmark and the
             navigation beneath it stand on one line. */}
-        <div className="shell-frame flex h-14 items-center gap-2 sm:gap-3">
+        <div className="shell-frame flex h-14 items-center gap-1 sm:gap-2 md:gap-3">
+          {/* The drawer trigger, on the LEADING edge. The sidebar it stands
+              in for is on the left and the drawer slides from the left, so
+              the control that opens it belongs on the left; a right-hand
+              trigger for a left-hand panel is a small lie about where the
+              thing you are opening lives. `-ms-2` lets the 44px hit area
+              hang back into the frame padding so the drawn icon still lines
+              up with the frame edge. */}
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={openMenu}
+            onPointerEnter={() => setMenuLoaded(true)}
+            aria-label={t("openMenu")}
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            data-testid="nav-drawer-trigger"
+            className="-ms-2 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-fill hover:text-ink lg:hidden"
+          >
+            <Menu className="size-5" aria-hidden />
+          </button>
+
           {/* The brand is a link home, never a nav state. It carries no
               `aria-current` under any route, including "/". */}
           <Link
@@ -112,7 +136,10 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
             className="flex shrink-0 items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink"
           >
             <BrandMark />
-            InsiderFlow
+            {/* `sr-only`, not `hidden`: the wordmark IS this link's
+                accessible name, and hiding it below sm would leave a link
+                to the home page with no name at all on every phone. */}
+            <span className="sr-only sm:not-sr-only">InsiderFlow</span>
           </Link>
 
           {/* Design and API docs used to sit here as well as in the sidebar's
@@ -122,32 +149,38 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
               page, not for a second copy of the index. */}
           <div className="flex-1" />
 
-          <LocaleSwitcher className="hidden sm:inline-flex" />
+          <LocaleSwitcher className="hidden md:inline-flex" />
 
+          {/* Below md this is a 44px icon with no drawn box; from md it is
+              the bordered control with its word and its accelerator. Same
+              button, two densities — a 32px bordered pill is a 32px touch
+              target, and there is no width at 360 to make it bigger AND
+              keep its label. */}
           <button
             type="button"
             onClick={openPalette}
             onPointerEnter={() => setPaletteLoaded(true)}
             // The accessible name has to CONTAIN the visible label, or
             // voice-control users cannot say what they can see (WCAG
-            // 2.5.3). The visible word is only rendered above `sm`, so the
+            // 2.5.3). The visible word is only rendered above `md`, so the
             // label carries it at every width.
             aria-label={`${t("search")} — ${t("openPalette")}`}
-            className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-ink-muted transition-colors hover:bg-fill hover:text-ink"
+            data-testid="open-palette"
+            className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-fill hover:text-ink md:h-8 md:w-auto md:gap-2 md:border md:border-border md:bg-surface md:px-2.5 md:text-xs"
           >
-            <Search className="size-3.5" aria-hidden />
-            <span className="hidden sm:inline">{t("search")}</span>
+            <Search className="size-5 md:size-3.5" aria-hidden />
+            <span className="hidden md:inline">{t("search")}</span>
             {/* Decorative for assistive tech: the accessible name already
                 says what the button does, and "⌘K" read aloud is noise. */}
             <kbd
               aria-hidden
-              className="num rounded-sm border border-border px-1 text-2xs text-ink-faint"
+              className="num hidden rounded-sm border border-border px-1 text-2xs text-ink-faint md:inline"
             >
               ⌘K
             </kbd>
           </button>
 
-          <ThemeToggle />
+          <ThemeToggle className="hidden md:inline-flex" />
 
           {session?.authConfigured ? (
             <>
@@ -161,61 +194,65 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
                 aria-current={settingsActive ? "page" : undefined}
                 aria-label={t("settings")}
                 className={cn(
-                  "relative hidden h-8 items-center rounded-md border px-3 text-xs transition-colors sm:inline-flex",
+                  "relative hidden h-8 shrink-0 items-center rounded-md border px-3 text-xs transition-colors md:inline-flex",
                   settingsActive
                     ? "border-border bg-fill font-medium text-ink after:absolute after:inset-x-2 after:-bottom-3 after:h-0.5 after:rounded-full after:bg-accent-bright after:content-['']"
                     : "border-border bg-surface text-ink-muted hover:bg-fill hover:text-ink",
                 )}
               >
-                <Settings2 className="size-3.5 sm:hidden" aria-hidden />
-                <span className="hidden sm:inline">{t("settings")}</span>
+                <Settings2 className="size-3.5 md:hidden" aria-hidden />
+                <span className="hidden md:inline">{t("settings")}</span>
               </Link>
-
-              {session.userId ? (
-                // Signed in: who you are, not another copy of "settings".
-                // The initial is decorative; the accessible name is the
-                // address, because "S" read aloud tells nobody anything.
-                <Link
-                  href="/settings"
-                  aria-label={`${t("account")} — ${session.email ?? ""}`}
-                  title={session.email ?? undefined}
-                  className="num inline-flex size-8 items-center justify-center rounded-md border border-border bg-surface text-2xs font-semibold text-ink-muted uppercase transition-colors hover:bg-fill hover:text-ink"
-                >
-                  <span aria-hidden>{(session.email ?? "?").slice(0, 1)}</span>
-                </Link>
-              ) : (
-                // The primary affordance in the masthead, and styled like
-                // it. On dark the accent is only 3.6:1 as a fill, so this
-                // is a bordered accent button with `--accent-bright` type
-                // (6.3:1); on light the accent is legible behind white, so
-                // it fills. Same weight in both, reached two different ways
-                // because the two grounds are not symmetric.
-                <Link
-                  href="/login"
-                  data-magnetic
-                  className="inline-flex h-8 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
-                >
-                  {t("signIn")}
-                </Link>
-              )}
             </>
           ) : null}
 
-          {/* The sidebar disappears below lg, so the full index moves here. */}
-          <button
-            type="button"
-            onClick={openMenu}
-            onPointerEnter={() => setMenuLoaded(true)}
-            aria-label={t("openMenu")}
-            className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-border text-ink-muted transition-colors hover:bg-fill hover:text-ink lg:hidden"
-          >
-            <Menu className="size-4" aria-hidden />
-          </button>
+          {/* Language, theme and Settings fold in here below md. */}
+          <ShellMenu
+            className="md:hidden"
+            showSettings={Boolean(session?.authConfigured)}
+            settingsActive={settingsActive}
+          />
+
+          {session?.authConfigured ? (
+            session.userId ? (
+              // Signed in: who you are, not another copy of "settings".
+              // The initial is decorative; the accessible name is the
+              // address, because "S" read aloud tells nobody anything.
+              <Link
+                href="/settings"
+                aria-label={`${t("account")} — ${session.email ?? ""}`}
+                title={session.email ?? undefined}
+                className="num inline-flex size-11 shrink-0 items-center justify-center rounded-md text-2xs font-semibold text-ink-muted uppercase transition-colors hover:bg-fill hover:text-ink md:size-8 md:border md:border-border md:bg-surface"
+              >
+                <span aria-hidden>{(session.email ?? "?").slice(0, 1)}</span>
+              </Link>
+            ) : (
+              // The primary affordance in the masthead, and styled like
+              // it. On dark the accent is only 3.6:1 as a fill, so this
+              // is a bordered accent button with `--accent-bright` type
+              // (6.3:1); on light the accent is legible behind white, so
+              // it fills. Same weight in both, reached two different ways
+              // because the two grounds are not symmetric.
+              //
+              // `h-11` below md: this is the one thing in the bar a reader
+              // is most likely to be reaching for, and at 32px it was the
+              // smallest target on the screen.
+              <Link
+                href="/login"
+                data-magnetic
+                className="inline-flex h-11 shrink-0 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 md:h-8 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
+              >
+                {t("signIn")}
+              </Link>
+            )
+          ) : null}
         </div>
       </header>
 
       {paletteLoaded ? <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} /> : null}
-      {menuLoaded ? <NavOverlay open={menuOpen} onOpenChange={setMenuOpen} /> : null}
+      {menuLoaded ? (
+        <NavDrawer open={menuOpen} onOpenChange={setMenuOpen} triggerRef={menuButtonRef} />
+      ) : null}
     </>
   );
 }

@@ -33,7 +33,9 @@
       "methodology": "Methodology",
       "designSystem": "Design system"
     },
-    "account": "Account"
+    "account": "Account",
+    "more": "More",
+    "theme": "Theme"
   },
   "landing": {
     "badge": "Open source · AGPL-3.0 · Runs entirely on free tiers",

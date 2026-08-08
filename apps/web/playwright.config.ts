@@ -36,6 +36,35 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      grepInvert: /60fps|@mobile/,
+    },
+    /**
+     * The mobile matrix.
+     *
+     * Every test in the r3 suite ran at 1280x720 — no `setViewportSize`, no
+     * device descriptor, no `hasTouch` anywhere — so 140 tests only ever
+     * exercised the >=1024px branch of every responsive rule. The sidebar was
+     * always visible and no mobile layout was executed even once.
+     *
+     * `hasTouch` and `isMobile` are the load-bearing part, not the viewport:
+     * they are what makes `(hover: hover) and (pointer: fine)` evaluate false,
+     * which is the condition every hover-gated affordance in this product is
+     * written against. A narrow desktop window is not a phone, and testing one
+     * as though it were the other is how the touch path stays broken.
+     *
+     * Specs opt in with `@mobile` in their title; `chromium` excludes the same
+     * tag so nothing runs twice.
+     */
+    {
+      name: "mobile",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+        deviceScaleFactor: 2,
+      },
+      grep: /@mobile/,
       grepInvert: /60fps/,
     },
     {
@@ -43,7 +72,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       grep: /60fps/,
       fullyParallel: false,
-      dependencies: ["chromium"],
+      dependencies: ["chromium", "mobile"],
     },
   ],
   ...(externalBaseUrl
