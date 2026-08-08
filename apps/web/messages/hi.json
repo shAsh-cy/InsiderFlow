@@ -1,7 +1,5 @@
 {
   "nav": {
-    "primary": "मुख्य",
-    "design": "डिज़ाइन",
     "apiDocs": "API दस्तावेज़",
     "search": "खोजें…",
     "openPalette": "कमांड पैलेट खोलें",
@@ -31,7 +29,8 @@
       "politicians": "राजनेता",
       "methodology": "कार्यप्रणाली",
       "designSystem": "डिज़ाइन सिस्टम"
-    }
+    },
+    "account": "खाता"
   },
   "landing": {
     "badge": "ओपन सोर्स · AGPL-3.0 · पूरी तरह मुफ़्त टियर पर चलता है",

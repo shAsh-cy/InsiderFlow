@@ -12,11 +12,14 @@
  * fixed header forces the compositor to re-sample everything beneath it
  * on every scroll frame, and paper does not blur anyway.
  */
-import { Menu, Search } from "lucide-react";
+import { Menu, Search, Settings2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
+
+import { cn } from "@/lib/utils";
 
 import { LocaleSwitcher } from "./locale-switcher";
 import type { SessionInfo } from "./session-provider";
@@ -25,8 +28,43 @@ import { ThemeToggle } from "./theme-toggle";
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
 const NavOverlay = dynamic(() => import("./nav-overlay"), { ssr: false });
 
+/**
+ * The mark.
+ *
+ * It used to be a 4px vertical accent rule beside the wordmark — visually
+ * identical to the rule the sidebar draws down the left of the CURRENT
+ * page, which made the brand read as a permanently-active nav item.
+ * People reported it as a stuck highlight, and they were right to.
+ *
+ * A logo has to be shaped like nothing else in the system. This one is a
+ * bordered square holding a tape line: enclosed and horizontally
+ * symmetric, where every state marker in the product is an open vertical
+ * rule or an underline. It is decorative — the wordmark beside it is the
+ * accessible name — and it is never given `aria-current`.
+ */
+function BrandMark() {
+  return (
+    <span
+      aria-hidden
+      className="grid size-5 shrink-0 place-items-center rounded-sm border border-accent-bright/55 text-accent-bright"
+    >
+      <svg viewBox="0 0 12 12" className="size-3" fill="none" aria-hidden focusable="false">
+        <path
+          d="M1 8.5 L4 5.5 L6.5 7.5 L11 2.5"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
 export function ShellChrome({ session }: { session?: SessionInfo }) {
   const t = useTranslations("nav");
+  const pathname = usePathname();
+  const settingsActive = pathname === "/settings";
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   /** Stays true after first open so the chunk isn't re-requested. */
@@ -61,30 +99,22 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
         {/* Full-bleed, and padded to 24px so the brand lands on exactly the
             x the sidebar's own item labels start from. */}
         <div className="flex h-14 items-center gap-3 px-6">
+          {/* The brand is a link home, never a nav state. It carries no
+              `aria-current` under any route, including "/". */}
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-ink"
+            data-brand
+            className="flex items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink"
           >
-            {/* The mark: an oxblood ledger tab, not a glowing orb. */}
-            <span aria-hidden className="h-3.5 w-1 rounded-[1px] bg-accent" />
+            <BrandMark />
             InsiderFlow
           </Link>
 
-          <nav aria-label={t("primary")} className="ml-3 hidden items-center gap-0.5 sm:flex">
-            <Link
-              href="/design"
-              className="rounded-md px-2.5 py-1.5 text-sm text-ink-muted transition-colors hover:bg-fill hover:text-ink"
-            >
-              {t("design")}
-            </Link>
-            <Link
-              href="/docs"
-              className="rounded-md px-2.5 py-1.5 text-sm text-ink-muted transition-colors hover:bg-fill hover:text-ink"
-            >
-              {t("apiDocs")}
-            </Link>
-          </nav>
-
+          {/* Design and API docs used to sit here as well as in the sidebar's
+              Reference section. One destination reachable from two places in
+              the same viewport is not redundancy, it is two things to keep in
+              sync — and the top bar is for the controls that apply to every
+              page, not for a second copy of the index. */}
           <div className="flex-1" />
 
           <LocaleSwitcher className="hidden sm:inline-flex" />
@@ -115,28 +145,55 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
           <ThemeToggle />
 
           {session?.authConfigured ? (
-            session.userId ? (
+            <>
+              {/* Settings is a destination like any other, so it gets a real
+                  active state: `aria-current` plus an accent underline drawn
+                  on the header's own bottom rule. An underline, not a left
+                  bar — the left bar belongs to the sidebar, and reusing it
+                  here is how the brand got mistaken for a nav item. */}
               <Link
                 href="/settings"
-                className="hidden h-8 items-center rounded-md border border-border bg-surface px-3 text-xs text-ink-muted transition-colors hover:bg-fill hover:text-ink sm:inline-flex"
+                aria-current={settingsActive ? "page" : undefined}
+                aria-label={t("settings")}
+                className={cn(
+                  "relative hidden h-8 items-center rounded-md border px-3 text-xs transition-colors sm:inline-flex",
+                  settingsActive
+                    ? "border-border bg-fill font-medium text-ink after:absolute after:inset-x-2 after:-bottom-3 after:h-0.5 after:rounded-full after:bg-accent-bright after:content-['']"
+                    : "border-border bg-surface text-ink-muted hover:bg-fill hover:text-ink",
+                )}
               >
-                {t("settings")}
+                <Settings2 className="size-3.5 sm:hidden" aria-hidden />
+                <span className="hidden sm:inline">{t("settings")}</span>
               </Link>
-            ) : (
-              // The primary affordance in the masthead, and styled like
-              // it. On dark the accent is only 3.6:1 as a fill, so this
-              // is a bordered accent button with `--accent-bright` type
-              // (6.3:1); on light the accent is legible behind white, so
-              // it fills. Same weight in both, reached two different ways
-              // because the two grounds are not symmetric.
-              <Link
-                href="/login"
-                data-magnetic
-                className="inline-flex h-8 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
-              >
-                {t("signIn")}
-              </Link>
-            )
+
+              {session.userId ? (
+                // Signed in: who you are, not another copy of "settings".
+                // The initial is decorative; the accessible name is the
+                // address, because "S" read aloud tells nobody anything.
+                <Link
+                  href="/settings"
+                  aria-label={`${t("account")} — ${session.email ?? ""}`}
+                  title={session.email ?? undefined}
+                  className="num inline-flex size-8 items-center justify-center rounded-md border border-border bg-surface text-2xs font-semibold text-ink-muted uppercase transition-colors hover:bg-fill hover:text-ink"
+                >
+                  <span aria-hidden>{(session.email ?? "?").slice(0, 1)}</span>
+                </Link>
+              ) : (
+                // The primary affordance in the masthead, and styled like
+                // it. On dark the accent is only 3.6:1 as a fill, so this
+                // is a bordered accent button with `--accent-bright` type
+                // (6.3:1); on light the accent is legible behind white, so
+                // it fills. Same weight in both, reached two different ways
+                // because the two grounds are not symmetric.
+                <Link
+                  href="/login"
+                  data-magnetic
+                  className="inline-flex h-8 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
+                >
+                  {t("signIn")}
+                </Link>
+              )}
+            </>
           ) : null}
 
           {/* The sidebar disappears below lg, so the full index moves here. */}

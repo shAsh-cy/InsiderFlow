@@ -227,7 +227,11 @@ test.describe("left-anchored detail routes", () => {
   let target: SyntheticCompany;
 
   test.beforeAll(() => {
-    target = createSyntheticCompany("ZZLAYOUT");
+    // Short prefix on purpose: the stock route truncates a ticker to 12
+    // characters, so a longer fixture name resolves to a company that does
+    // not exist and the page 404s for reasons that have nothing to do with
+    // layout. `ZZLAY` + a five-digit suffix is ten.
+    target = createSyntheticCompany("ZZLAY");
     insertSyntheticTrade(target, { tag: "layout" });
   });
 

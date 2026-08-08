@@ -21,7 +21,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { STAGGER_DENSE, springs } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
-import { NAV } from "./nav-items";
+import { activeNavHref, NAV } from "./nav-items";
 
 export default function NavOverlay({
   open,
@@ -32,6 +32,7 @@ export default function NavOverlay({
 }) {
   const t = useTranslations("nav");
   const pathname = usePathname();
+  const activeHref = activeNavHref(pathname);
   const reduced = useReducedMotion();
   const itemLabel = (key: string) => (key === "apiDocs" ? t("apiDocs") : t(`items.${key}`));
 
@@ -81,7 +82,7 @@ export default function NavOverlay({
                         </p>
                         <ul>
                           {section.items.map((item) => {
-                            const active = pathname === item.href;
+                            const active = item.href === activeHref;
                             folio += 1;
                             const index = folio;
                             return (

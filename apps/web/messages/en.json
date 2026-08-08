@@ -3,8 +3,6 @@
     "name": "InsiderFlow"
   },
   "nav": {
-    "primary": "Primary",
-    "design": "Design",
     "apiDocs": "API docs",
     "search": "Search…",
     "openPalette": "Open command palette",
@@ -34,7 +32,8 @@
       "politicians": "Politicians",
       "methodology": "Methodology",
       "designSystem": "Design system"
-    }
+    },
+    "account": "Account"
   },
   "landing": {
     "badge": "Open source · AGPL-3.0 · Runs entirely on free tiers",

@@ -6,10 +6,11 @@ import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
 
-import { NAV } from "./nav-items";
+import { activeNavHref, NAV } from "./nav-items";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const activeHref = activeNavHref(pathname);
   const t = useTranslations("nav");
   // `apiDocs` lives at nav.apiDocs (shared with the top bar); the rest are
   // under nav.items.
@@ -24,7 +25,7 @@ export function Sidebar() {
           </p>
           <ul className="flex flex-col">
             {section.items.map((item) => {
-              const active = pathname === item.href;
+              const active = item.href === activeHref;
               const Icon = item.icon;
               if (item.soon) {
                 return (
@@ -48,12 +49,16 @@ export function Sidebar() {
                     href={item.href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      // The active item is marked by an oxblood margin rule,
-                      // the way a reader marks a page — not by a filled pill.
-                      "flex items-center gap-2.5 border-l-2 py-1.5 pl-2.5 pr-2.5 text-sm transition-colors",
+                      // Three signals, because one is not enough: the accent
+                      // rule in the margin, a tinted ground, and heavier ink.
+                      // A rule alone was too quiet to find at a glance in a
+                      // list of eleven, and it read as decoration rather than
+                      // as state. `aria-current` carries the same fact to
+                      // anyone not looking at it.
+                      "flex items-center gap-2.5 border-l-2 py-1.5 pr-2.5 pl-2.5 text-sm transition-colors",
                       active
-                        ? "border-l-accent-bright font-medium text-ink"
-                        : "border-l-transparent text-ink-muted hover:border-l-border hover:text-ink",
+                        ? "border-l-accent-bright bg-fill font-medium text-ink"
+                        : "border-l-transparent text-ink-muted hover:border-l-border hover:bg-fill/60 hover:text-ink",
                     )}
                   >
                     <Icon className="size-4" aria-hidden />
