@@ -5,12 +5,14 @@
  * meta.nextOffset, CSV/XLSX export, per-preset RSS link, and the disabled
  * "save as alert" slot (auth lands in Phase 7).
  */
-import { BellPlus, Download, FileSpreadsheet, Loader2, Rss } from "lucide-react";
+import { BellPlus, Download, FileSpreadsheet, Loader2, Rss, SearchX } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { SignInPopover } from "@/components/auth/sign-in-popover";
+import { EmptyState } from "@/components/domain/empty-state";
+import { RowSkeleton } from "@/components/domain/row-skeleton";
 
 import { TradeTable } from "@/components/trades/trade-table";
 import { Button } from "@/components/ui/button";
@@ -223,12 +225,25 @@ export function ScreenerResults({
       </div>
 
       {rows.length === 0 ? (
-        <p className="surface rounded-lg px-4 py-10 text-center text-sm text-ink-muted">
-          Nothing matches this screen. Loosen a filter or pick another preset.
-        </p>
+        <EmptyState
+          icon={SearchX}
+          title="Nothing matches this screen"
+          body="Loosen a filter or pick another preset. Every screen here is free to run and free to share as a link."
+        />
       ) : (
         <>
           <TradeTable rows={rows} showCompany height={560} aria-label="Screener results" />
+          {/* The next page at its real height, rather than a spinner on a
+              button: the rows are what is coming, so the rows are what the
+              placeholder should look like. */}
+          {loading ? (
+            <div className="surface @container overflow-hidden rounded-lg" aria-busy>
+              <RowSkeleton rows={4} height={38} />
+              <span className="sr-only" role="status">
+                Loading more results
+              </span>
+            </div>
+          ) : null}
           <div className="flex justify-center">
             {meta.hasMore ? (
               <Button
@@ -237,7 +252,7 @@ export function ScreenerResults({
                 onClick={() => void loadMore()}
                 disabled={loading}
               >
-                {loading ? <Loader2 className="animate-spin" aria-hidden /> : null} Load more
+                Load more
               </Button>
             ) : (
               <span className="py-2 text-2xs text-ink-faint">End of results</span>

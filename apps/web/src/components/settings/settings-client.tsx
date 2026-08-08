@@ -5,9 +5,12 @@
  * the one-click import of a signed-out watchlist.
  */
 import { BellRing, Loader2, Send, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/domain/empty-state";
 import { Button } from "@/components/ui/button";
 import { useWatchlist } from "@/hooks/use-watchlist";
 import { getLocalWatchlistStore } from "@/lib/watchlist/store";
@@ -145,6 +148,7 @@ export function SettingsClient({
   const [channels, setChannels] = useState(initialChannels);
   const [linking, setLinking] = useState(false);
   const { items: watchlist } = useWatchlist();
+  const t = useTranslations("access");
 
   const telegram = channels.find((c) => c.channel === "telegram");
   const email = channels.find((c) => c.channel === "email");
@@ -253,9 +257,17 @@ export function SettingsClient({
         description="Saved screens and tracked tickers. Create one from the screener with “Save as alert”."
       >
         {rules.length === 0 ? (
-          <p className="py-6 text-center text-sm text-ink-muted">
-            No rules yet. Open the screener, build a screen, and hit “Save as alert”.
-          </p>
+          <EmptyState
+            icon={BellRing}
+            tone="sunken"
+            title={t("alertsEmptyTitle")}
+            body={t("alertsEmptyBody")}
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href="/screener">Open the screener</Link>
+              </Button>
+            }
+          />
         ) : (
           <ul className="flex flex-col divide-y divide-border" data-testid="alert-rules">
             {rules.map((rule) => (

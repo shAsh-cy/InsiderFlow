@@ -6,9 +6,12 @@
  * virtualized so the DOM stays bounded no matter how far you scroll.
  */
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { SearchX } from "lucide-react";
+
+import { EmptyState } from "@/components/domain/empty-state";
+import { RowSkeleton } from "@/components/domain/row-skeleton";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { TapeList } from "@/components/feed/tape-list";
 import { fetchTrades } from "@/lib/api/client";
@@ -76,9 +79,11 @@ export function HistoryFeed({
     <section aria-label="Trade history" data-testid="history-feed">
       <h2 className="mb-3 text-sm font-semibold text-ink-muted">History</h2>
       {rows.length === 0 ? (
-        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
-          No trades match these filters.
-        </p>
+        <EmptyState
+          icon={SearchX}
+          title="No trades match these filters"
+          body="Loosen one, or clear them all — the whole tape is free to read either way."
+        />
       ) : (
         // One surface around the whole run of rows. Each row carries only
         // a hairline and a hover ground — no per-row border, shadow or
@@ -107,13 +112,21 @@ export function HistoryFeed({
           </TapeList>
         </div>
       )}
+      {/* The next page, drawn at the height it will occupy. A spinner here
+          would say "wait"; this says "more tape, arriving" — and it holds
+          the scroll position instead of letting the page jump when the
+          rows land. */}
+      {loading ? (
+        <div className="surface @container mt-2 overflow-hidden rounded-lg" aria-busy>
+          <RowSkeleton rows={5} height={ROW_HEIGHT} />
+          <span className="sr-only" role="status">
+            Loading more trades
+          </span>
+        </div>
+      ) : null}
       <div ref={sentinelRef} aria-hidden className="h-2" />
       <div className="flex items-center justify-center py-4 text-xs text-ink-faint">
-        {loading ? (
-          <span className="inline-flex items-center gap-2">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
-          </span>
-        ) : error ? (
+        {loading ? null : error ? (
           <button
             type="button"
             onClick={() => void loadMore()}

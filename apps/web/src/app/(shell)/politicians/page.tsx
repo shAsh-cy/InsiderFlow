@@ -1,6 +1,7 @@
-import { Rss } from "lucide-react";
+import { Landmark, Rss } from "lucide-react";
 import Link from "next/link";
 
+import { EmptyState } from "@/components/domain/empty-state";
 import { NotDisclosed } from "@/components/domain/not-disclosed";
 import { PoliticianCoverageBanner } from "@/components/politicians/coverage-banner";
 import { PoliticianTradeTable } from "@/components/politicians/politician-trade-table";
@@ -170,9 +171,10 @@ export default async function PoliticiansPage({
                 Most active filers
               </h2>
               {filers.length === 0 ? (
-                <p className="surface-sunken rounded-lg px-4 py-8 text-center text-sm text-ink-muted">
-                  No filers ingested yet.
-                </p>
+                // Copy unchanged: "no filers ingested yet" is a claim
+                // about this deployment's pipeline, not an invitation, and
+                // dressing up an absence of data is how it stops being one.
+                <EmptyState icon={Landmark} tone="sunken" title="No filers ingested yet." />
               ) : (
                 <ul className="surface flex flex-col rounded-lg">
                   {filers.map((f) => (
@@ -203,9 +205,11 @@ export default async function PoliticiansPage({
                 Top-traded tickers <span className="normal-case tracking-normal">(90 days)</span>
               </h2>
               {topTickers.length === 0 ? (
-                <p className="surface-sunken rounded-lg px-4 py-8 text-center text-sm text-ink-muted">
-                  No ticker activity in this window.
-                </p>
+                <EmptyState
+                  icon={Landmark}
+                  tone="sunken"
+                  title="No ticker activity in this window."
+                />
               ) : (
                 <ul className="surface flex flex-col rounded-lg">
                   {topTickers.map((t) => (

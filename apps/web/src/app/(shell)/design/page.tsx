@@ -13,14 +13,18 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { Star } from "lucide-react";
+
 import {
   CountryFlag,
   CurrencyValue,
   DataTable,
+  EmptyState,
   LiveDot,
   LiveFeedRow,
   NotDisclosed,
   RelevanceBadge,
+  RowSkeleton,
   SourceBadge,
   StatCard,
   TransactionCodeBadge,
@@ -675,6 +679,35 @@ export default function DesignPage() {
               No insider transactions on record for this company.
             </p>
           </div>
+        </div>
+
+        <p className="max-w-[76ch] text-xs leading-relaxed text-ink-muted">
+          <strong className="font-semibold text-ink">One shape for “there is nothing here”.</strong>{" "}
+          Three empty screens had grown three different layouts, which made one kind of event read
+          as three. <code className="num">EmptyState</code> is an icon, one sentence saying what
+          would be here and what it is for, and at most one action — an empty state offering four
+          next steps is a menu, and a reader who wanted a menu would not be looking at an empty
+          list. It is also the only place outside the auth screens still allowed to centre: one
+          object, no column to scan.
+        </p>
+        <EmptyState
+          icon={Star}
+          title="Nothing tracked yet"
+          body="Every trade on this site is already yours to read. A watchlist just keeps the companies you care about in one place, and tells you when they file."
+          action={
+            <Button variant="outline" size="sm">
+              Browse companies
+            </Button>
+          }
+        />
+      </Section>
+
+      <Section
+        title="Loading — skeleton rows, never a spinner"
+        note="A spinner says “something is happening”. A row skeleton says “rows are coming, and this is the shape of one”, and holds the space they will occupy so nothing below jumps when they land. Bar widths track the real columns; the shimmer stops under prefers-reduced-motion."
+      >
+        <div className="surface @container overflow-hidden rounded-lg">
+          <RowSkeleton rows={4} height={40} />
         </div>
       </Section>
 

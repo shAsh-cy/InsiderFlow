@@ -7,8 +7,10 @@
  */
 import { Plus, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+import { EmptyState } from "@/components/domain/empty-state";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -153,6 +155,7 @@ function WatchCard({ item, onRemove }: { item: WatchlistItem; onRemove: () => vo
 
 export default function WatchlistPage() {
   const { items, remove } = useWatchlist();
+  const t = useTranslations("access");
 
   return (
     <div className="flex flex-col gap-6 pb-24">
@@ -166,19 +169,25 @@ export default function WatchlistPage() {
       <AddCompany />
 
       {items.length === 0 ? (
-        <div className="surface flex flex-col items-center gap-3 rounded-lg px-6 py-14 text-center">
-          <Star className="size-5 text-ink-faint" aria-hidden />
-          <p className="max-w-[52ch] text-sm text-ink-muted">
-            Nothing watched yet. Add a company above, or hit “Watch” on any{" "}
-            <Link
-              href="/companies"
-              className="text-accent-ink underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
-            >
-              company
-            </Link>{" "}
-            or insider page.
-          </p>
-        </div>
+        // Says what a watchlist is FOR, not just that it is empty — and
+        // says the data was already free either way, because a reader who
+        // thinks tracking is how you get access never adds anything.
+        <EmptyState
+          icon={Star}
+          title={t("watchlistEmptyTitle")}
+          body={
+            <>
+              {t("watchlistEmptyBody")}{" "}
+              <Link
+                href="/companies"
+                className="text-accent-ink underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
+              >
+                Browse companies
+              </Link>
+              .
+            </>
+          }
+        />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2" data-testid="watchlist-items">
           {items.map((item) => (

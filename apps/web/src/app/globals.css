@@ -582,6 +582,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .live-pulse,
+  /* The skeleton shimmer. Named explicitly rather than left to the
+     blanket duration override below: a placeholder that pulses forever is
+     the single most reported reduced-motion complaint about loading UI,
+     and "it happens to end up at 0.01ms" is not a decision. */
+  [data-slot="skeleton"],
   .tape-arrival [data-cell="value"] {
     animation: none !important;
   }
