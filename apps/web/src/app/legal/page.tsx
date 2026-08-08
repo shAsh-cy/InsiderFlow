@@ -47,7 +47,7 @@ export default function LegalPage() {
       {/* 68ch. This page exists to be read end to end, which is a measure
           decision before it is a colour one — and a measure is a limit on
           the right, not a pair of equal margins. */}
-      <main id="main" className="shell-gutter pt-20 pb-16">
+      <main id="main" data-shell-frame className="shell-frame pt-20 pb-16">
         <div data-content-region className="flex max-w-[68ch] flex-col gap-10">
           <header className="rail-bleed flex flex-col gap-3 border-b border-border pb-8">
             <h1 className="text-3xl font-semibold tracking-tight text-ink">

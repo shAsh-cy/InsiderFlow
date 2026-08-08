@@ -60,7 +60,7 @@ export default async function StatusPage() {
 
   if (!report) {
     return (
-      <main id="main" className="shell-gutter pt-20 pb-24">
+      <main id="main" data-shell-frame className="shell-frame pt-20 pb-24">
         <div data-content-region className="flex max-w-3xl flex-col gap-6">
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Status</h1>
           <div className="surface flex items-start gap-3 rounded-lg p-4">
@@ -83,7 +83,7 @@ export default async function StatusPage() {
   const healthy = report.status === "ok";
 
   return (
-    <main id="main" className="shell-gutter pt-20 pb-24">
+    <main id="main" data-shell-frame className="shell-frame pt-20 pb-24">
       <div data-content-region className="flex max-w-3xl flex-col gap-10">
         <header className="rail-bleed flex flex-col gap-4">
           <h1 className="text-3xl font-semibold tracking-tight text-ink">Status</h1>

@@ -96,15 +96,20 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg">
-        {/* Full-bleed, and padded to 24px so the brand lands on exactly the
-            x the sidebar's own item labels start from. */}
-        <div className="flex h-14 items-center gap-3 px-6">
+        {/* The rule is full-bleed; the bar's contents ride the same centred
+            frame as the page below, so the masthead and the sidebar are one
+            object rather than two that happen to be adjacent. The brand is
+            then indented by `--shell-nav-inset` — the exact distance from the
+            frame edge to a sidebar item's LABEL — so the wordmark and the
+            navigation beneath it stand on one line. */}
+        <div className="shell-frame flex h-14 items-center gap-2 sm:gap-3">
           {/* The brand is a link home, never a nav state. It carries no
               `aria-current` under any route, including "/". */}
           <Link
             href="/"
             data-brand
-            className="flex items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink"
+            style={{ marginInlineStart: "var(--shell-nav-inset)" }}
+            className="flex shrink-0 items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink"
           >
             <BrandMark />
             InsiderFlow

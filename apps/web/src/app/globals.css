@@ -316,39 +316,75 @@
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
-   THE LEFT EDGE (r3)
+   LAYOUT EQUILIBRIUM (r4) — supersedes r3's "THE LEFT EDGE"
 
-   Every app page keys to one vertical line. The line is `--shell-gutter`
-   from the start of the content region — inside the sidebar on wide
-   viewports, inside the viewport on narrow ones — and the page heading,
-   the cards, the forms and the tables all begin on it. What varies is
-   what sits to the RIGHT: a rail, a panel, or nothing.
+   r3 said flatly that `margin-inline: auto` was forbidden on app pages.
+   That was one rule doing two jobs, and it got one of them wrong. The
+   thing worth protecting is that the CONTENT does not re-centre itself —
+   a heading over a centred card is a broken column. Pinning the whole
+   page to the viewport's left edge was never required to achieve that,
+   and above ~1500px it produced a page hugging the left bezel with a
+   dead strip of paper to the right of it.
 
-   `margin-inline: auto` is forbidden on app pages. A readability
-   max-width is not: a measure of 72–80rem keeps prose and wide tables
-   legible, but it is applied as a right-hand LIMIT, never as a pair of
-   equal margins. Centring a data page means the left edge moves every
-   time the window is resized, and a moving left edge is one you cannot
-   scan down.
+   The corrected model has two levels, and the distinction is the whole
+   point:
 
-   Centring survives in exactly two places: authentication screens, and
-   true empty / error states — the cases where there is one thing on the
-   page and no column to scan.
+     THE SHELL is centred. `--shell-max` caps it at 88rem and
+     `margin-inline: auto` splits the remainder. Above 88rem the left
+     edge stops moving entirely — which is the property r3 actually
+     wanted, obtained by bounding the frame rather than by pinning it.
+
+     THE BLOCKS INSIDE IT are not. Headings, cards, forms and tables all
+     key to the shell's own start edge. No `margin-inline: auto`, no
+     `mx-auto`, no centred text on a column you scan down.
+
+   And the shell's width is meant to be USED. At >=1024px a page with
+   real secondary content becomes an asymmetric two-column grid across
+   the FULL frame (landing: hero 7/12 + tape 5/12; /stock: body + panel
+   rail; /settings: a two-column grid of cards). A single-column prose
+   page caps at `--shell-measure` and keeps its left edge — the right
+   margin inside a centred frame is whitespace on purpose, not a bug.
+
+   Centring inside the shell survives in exactly two places, as before:
+   authentication screens, and true empty / error states.
    ═════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Within the 32–40px band the brief specifies, on the 4px grid. */
-  --shell-gutter: 1.5rem;
-  /* How far the hanging rail reaches back into the gutter. Always leaves
-     8–12px of air between the rule and the region edge. */
-  --shell-rail-inset: 1rem;
-  /* The readability limit. Left-anchored, so it only ever trims the
-     right-hand side. */
-  --shell-measure: 78rem;
-  /* The sidebar's width, or zero where it is not rendered. Full-width
-     bands below the shell (the footer) use it to reach the same left
-     edge as the content region above them. */
+  /* The frame. 88rem = 1408px; the brief names 1400px and 88rem in the
+     same breath, and this system is rem-based throughout, so the rem
+     figure wins and the 8px is noted rather than split. */
+  --shell-max: 88rem;
+  /* The frame's own padding — the distance from the frame edge to the
+     first thing inside it (the sidebar on app routes, the content
+     itself everywhere else). */
+  --shell-pad: 1rem;
+  /* The gap between the sidebar and the content well. Zero where there
+     is no sidebar, because then `--shell-pad` already is that gap and
+     adding a second one would double-indent the column. */
+  --shell-gutter: 0rem;
+  /* How far the hanging rail reaches back out of the content column.
+     Always leaves ~6px of air between the rule and the frame edge, at
+     every breakpoint — hence three steps rather than two. */
+  --shell-rail-inset: 0.5rem;
+  /* The readability limit for prose. Left-anchored: it trims the right
+     side only, and only on pages that opt in. */
+  --shell-measure: 72rem;
+  /* The sidebar's width, or zero where it is not rendered. Bands that
+     sit outside the sidebar row (the footer) add it back to reach the
+     same left edge as the content above them. */
   --shell-sidebar: 0rem;
+  /* Frame edge → sidebar item LABEL. The sidebar is `px-3` and its items
+     carry a 2px state rule plus `pl-2.5`: 12 + 2 + 10 = 24px = 1.5rem
+     exactly. The masthead brand borrows it so the wordmark and the nav
+     labels beneath it stand on one line. Zero where there is no sidebar. */
+  --shell-nav-inset: 0rem;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --shell-pad: 1.5rem;
+    --shell-rail-inset: 1rem;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -356,23 +392,47 @@
     --shell-gutter: 2.25rem;
     --shell-rail-inset: 1.5rem;
     --shell-sidebar: 14rem;
+    --shell-nav-inset: 1.5rem;
   }
 }
 
-/* The content region: gutter left, matching air right. */
-.shell-gutter {
-  padding-inline: var(--shell-gutter);
+/* The frame itself. Every page — app route, marketing page, masthead
+   row and footer band alike — sits in one of these, which is what makes
+   "the same left edge" a single number rather than a coincidence.
+   Marked with `data-shell-frame` so the layout spec can find the
+   boundary and stop looking for centring above it. */
+.shell-frame {
+  width: 100%;
+  max-width: var(--shell-max);
+  margin-inline: auto;
+  padding-inline: var(--shell-pad);
 }
 
-/* A full-width band that still lands on the content region's left edge. */
+/* The content well, inside the frame and to the right of the sidebar. */
+.shell-content {
+  padding-inline-start: var(--shell-gutter);
+}
+
+/* A band that sits outside the sidebar row — the footer — and still
+   lands on the content region's left edge. Adds the sidebar back by
+   hand because it has no sidebar of its own to sit beside. Note this is
+   a frame in its own right: it centres, so it tracks the shell above it
+   at every viewport instead of reconstructing an edge from the left of
+   the screen (which is what r3's version did, and which broke the
+   moment the shell stopped starting at x=0). */
 .shell-aligned {
-  padding-inline-start: calc(var(--shell-sidebar) + var(--shell-gutter));
-  padding-inline-end: var(--shell-gutter);
+  width: 100%;
+  max-width: var(--shell-max);
+  margin-inline: auto;
+  padding-inline-start: calc(var(--shell-pad) + var(--shell-sidebar) + var(--shell-gutter));
+  padding-inline-end: var(--shell-pad);
 }
 
 /* The measure. Deliberately `margin-inline-end: auto` and nothing on the
    start side — written out rather than left to the initial value so that
-   the asymmetry is visible in the source, not inferred from its absence. */
+   the asymmetry is visible in the source, not inferred from its absence.
+   Applied per page, not by the shell: a table wants the frame, a
+   paragraph wants 72rem. */
 .shell-measure {
   max-width: var(--shell-measure);
   margin-inline-start: 0;

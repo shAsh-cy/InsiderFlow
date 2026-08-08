@@ -10,11 +10,14 @@ import Link from "next/link";
  */
 export function SiteFooter() {
   return (
-    // A full-width band that still starts on the content region's left edge —
-    // the disclaimer is the last thing in the column, not a separate centred
-    // object beneath it.
-    <footer className="shell-aligned mt-16 border-t border-border py-8">
-      <div className="shell-measure flex flex-col gap-3 text-xs leading-relaxed text-ink-faint">
+    // The rule is full-bleed; the words are not. The disclaimer is the last
+    // thing in the content column, not a separate object beneath it, so it
+    // starts on the content region's left edge — reached by centring the same
+    // frame the shell uses and adding the sidebar back, rather than by
+    // measuring from the left of the screen (which stops being the left of the
+    // shell the moment the shell is centred).
+    <footer className="mt-16 border-t border-border">
+      <div className="shell-aligned flex flex-col gap-3 py-8 text-xs leading-relaxed text-ink-faint">
         <p data-testid="footer-disclaimer" className="max-w-[68ch]">
           <strong className="font-semibold text-ink-muted">Not investment advice.</strong>{" "}
           InsiderFlow republishes public regulatory filings for research and education. Filings can

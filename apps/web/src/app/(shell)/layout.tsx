@@ -4,24 +4,28 @@ import { Sidebar } from "@/components/shell/sidebar";
 /**
  * Data-dense app shell: fixed top bar (root layout) + sidebar + content well.
  *
- * The shell is full-bleed and the content well is left-anchored inside it.
- * There is no `mx-auto` here on purpose: a centred well moves its left edge
- * every time the window is resized, and every page in this product is a
- * column you scan down. The readability limit lives on `.shell-measure`,
- * which trims the right-hand side only.
+ * The FRAME is centred and capped at `--shell-max`; the CONTENT inside it is
+ * not. That distinction is the whole of r4's Step 1 and it is worth stating
+ * twice: `margin-inline: auto` on `.shell-frame` is required, and
+ * `margin-inline: auto` on anything inside `[data-content-region]` is still
+ * forbidden. Bounding the frame gives r3's real prize — a left edge that
+ * stops moving once the window is wider than the design — without the
+ * left-bezel hug and the dead right-hand strip that pinning it to x=0 caused.
  *
  * `data-content-region` marks the well for the layout spec, which asserts
- * that the first element of every app page starts on exactly the same x.
+ * that every top-level block on every app page starts on exactly the same x;
+ * `data-shell-frame` marks the boundary above which centring is legal.
  */
 export default function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col pt-14">
-      <div className="flex">
+      <div data-shell-frame className="shell-frame flex">
         <Sidebar />
-        <main id="main" className="shell-gutter min-w-0 flex-1 py-8">
-          <div data-content-region className="shell-measure">
-            {children}
-          </div>
+        {/* `min-w-0` is load-bearing: without it a wide table sets this
+            column's min-content width and pushes the whole frame past the
+            viewport instead of scrolling inside its own well. */}
+        <main id="main" className="shell-content min-w-0 flex-1 py-8">
+          <div data-content-region>{children}</div>
         </main>
       </div>
       {/* Every page carries the disclaimer — any page can be an entry point. */}
