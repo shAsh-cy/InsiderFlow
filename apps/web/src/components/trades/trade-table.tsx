@@ -45,6 +45,18 @@ export function TradeTable({
     return map;
   }, [priceContext]);
 
+  /*
+   * Column priority — what a narrow screen keeps.
+   *
+   * 1 (always): Date, Company, Code, Value. Between them they say
+   *   which filing this is and how big it was, which is the whole of
+   *   what a tape row is for.
+   * 2 (from 768): Insider.
+   * 3 (from 1024): Shares, vs close, Type, Source.
+   *
+   * Nothing is lost: DataTable offers "All columns" below lg, and the
+   * full record is a tap away on the stock page either way.
+   */
   const columns = useMemo<ColumnDef<TradeRow, unknown>[]>(() => {
     const cols: ColumnDef<TradeRow, unknown>[] = [
       {
@@ -89,6 +101,9 @@ export function TradeTable({
         accessorFn: (r) => r.insider.name,
         header: "Insider",
         size: 200,
+        // Priority 2: the name matters, but not before the row can be
+        // identified and its figure read.
+        meta: { priority: 2 },
         cell: ({ row }) => (
           <Link
             href={`/insider/${row.original.insider.id}`}
@@ -109,7 +124,7 @@ export function TradeTable({
         accessorKey: "shares",
         header: "Shares",
         size: 100,
-        meta: { align: "right" },
+        meta: { align: "right", priority: 3 },
         cell: ({ row }) =>
           row.original.shares === null ? (
             <NotDisclosed />
@@ -136,7 +151,7 @@ export function TradeTable({
         header: "vs close",
         size: 92,
         enableSorting: false,
-        meta: { align: "right" },
+        meta: { align: "right", priority: 3 },
         cell: ({ row }) => {
           const point = priceByDate.get(row.original.txnDate);
           if (!point || row.original.price === null) {
@@ -152,6 +167,7 @@ export function TradeTable({
         accessorKey: "relevance",
         header: "Type",
         size: 72,
+        meta: { priority: 3 },
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1.5">
             <RelevanceBadge relevance={row.original.relevance} />
@@ -167,6 +183,7 @@ export function TradeTable({
         accessorKey: "source",
         header: "Source",
         size: 96,
+        meta: { priority: 3 },
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-1.5">
             <SourceBadge source={row.original.source} />

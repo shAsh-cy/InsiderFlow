@@ -160,3 +160,72 @@ test.describe("detail routes fit too @mobile", () => {
     }
   });
 });
+
+test.describe("wide tables on a narrow screen @mobile", () => {
+  test("secondary columns fold, and the fold is reversible", async ({ page }) => {
+    await page.goto("/screener");
+    const scroller = page.getByTestId("data-table-scroll");
+    await expect(scroller).toBeVisible();
+
+    const visibleHeaders = () =>
+      page.$$eval("[data-testid='data-table-scroll'] th", (els) =>
+        els.filter((el) => getComputedStyle(el).display !== "none").map((el) => el.textContent),
+      );
+
+    const key = await visibleHeaders();
+    // Date, Company, Code, Value: which filing this is, and how big.
+    expect(key.length, `key columns: ${key.join(", ")}`).toBeLessThanOrEqual(4);
+    expect(key.join(" ")).toMatch(/Date/);
+    expect(key.join(" ")).toMatch(/Value/);
+
+    // Nothing is lost — the rest is one tap away. Hiding a filing's source
+    // with no way to ask for it would make the phone a lesser view of the
+    // truth rather than a smaller one.
+    const toggle = page.getByTestId("table-columns-toggle");
+    await expect(toggle).toBeVisible();
+    await toggle.tap();
+    const all = await visibleHeaders();
+    expect(all.length, "every column back").toBeGreaterThan(key.length);
+    expect(all.join(" ")).toMatch(/Source/);
+  });
+
+  test("the first column freezes and the scrollable edge is drawn", async ({ page }) => {
+    await page.goto("/screener");
+    const scroller = page.getByTestId("data-table-scroll");
+    // There IS more table than well — otherwise none of this applies.
+    const overflow = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+    test.skip(overflow <= 1, "table fits — nothing to freeze against");
+
+    await expect(scroller).toHaveAttribute("data-scroll", "start");
+    const firstCellPosition = await page.$eval(
+      "[data-testid='data-table-scroll'] tbody td",
+      (el) => getComputedStyle(el).position,
+    );
+    expect(firstCellPosition, "the first column is frozen").toBe("sticky");
+
+    // Scroll it and the row keeps its identity column in place.
+    const before = await page.$eval("[data-testid='data-table-scroll'] tbody td", (el) =>
+      Math.round(el.getBoundingClientRect().x),
+    );
+    await scroller.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    await expect(scroller).toHaveAttribute("data-scroll", "end");
+    const after = await page.$eval("[data-testid='data-table-scroll'] tbody td", (el) =>
+      Math.round(el.getBoundingClientRect().x),
+    );
+    expect(Math.abs(after - before), "the frozen column did not move").toBeLessThanOrEqual(2);
+  });
+
+  test("the table does not eat the whole screen, and is keyboard-scrollable", async ({ page }) => {
+    await page.goto("/screener");
+    const scroller = page.getByTestId("data-table-scroll");
+    const box = await scroller.boundingBox();
+    const viewport = page.viewportSize()!;
+    // A 560px well on a phone captures every vertical drag inside it, so
+    // the page cannot be scrolled past the table by touch at all.
+    expect(box!.height).toBeLessThanOrEqual(viewport.height * 0.75);
+    // WCAG 2.1.1: a scroll container with no focusable child needs to be
+    // focusable itself, or a keyboard cannot reach the columns to its right.
+    await expect(scroller).toHaveAttribute("tabindex", "0");
+    await expect(scroller).toHaveRole("region");
+  });
+});

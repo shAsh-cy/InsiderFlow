@@ -9,14 +9,37 @@ import { cn } from "@/lib/utils";
  * everywhere. The container keeps `overflow-x-auto` so a wide table
  * scrolls inside its own well rather than pushing the page sideways.
  */
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  bare = false,
+  ...props
+}: React.ComponentProps<"table"> & {
+  /**
+   * Render the <table> without the scroll wrapper.
+   *
+   * The wrapper is right for a plain table on a page. It is wrong inside a
+   * container that already scrolls, and quietly so: an element with
+   * `overflow-x: auto` and unspecified `overflow-y` computes `overflow-y:
+   * auto` too (CSS Overflow 3 §3.3), so the wrapper IS a scroll container,
+   * and it becomes the nearest scrollport for anything inside it. That is
+   * how DataTable's `sticky top-0` header ended up sticking to a box of
+   * `height: auto` that can never scroll vertically, while the box that
+   * actually scrolls was one level further out — a sticky header that has
+   * never once stuck, at any viewport, since it was written.
+   */
+  bare?: boolean;
+}) {
+  const table = (
+    <table
+      data-slot="table"
+      className={cn("w-full caption-bottom text-sm", className)}
+      {...props}
+    />
+  );
+  if (bare) return table;
   return (
     <div data-slot="table-container" className="relative w-full overflow-x-auto">
-      <table
-        data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
-      />
+      {table}
     </div>
   );
 }

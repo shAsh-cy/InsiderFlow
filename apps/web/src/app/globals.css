@@ -616,6 +616,132 @@ body {
   animation: tape-flash-sell 600ms ease-out 1;
 }
 
+/* ═════════════════════════════════════════════════════════════════════
+   WIDE TABLES ON NARROW SCREENS (r4)
+
+   The screener's column set sums to about 1018px of declared width, and
+   every cell is `whitespace-nowrap`, so the table is wider than the
+   content region at EVERY viewport below roughly 1320px — not just on a
+   phone. It scrolls inside its own well, which is correct, but with no
+   frozen column and no visible edge: scroll right and the row loses the
+   date and the ticker that said which row it was, and there was nothing
+   on screen to suggest the columns existed in the first place.
+
+   Three parts. Column priority drops the secondary columns below their
+   breakpoint (and a toggle in DataTable puts them back, because hiding a
+   filing's source with no way to ask for it makes the phone a lesser
+   view of the truth rather than a smaller one). The first column freezes,
+   so the row keeps its name while the figures move under it. And the
+   scrolled edge is drawn, so the well says which way there is more.
+   ═════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767px) {
+  [data-table-columns="key"] [data-priority="2"],
+  [data-table-columns="key"] [data-priority="3"] {
+    display: none;
+  }
+
+  /* Every column that survives here is load-bearing, so the gutters give
+     way before the content does. Four columns at `p-2` spend 64px of a
+     358px well on padding alone. */
+  .table-scroll :is(th, td) {
+    padding-inline: 0.375rem;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  [data-table-columns="key"] [data-priority="3"] {
+    display: none;
+  }
+}
+
+/* The frozen index column.
+
+   Deliberately its own ground rather than `inherit`: the zebra tint is a
+   semi-transparent `bg-fill/55` on the ROW, and a sticky cell that
+   inherits it lets the scrolling columns show through from underneath.
+   Painting it `--surface-sunken` with a hairline on its trailing edge
+   makes it read as what it is — a fixed gutter the rest of the table
+   slides past — instead of as a zebra stripe that stopped working. */
+.table-scroll th:first-child,
+.table-scroll td:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: var(--surface-sunken);
+}
+
+.table-scroll thead th:first-child {
+  /* Above the body's frozen cells AND below nothing: this one corner is
+     both stuck across and stuck down. */
+  z-index: 3;
+}
+
+.table-scroll th:first-child::after,
+.table-scroll td:first-child::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+/* Only worth freezing while something is actually moving past it. */
+.table-scroll[data-scroll="none"] th:first-child,
+.table-scroll[data-scroll="none"] td:first-child {
+  position: static;
+  background: transparent;
+}
+
+.table-scroll[data-scroll="none"] th:first-child::after,
+.table-scroll[data-scroll="none"] td:first-child::after {
+  content: none;
+}
+
+/* The affordance. A fade at whichever edge still has table behind it —
+   drawn on a wrapper that does NOT scroll, so it stays put while the
+   columns move under it, and present only when there is somewhere to go,
+   so it never suggests content that is not there. */
+.table-frame {
+  position: relative;
+}
+
+.table-frame::before,
+.table-frame::after {
+  content: "";
+  position: absolute;
+  inset-block: 1px;
+  z-index: 4;
+  /* Narrow on purpose: this marks an edge, it does not obscure a column.
+     At 2rem the last figure in a cut-off value column reads as damaged
+     rather than as continuing. */
+  width: 1.25rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+
+.table-frame::before {
+  inset-inline-start: 1px;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+
+.table-frame::after {
+  inset-inline-end: 1px;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+
+.table-frame:has([data-scroll="start"])::after,
+.table-frame:has([data-scroll="middle"])::after {
+  opacity: 1;
+}
+
+.table-frame:has([data-scroll="middle"])::before,
+.table-frame:has([data-scroll="end"])::before {
+  opacity: 1;
+}
+
 /* ── The tape row's height ────────────────────────────────────────────
    One number, declared once, read by both the CSS that draws the row and
    the JS that virtualizes it. The window virtualizer needs a pixel
