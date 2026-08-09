@@ -101,7 +101,19 @@ export default async function LeaderboardPage({
           accent is SyntheticDataNotice below, and only when it fires. */}
       <div className="surface-sunken flex items-start gap-3 rounded-lg p-4 text-sm">
         <Info className="mt-0.5 size-4 shrink-0 text-ink-faint" aria-hidden />
-        <p className="text-ink-muted">
+        {/* A measure, on a paragraph that had none.
+
+            Across the full content region this line ran to about 150
+            characters, which is twice any readable measure — and it left
+            the paragraph sitting exactly on a wrap boundary. When the web
+            font swapped in, the block gained a line and pushed the whole
+            table 18px down: CLS 0.196, and a Lighthouse score of 90 on a
+            page that is otherwise instant. r4 did not create the reflow
+            (`display: swap` can always relay a paragraph, because a
+            size-adjusted fallback matches vertical metrics and not glyph
+            advances) — it narrowed the region by 44px at 1440 and moved
+            this particular paragraph onto the edge. */}
+        <p className="max-w-[80ch] text-ink-muted">
           These are <strong>backward-looking descriptive statistics</strong> on public filings, not
           predictions and <strong>not investment advice</strong>. Past returns say nothing about
           future ones, and a high rank can still be luck — which is why the composite score is
