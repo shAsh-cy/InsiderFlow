@@ -2,6 +2,159 @@
 
 All notable changes to InsiderFlow. Newest first.
 
+## r5 — Layout v3, dark by default, and width that buys information
+
+### Layout v3 — chrome pins, content is fluid
+
+Two rounds went past each other, and the rule that stops it separates the
+two things they kept treating as one.
+
+r3 pinned every page to the viewport's left edge and left a dead strip of
+paper down the right of any wide screen. r4 corrected that by centring the
+whole frame — which centred the CHROME with it, so at 1920 the sidebar
+floated 250px in from the bezel and the application read as an island
+sitting on a desktop rather than as the window it is. Both applied one rule
+to two things that want opposite treatment.
+
+**Chrome pins.** The masthead spans the viewport and the sidebar's left edge
+IS the screen's left edge. A window frame that floats is not a frame. The
+bar's _contents_ pin too, not only its rule: r4 rode the contents on the
+centred frame while the rule beneath them spanned the screen, which is the
+visual tell that the two had come apart.
+
+**Content is fluid.** The region runs from (sidebar + gutter) to (viewport −
+gutter) with no cap at all. A tape, a table, a stat strip and a grid all get
+better with width; capping them buys nothing and costs the width. Measured:
+992px of content region at 1280, 1152 at 1440, 1632 at 1920, with a 32px
+right-hand gutter at every one.
+
+**Prose is the one exception.** A reading block caps at ~72ch keyed to the
+region's LEFT edge, and there the right-hand whitespace is the point — r4's
+own leaderboard CLS bug came from a paragraph with no measure at all.
+
+`--shell-max`, `--shell-pad` and `.shell-frame` are gone. Routes with no
+chrome to pin against take `clamp(24px, 6vw, 120px)`, which tracks the
+viewport instead of stepping at a breakpoint and stops at 120px so a 2560px
+screen does not become a letterbox. Landing gutters measure 77/77 at 1280,
+86/86 at 1440, 115/115 at 1920.
+
+The spec is rewritten, not adjusted: r4's frame-centring assertions asserted
+the opposite of the contract, and a test that has to be inverted was
+encoding an implementation rather than a rule. 15 tests to 20, including one
+that the region genuinely WIDENS from 1440 to 2560 rather than merely moving
+further from the edge. Published on `/design` with a drawn diagram, because
+the failure being replaced was two rounds reading one sentence and picturing
+different boxes.
+
+### Dark is the default, and not the machine's decision
+
+The token layer is written dark-first — `:root` IS the dark theme, `.light`
+is the override — and the accent is tuned twice because one green cannot be
+both a fill and a legible label on two grounds. Deferring that to
+`prefers-color-scheme` handed roughly half of all first visits a theme the
+design does not lead with, and made the product's identity a property of the
+visitor's laptop.
+
+`defaultTheme="dark"`, `enableSystem={false}`. A stored choice still wins and
+nothing clears one — **a browser that was toggled to light before this change
+stays light, and needs one toggle click to see the new default.** Taking
+someone's preference away to demonstrate a default would be a worse bug than
+the one being fixed.
+
+Six tests, each in a fresh context. The flash test records every value
+`<html>`'s class attribute ever holds and fails if any was ever the light
+theme; writing it caught a bug in the instrument first, since an init script
+runs before `document.documentElement` exists and the observer silently never
+attached.
+
+### Width buys information, not void
+
+A fluid row at 1920 stretched about 600px of nothing between the identity
+cluster and the numerics, because the insider's name was the only flexible
+cell and took every pixel of the slack.
+
+Two columns arrive once there is room, and the role shares the slack with the
+name so the middle is filled rather than pulled apart. **Role** moves the
+officer title out of the name cell, where it had been a second string
+competing for the same truncation budget. **Price per share** has three
+states and the difference between them is the point: a filed price is shown
+as a fact; where the filing states none but gives both value and shares, the
+quotient is shown with a tilde and a title saying it is an average across
+whatever the row aggregates; neither available renders NotDisclosed, because
+a zero there would be a fabricated fact about somebody's trade.
+
+The tape gates on a CONTAINER stop, not a viewport one, and that distinction
+is the whole reason the row is container-queried: the landing page's tape is
+a 700px column on the same 1920px screen and must not sprout columns it has
+no room for. DataTable gains a fourth priority tier, deliberately excluded
+from the "All columns" affordance — tiers 2 and 3 are withheld on a narrow
+screen and offering them back is honest, while tier 4 is progressive and
+offering to "show" it on a phone would promise width the row does not have.
+
+### The polish sweep
+
+**One control family.** The filter row mixed 32px pill chips with raw native
+`<select>`s — different height, different radius, the platform's arrow and
+the platform's focus treatment — so they read as two toolbars that landed on
+one line. The select stays a real `<select>`, because a native picker on a
+phone beats a matching arrow, but loses its chrome to `appearance-none`. The
+sector input, the clear control and the code legend join it; the legend was a
+faint text link with a chevron, which reads as a footnote rather than as
+something you press, and what it opens is the key to twenty badges.
+
+**One header pattern.** "Live" was an eyebrow with its status pinned right,
+"History" a panel title in another size and colour with nothing beside it,
+"Today on the tape" a page heading — three spellings of one object on one
+page. `SectionHeader` is label-left, meta-right, on a shared baseline, with
+three tones that are a scale rather than an accident.
+
+**Stat cards on one baseline**, with the hint pushed to the bottom so the
+figures align whether or not a card carries one, and each card saying what
+window it covers. When nothing has ever been ingested the hint says so
+outright, so a zero reads as a stated fact rather than a broken panel.
+
+**The account control** was a bare letter with no boundary of its own; it is
+now a chip with a drawn avatar and a chevron.
+
+Also: the treemap holds its last usable measurement. `ParentSize` reports 0
+for a frame whenever its box is re-measured from scratch, and the canvas
+refuses to draw below 10px, so a single zero blanked the whole chart.
+
+### The mobile-performance attempt, and where it stopped
+
+The landing tape opens its EventSource on idle rather than during hydration:
+the rows on screen are server-rendered, so the stream keeps them current
+rather than putting them there. It bought nothing measurable — landing
+medians 83 before and 83 after, against a run-to-run spread of about ±4 — and
+stays because it is correct and free.
+
+Checked and already clean: next/font is not double-loading, with three IBM
+Plex Mono weights (all three used) and one variable Onest face.
+
+The motion split did not happen, and the reason is measured rather than
+assumed. A throwaway build with the landing's reveals removed scored 86/82/86
+against 78/83/84 — about three points of median, ranges overlapping — and it
+does not remove the chunk anyway, because StatCard's spring count-up imports
+the runtime too. The real change would be rewriting three animation
+components, and three points of a noisy metric is not worth putting a stated
+reduced-motion contract through that.
+
+Landing 78/83/84, `/trades` 89/83/90, against r4's 67–82 and 77–89 on the
+same harness. Main-thread work on the landing is down from 4.8s to 3.8s —
+script evaluation 1333ms to 1042ms, style and layout 1284ms to 811ms — which
+is Layout v3 paying off. Landing remains short of the 85 target by about two
+points of a metric that moves four. What is left is React hydrating a page of
+client components at 4× CPU; going further means deciding the landing tape
+should not be live on first paint. That is a product decision.
+
+### Verification
+
+- 287 unit/integration; 192 Playwright e2e across three projects (was 177).
+- Lighthouse desktop: accessibility **100 on every route**; performance 99–100
+  everywhere except the 10k-row `/design` showcase.
+- axe-core contrast: zero failures, 14 routes × both themes.
+- Layout v3 contract measured at 1280/1440/1920 on every route.
+
 ## r4 — a shell that is centred, and a product that fits on a phone
 
 ### Layout equilibrium
