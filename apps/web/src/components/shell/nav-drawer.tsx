@@ -40,9 +40,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { STAGGER_DENSE, springs } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
-import { LocaleSwitcher } from "./locale-switcher";
 import { activeNavHref, NAV } from "./nav-items";
-import { ThemeToggle } from "./theme-toggle";
 
 export default function NavDrawer({
   open,
