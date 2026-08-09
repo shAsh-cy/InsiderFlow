@@ -454,6 +454,18 @@ export default function DesignPage() {
           tokens in both.
         </p>
         <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-ink-muted">
+          <strong className="font-semibold text-ink">
+            Dark is the default, and not the machine’s decision.
+          </strong>{" "}
+          The token layer is written dark-first — <span className="num">:root</span> IS the dark
+          theme and <span className="num">.light</span> is the override — and the accent is tuned
+          twice, because one green cannot be both a fill and a legible label on two grounds.
+          Deferring that to <span className="num">prefers-color-scheme</span> handed roughly half of
+          all first visits a theme the design does not lead with, and made the product’s identity a
+          property of the visitor’s laptop. Light is one click away and a stored choice still wins:
+          changing the default does not clear anyone’s preference.
+        </p>
+        <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-ink-muted">
           Mono is reserved for numbers, tickers, SEC codes and microtext. Headings and body are
           sentence-case Onest: a heading set in uppercase mono reads as a system message rather than
           a sentence, and this product has enough machine output already.
