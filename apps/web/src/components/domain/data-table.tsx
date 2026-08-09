@@ -39,10 +39,15 @@ import { cn } from "@/lib/utils";
  * adding a prop to this component's signature, which is part of the design
  * system's contract.
  *
- * `priority` is what a narrow screen drops:
+ * `priority` is what a narrow screen drops — and, at tier 4, what a wide
+ * one gains:
  *   1  always shown — the row's identity and its figure
  *   2  shown from 768px
  *   3  shown from 1024px
+ *   4  shown from 1440px — progressive, not withheld. These columns exist
+ *      so a fluid row spends its width on information instead of on a void
+ *      down the middle; below 1440 there is no room and nothing is lost,
+ *      because they were never part of the narrow row.
  * Unset behaves as 1, so a caller that has not thought about it loses
  * nothing.
  */
@@ -50,7 +55,7 @@ declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     align?: "left" | "right";
-    priority?: 1 | 2 | 3;
+    priority?: 1 | 2 | 3 | 4;
   }
 }
 
@@ -168,7 +173,13 @@ export function DataTable<TData>({
   const paddingBottom =
     virtualRows.length > 0 ? totalSize - virtualRows[virtualRows.length - 1]!.end : 0;
 
-  const hiddenBelow = columns.filter((c) => (c.meta?.priority ?? 1) > 1).length;
+  // Tier 4 is deliberately excluded: those columns are progressive rather
+  // than withheld, so offering to "show" them on a phone would promise
+  // width the row does not have.
+  const hiddenBelow = columns.filter((c) => {
+    const priority = c.meta?.priority ?? 1;
+    return priority > 1 && priority < 4;
+  }).length;
 
   return (
     <div className="flex flex-col gap-1.5">

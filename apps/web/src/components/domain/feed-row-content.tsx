@@ -1,11 +1,12 @@
 import type { TradeRow } from "@/lib/api/queries";
-import { formatShares, timeAgo } from "@/lib/format";
+import { formatShares, pricePerShare, timeAgo } from "@/lib/format";
 
 import { cn } from "@/lib/utils";
 
 import { RowActions } from "@/components/feed/row-actions";
 
 import { CountryFlag } from "./country-flag";
+import { NotDisclosed } from "./not-disclosed";
 import { CurrencyValue } from "./currency-value";
 import { RelevanceBadge } from "./relevance-badge";
 import { SourceBadge } from "./source-badge";
@@ -40,6 +41,7 @@ function DirectionGlyph({ direction }: { direction: string | null }) {
  */
 export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) {
   const shares = formatShares(trade.shares);
+  const unit = pricePerShare(trade);
   return (
     <>
       {/* The `col-start`/`row-start` pairs are the two-line phone layout and
@@ -74,6 +76,32 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
       >
         {trade.insider.name}
       </span>
+
+      {/*
+       * Width buys information, not void.
+       *
+       * On a fluid row at 1920 the identity cluster and the numeric cluster
+       * were 600px apart with nothing between them, because the name was the
+       * only flexible cell and it took every pixel of the slack. Two more
+       * columns arrive once there is genuinely room, and the role shares the
+       * slack with the name so the middle is filled rather than stretched.
+       *
+       * `@wide` is a CONTAINER stop, not a viewport one: the landing page's
+       * tape strip is 700px on the same 1920px screen, and it should not
+       * sprout columns it has no room for. That distinction is the entire
+       * reason this row is container-queried.
+       */}
+      <span
+        data-cell="role"
+        title={trade.insider.title ?? undefined}
+        className="hidden min-w-0 flex-1 truncate text-2xs text-ink-faint @wide:block"
+      >
+        {/* The house null glyph, not a hand-rolled em dash: `NotDisclosed`
+            IS an em dash in the mono face, and it carries the label that
+            says WHY the cell is empty. A bare dash in a scanned column is
+            indistinguishable from a rendering bug. */}
+        {trade.insider.title ?? <NotDisclosed label="No officer title on this filing" />}
+      </span>
       {/* Line two's timestamp. A second element rather than a responsive
           rewrite of the one below, because that one is gated on the
           CONTAINER (`@3xl`) and this one on the VIEWPORT — mixing the two
@@ -91,6 +119,36 @@ export function FeedRowContent({ trade, now }: { trade: TradeRow; now?: Date }) 
           row renders both full-width on /trades and inside a narrow hero
           column on the landing page; keyed to the viewport, the narrow
           case shows every column on a wide screen and clips them. */}
+      {/* Per-share price, left of the share count so the numeric cluster
+          reads price × quantity = value from left to right. A derived
+          figure is marked with a tilde and says so on hover: value ÷ shares
+          is an AVERAGE across whatever the row aggregates, which is not the
+          same claim as a price the filing actually states. Neither figure
+          available renders NotDisclosed — a zero here would be a fabricated
+          fact about somebody's trade. */}
+      <span
+        data-cell="unit-price"
+        className="num hidden w-28 shrink-0 items-center justify-end gap-0.5 text-right text-2xs text-ink-faint @wide:flex"
+      >
+        {unit === null ? (
+          <NotDisclosed label="No price per share on this filing, and no share count to derive one from" />
+        ) : (
+          <>
+            {unit.derived ? (
+              <span aria-hidden title="Derived: value ÷ shares, an average across this filing">
+                ~
+              </span>
+            ) : null}
+            <CurrencyValue
+              value={unit.price}
+              currency={trade.currency}
+              valueUsd={unit.priceUsd}
+              className="text-2xs"
+            />
+          </>
+        )}
+      </span>
+
       <span className="num hidden w-24 shrink-0 text-right text-2xs text-ink-faint @md:block">
         {shares ? `${shares} sh` : ""}
       </span>

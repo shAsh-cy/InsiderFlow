@@ -46,7 +46,16 @@ async function expectTarget(locator: Locator, name: string) {
 async function openDrawer(page: Page) {
   const trigger = page.getByTestId("nav-drawer-trigger");
   await trigger.click();
-  await expect(page.getByTestId("nav-drawer")).toBeVisible();
+  const drawer = page.getByTestId("nav-drawer");
+  await expect(drawer).toBeVisible();
+  // …and AT REST. The panel springs in from x=-100%, and Radix's
+  // dismissable layer only starts listening for an outside press once it
+  // has mounted. A test that clicks the scrim while the panel is still
+  // travelling gets nothing and reports it as "the scrim does not close
+  // it". Polling the box settles both conditions at once.
+  await expect
+    .poll(async () => Math.round((await drawer.boundingBox())?.x ?? -999), { timeout: 5000 })
+    .toBe(0);
   return trigger;
 }
 

@@ -331,3 +331,64 @@ test.describe("the tape on a phone @mobile", () => {
     await expect(page.locator("[data-tape-row]").first().getByTestId("row-watch")).toBeHidden();
   });
 });
+
+test.describe("width buys information", () => {
+  /**
+   * A fluid row at 1920 used to stretch ~600px of nothing between the
+   * identity cluster and the numerics, because the insider's name was the
+   * only flexible cell and it took every pixel of the slack. Two columns
+   * arrive once there is genuinely room, and the middle is filled rather
+   * than stretched.
+   */
+  test("the tape gains role and price columns once the row is wide", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await gotoTape(page);
+    const row = page.locator("[data-tape-row]").first();
+
+    await expect(row.locator("[data-cell='role']")).toBeVisible();
+    await expect(row.locator("[data-cell='unit-price']")).toBeVisible();
+
+    // The gap between the end of the identity/role band and the start of
+    // the numeric cluster is what "void" meant. Measured, not eyeballed.
+    const gap = await row.evaluate((el) => {
+      const role = el.querySelector("[data-cell='role']")!.getBoundingClientRect();
+      const price = el.querySelector("[data-cell='unit-price']")!.getBoundingClientRect();
+      return Math.round(price.left - role.right);
+    });
+    expect(gap, "no cavernous gap between the clusters").toBeLessThan(80);
+  });
+
+  test("they are absent below 1440, where there is no room for them", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await gotoTape(page);
+    const row = page.locator("[data-tape-row]").first();
+    await expect(row.locator("[data-cell='role']")).toBeHidden();
+    await expect(row.locator("[data-cell='unit-price']")).toBeHidden();
+  });
+
+  test("the landing strip does NOT sprout them on the same wide screen", async ({ page }) => {
+    // The whole reason this row is container-queried rather than
+    // viewport-queried: the landing tape is a ~700px column on a 1920px
+    // screen, and it has no room for columns the /trades tape has.
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await page.goto("/", { waitUntil: "networkidle" });
+    const row = page.locator("[data-tape-row]").first();
+    await expect(row).toBeVisible();
+    await expect(row.locator("[data-cell='role']")).toBeHidden();
+  });
+
+  test("a per-share price is never fabricated", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await gotoTape(page);
+    // Every price cell either shows a figure or the house null glyph.
+    // A zero would be a fabricated fact about somebody's trade.
+    const cells = await page.$$eval("[data-cell='unit-price']", (els) =>
+      els.map((el) => el.textContent?.trim() ?? ""),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    for (const text of cells) {
+      expect(text, "empty price cell").not.toBe("");
+      expect(text, `fabricated zero: "${text}"`).not.toMatch(/^[~]?[$₹]0(\.0+)?$/);
+    }
+  });
+});

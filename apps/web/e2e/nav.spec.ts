@@ -104,7 +104,17 @@ test.describe("navigation state", () => {
   });
 
   test("every nav item shows a focus ring when tabbed to", async ({ page }) => {
-    await page.goto("/trades");
+    // `networkidle`, and then focus is asserted to have LANDED before the
+    // outline is read. Hydration can replace a sidebar link between the
+    // locator resolving and `.focus()` running, and `getComputedStyle` on
+    // the node that lost the race reports `outline-style: none` — which
+    // reads as "this item has no focus ring" rather than as "the ring was
+    // measured on a node that is no longer in the document".
+    //
+    // Note also which assertion does the work: `outline-width` computes to
+    // 3px (the `medium` initial value) even when the style is `none`, so
+    // the width check passes trivially and the STYLE check is the real one.
+    await page.goto("/trades", { waitUntil: "networkidle" });
     const items = page.locator("aside nav a");
     const count = await items.count();
     expect(count).toBeGreaterThan(5);
@@ -112,13 +122,14 @@ test.describe("navigation state", () => {
     for (let i = 0; i < count; i += 1) {
       const item = items.nth(i);
       await item.focus();
+      await expect(item).toBeFocused();
       const outline = await item.evaluate((el) => {
         const s = getComputedStyle(el);
         return { width: parseFloat(s.outlineWidth), style: s.outlineStyle };
       });
       const label = await item.textContent();
-      expect(outline.width, `${label?.trim()} has no focus ring`).toBeGreaterThan(0);
-      expect(outline.style).not.toBe("none");
+      expect(outline.style, `${label?.trim()} has no focus ring`).not.toBe("none");
+      expect(outline.width, `${label?.trim()} has a zero-width focus ring`).toBeGreaterThan(0);
     }
   });
 

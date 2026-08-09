@@ -20,6 +20,7 @@ import {
   TrendBadge,
 } from "@/components/domain";
 import type { PriceContextPoint, TradeRow } from "@/lib/api/queries";
+import { pricePerShare } from "@/lib/format";
 
 export interface TradeTableProps {
   rows: TradeRow[];
@@ -53,6 +54,9 @@ export function TradeTable({
    *   what a tape row is for.
    * 2 (from 768): Insider.
    * 3 (from 1024): Shares, vs close, Type, Source.
+   * 4 (from 1440): Role, Price. Progressive rather than withheld — they
+   *   exist so a fluid row spends its width on information instead of
+   *   stretching a void between the name and the figures.
    *
    * Nothing is lost: DataTable offers "All columns" below lg, and the
    * full record is a tap away on the stock page either way.
@@ -110,11 +114,25 @@ export function TradeTable({
             className="inline-flex max-w-full items-center gap-1.5 transition-colors hover:text-accent-ink"
           >
             <span className="truncate">{row.original.insider.name}</span>
-            {row.original.insider.title ? (
-              <span className="truncate text-2xs text-ink-faint">{row.original.insider.title}</span>
-            ) : null}
           </Link>
         ),
+      });
+      // The title moves OUT of the name cell and into its own column at
+      // 1440. Trailing the name it was a second string competing for the
+      // same truncation budget, so on a narrow screen it ate the name and
+      // on a wide one it left the row looking empty either side of it.
+      cols.push({
+        id: "role",
+        accessorFn: (r) => r.insider.title ?? "",
+        header: "Role",
+        size: 180,
+        meta: { priority: 4 },
+        cell: ({ row }) =>
+          row.original.insider.title ? (
+            <span className="truncate text-ink-muted">{row.original.insider.title}</span>
+          ) : (
+            <NotDisclosed label="No officer title on this filing" />
+          ),
       });
     }
     cols.push(
@@ -131,6 +149,43 @@ export function TradeTable({
           ) : (
             <span className="num">{row.original.shares.toLocaleString("en-US")}</span>
           ),
+      },
+      {
+        id: "unitPrice",
+        accessorFn: (r) => pricePerShare(r)?.price ?? null,
+        header: "Price",
+        size: 120,
+        meta: { align: "right", priority: 4 },
+        cell: ({ row }) => {
+          const unit = pricePerShare(row.original);
+          if (unit === null) {
+            return (
+              <NotDisclosed label="No price per share on this filing, and no share count to derive one from" />
+            );
+          }
+          return (
+            <span className="inline-flex items-center justify-end gap-0.5">
+              {/* A derived figure says so. `value ÷ shares` is an AVERAGE
+                  across whatever the row aggregates, which is not the same
+                  claim as a price the filing states. */}
+              {unit.derived ? (
+                <span
+                  aria-hidden
+                  className="text-ink-faint"
+                  title="Derived: value ÷ shares, an average across this filing"
+                >
+                  ~
+                </span>
+              ) : null}
+              <CurrencyValue
+                value={unit.price}
+                currency={row.original.currency}
+                valueUsd={unit.priceUsd}
+                className="text-xs"
+              />
+            </span>
+          );
+        },
       },
       {
         accessorKey: "valueUsd",

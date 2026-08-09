@@ -212,6 +212,15 @@
 }
 
 @theme inline {
+  /* ── Container-query stop: "there is room for more columns" ───────────
+     Named rather than numbered so the tape's progressive columns read as
+     a decision instead of an arbitrary breakpoint. 70rem of CONTAINER is
+     reached at a ~1440px viewport on a full-width tape (1440 − 224 sidebar
+     − 64 gutters = 1152 region, less the surface's own borders), and never
+     inside the landing page's narrow strip on the same screen — which is
+     exactly the distinction a container query exists to make. */
+  --container-wide: 70rem;
+
   /* ── Terminal colour names ──────────────────────────────────────────── */
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -635,6 +644,16 @@ body {
 
 @media (min-width: 768px) and (max-width: 1023px) {
   [data-table-columns="key"] [data-priority="3"] {
+    display: none;
+  }
+}
+
+/* Tier 4 runs the other way: progressive columns that arrive once a fluid
+   row has width to spend on information rather than on a void down its
+   middle. Not gated on `data-table-columns`, because these are not being
+   withheld — there is simply nowhere to put them below 1440. */
+@media (max-width: 1439px) {
+  [data-priority="4"] {
     display: none;
   }
 }
