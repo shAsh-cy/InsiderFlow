@@ -19,6 +19,12 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 const TARGET = 44;
 
 async function expectTarget(locator: Locator, name: string) {
+  // `boundingBox()` does NOT auto-wait for visibility — it returns null the
+  // moment the element is attached but not yet laid out. Under eight workers
+  // that lost the race about one run in ten and reported it as "no box",
+  // which reads as a missing control rather than as a test that measured too
+  // early. `toBeVisible` is the wait.
+  await expect(locator, `${name} should be visible`).toBeVisible();
   const box = await locator.boundingBox();
   expect(box, `${name} has no box`).not.toBeNull();
   expect(Math.round(box!.width), `${name} width`).toBeGreaterThanOrEqual(TARGET - 1);

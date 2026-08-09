@@ -2,6 +2,176 @@
 
 All notable changes to InsiderFlow. Newest first.
 
+## r4 — a shell that is centred, and a product that fits on a phone
+
+### Layout equilibrium
+
+r3 forbade `margin-inline: auto` on app pages. That was one rule doing two
+jobs and it got one of them wrong. What needed protecting was that the
+CONTENT does not re-centre — a heading over a centred card is a broken
+column. Pinning the whole page to x=0 was never required for that, and above
+~1500px it produced a layout hugging the left bezel with a dead strip of
+paper down the right.
+
+The model is now two levels, and keeping them apart is the point. The SHELL
+is centred and capped at `--shell-max` (88rem), so above the cap the left
+edge stops moving — which is the property r3 actually wanted, obtained by
+bounding the frame rather than by pinning it. The BLOCKS inside it still key
+to the shell's start edge and still may not re-centre.
+
+`--shell-pad` is 16px below 640 and 24px above. `--shell-gutter` now means
+only the gap between the sidebar and the content, and is zero where there is
+no sidebar — adding a second gutter to the frame padding was double-indenting
+the column. `--shell-rail-inset` gains a third step so the hanging rail keeps
+~6px of air at every breakpoint rather than at the one width the suite
+happened to render.
+
+`.shell-aligned` was reconstructing the content edge by adding the sidebar to
+the viewport's left edge — correct exactly while the shell starts at x=0, and
+244px wrong at 1920. It is now a frame in its own right and tracks the shell
+by centring the same way.
+
+And the width has to be USED, or a centred shell has only moved the dead zone
+one level down. The landing hero spans the frame at its existing 7/5 instead
+of stopping at 72rem. `/stock` splits into a panel rail and the record, and
+`/settings` flows its cards into two columns — both at `xl` and not `lg`,
+because inside the sidebar shell `lg` leaves 716px and dividing that
+reproduces the same problem in miniature. Prose pages keep a 72rem measure
+and their left edge: a right margin inside a centred frame is whitespace on
+purpose.
+
+The layout spec is rewritten rather than adjusted, because r3's two central
+assertions now encode the opposite of the contract. 7 tests to 15.
+
+### The phone
+
+Every test in the r3 suite ran at 1280x720 — no `setViewportSize`, no device
+descriptor, no `hasTouch` anywhere. 140 tests only ever executed the ≥1024px
+branch of every responsive rule, and what they were not looking at had rotted
+accordingly.
+
+**The masthead** had five children summing to 43px more than a 360px viewport
+holds, and no `shrink-0` on any of them. A flex item's automatic minimum size
+is its CONTENT, so the row settled its arithmetic by squeezing whichever
+control shrank quietest — the hamburger, to about seventeen pixels, and it
+was the only route to eleven destinations below `lg`. Every control in the bar
+is now 44px and `shrink-0`; below `md` the icon controls drop their borders
+and take the space instead.
+
+**The navigation** becomes an off-canvas drawer. It is the sidebar, so it
+slides from the left, behind a trigger moved to the leading edge, with the
+page visible behind the scrim. Radix supplies the focus trap, Escape, scroll
+lock and outside-press. It does not supply focus restoration here, and that
+was a live bug: `DialogContent` hard-wires an `onCloseAutoFocus` that cancels
+FocusScope's restore and focuses `context.triggerRef`, a ref only ever
+populated by `<DialogTrigger>`. Both overlays are opened by plain buttons, so
+the ref was null and a keyboard user pressing Escape was returned to the top
+of the document.
+
+**Language and theme** fold into an overflow menu. The locale switcher had
+exactly one mount point in the entire app — the masthead, behind
+`hidden sm:inline-flex`. A reader on a phone could not choose Hindi, and a
+reader who had chosen it on a desktop was locked into it with no way back.
+
+**The tape row** folds to two lines below 640px. At 360px the insider's name
+— the subject of the row — was resolving to about twelve pixels and rendering
+as a single ellipsis: it is the only flexible cell, its fixed siblings already
+consumed the width, and `truncate` sets `overflow: hidden`, which zeroes a
+flex item's automatic minimum size. So the column collapsed silently instead
+of overflowing. The page looked correct, scrolled correctly, and had lost the
+one field a reader is scanning for.
+
+The fold is on the VIEWPORT even though every optional column stays on its
+container query, because the two rules answer different questions — and a
+container query could not answer this one anyway: the tape's container is
+607px at a 639px viewport and 592px at 640px, so it moves the wrong way across
+the boundary the fold needs.
+
+**Row quick-actions** were gated behind an `@lg` container query, which below
+a 512px container meant `display: none`. On a phone the feature was not hard
+to reach, it was absent. Above 640px the hover-revealed pair stays; below, one
+44px menu, because two 24px buttons cannot be laid out on a 60px row at a
+tappable size without their hit areas overlapping.
+
+**Wide tables** get column priority (on TanStack's `meta`, so no prop
+signature changes), a frozen first column with its own ground, and a drawn
+edge. At 390px the screener goes from 979px of table in a 358px well to 414px.
+Nothing is lost: the full set is one tap away, because hiding a filing's
+source with no way to ask for it would make the phone a lesser view of the
+truth rather than a smaller one.
+
+Two things fell out of that work. The sticky header had never stuck: `Table`
+always wrapped the `<table>` in `overflow-x-auto`, and an element with
+`overflow-x: auto` and unspecified `overflow-y` computes `overflow-y: auto`
+too, so the wrapper was the header's nearest scrollport — a box of
+`height: auto` that can never scroll vertically. And the scroll well's height
+was an inline pixel value no class could override: 560px on a 640px-tall phone
+captured every vertical drag inside it, so the page could not be scrolled past
+the table by touch at all.
+
+**The screener's filters** move into a bottom sheet with draft state and an
+Apply button, leaving market and side on the page as one scrolling row. Laid
+out flat at 360px the sixteen controls take six rows, and about 545px of a
+640px screen was spent before the first result.
+
+**The heatmap** replaces the treemap with its ranked list below `md`. The
+label gate needs a tile of 72×40px, which on a 286×520 canvas is 1.9% of total
+gross flow — fewer than ten of a hundred and twenty cells clear it. Raising
+the minimum cell size instead would mean showing fewer companies without
+saying so. The treemap's tooltip also gains a touch path: it was bound solely
+to `mouseenter` and `focus`, so on any touch device the first tap navigated
+and the figures behind every tile were unreachable.
+
+**Touch targets**: 279 standalone controls under 44×44 at 390px, down to zero,
+with two documented exemptions — the skip link, which is `sr-only` until
+focused, and the transaction-code badge, which goes 20×20 → 24×24 to clear
+WCAG 2.2 §2.5.8 and stops there because 44px would double the height of every
+row in the product.
+
+### Two defects found by disagreement
+
+The overflow spec asserted `document.scrollWidth <= window.innerWidth`. Under
+`isMobile: true` — which the mobile project sets, and which is the whole point
+of it — Chromium honours the meta viewport, and content wider than the layout
+viewport WIDENS THE LAYOUT VIEWPORT rather than overflowing it. So the check
+was strictly weakest on the configuration it exists for: `/politicians` was
+408px wide inside a 360px window and the assertion compared 408 to 408 and
+passed. The screenshot sweep, which runs without `isMobile`, is what caught
+it. The page bug underneath was a grid item's default `min-width: auto`
+resolving to its min-content width, so the longest name in a list set a floor
+the whole page had to widen to meet.
+
+`/leaderboard` came out of r4 at Lighthouse desktop 90, down from 100, on CLS
+alone. The block that moves is the methodology disclaimer, which had no
+measure and so ran to ~150 characters a line — leaving it exactly on a wrap
+boundary, where the font swap gains it a line and pushes the results table
+18px down. r4 did not create the reflow (`display: swap` can always relay a
+paragraph; a size-adjusted fallback matches vertical metrics, not glyph
+advances) — it narrowed the content region by 44px at 1440, which is what
+centring and capping the frame costs, and moved that paragraph onto the edge.
+An 80ch measure is the right typography either way and takes it back off.
+
+Both are worth recording for how nearly they were missed. The Lighthouse
+metric is bimodal — the first run after a server restart scored 100 and the
+rest scored 90 — so the one-run-per-route sweep could have said either, and
+the first r3-vs-r4 comparison was one run each and appeared to clear r3 of a
+regression it did not have. Three consecutive runs per build settled it, after
+killing twenty-one orphaned Chrome processes left behind by earlier Lighthouse
+runs: the same "the test is measuring the machine" trap r3 hit with the 60fps
+spec.
+
+### Verification
+
+- 287 unit/integration; 174 Playwright e2e across three projects (was 140).
+- Lighthouse desktop: accessibility 100 on every route; performance 100 on
+  every route except the 10k-row `/design` showcase.
+- Lighthouse mobile (Moto G Power, 4× CPU, slow 4G): accessibility 100.
+  Performance 75 / 87 / 76 / 74 on landing, `/trades`, `/screener`, `/stock`
+  — measured at 75 / 89 / 76 / 75 on the r3 build, so unchanged, and short of
+  the brief's 90 for structural reasons that predate r4.
+- axe-core contrast: zero failures, 16 routes × both themes.
+- Zero page-level overflow at 360/768/1024/1440/1920 in both themes.
+
 ## r3 — one left edge, a nav that tells the truth, and a tape you can work
 
 ### Tokens ratified

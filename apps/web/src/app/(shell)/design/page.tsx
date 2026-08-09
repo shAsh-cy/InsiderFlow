@@ -300,6 +300,48 @@ const MOTION_PRESETS = [
   ["counter", "75 / 15 / 0.8", "Number count-up"],
 ];
 
+/**
+ * The layout frame, published so the next contributor does not have to
+ * infer the model from four `calc()` expressions.
+ */
+const SHELL_TOKENS = [
+  {
+    name: "--shell-max",
+    value: "88rem (1408px)",
+    role: "The frame. Centred; above this width the left edge stops moving.",
+  },
+  {
+    name: "--shell-pad",
+    value: "1rem / 1.5rem ≥640",
+    role: "Frame edge to the first thing inside it.",
+  },
+  {
+    name: "--shell-gutter",
+    value: "0 / 2.25rem ≥1024",
+    role: "Sidebar to content. Zero where there is no sidebar — the frame padding already is that gap.",
+  },
+  {
+    name: "--shell-rail-inset",
+    value: "0.5 / 1 / 1.5rem",
+    role: "How far the hanging rail reaches back. Three steps, so it keeps ~6px of air at every breakpoint.",
+  },
+  {
+    name: "--shell-sidebar",
+    value: "0 / 14rem ≥1024",
+    role: "Added back by bands that sit outside the sidebar row, so the footer lands on the content edge.",
+  },
+  {
+    name: "--shell-nav-inset",
+    value: "0 / 1.5rem ≥1024",
+    role: "Frame edge to a sidebar item's LABEL (12 + 2 + 10). The masthead brand borrows it.",
+  },
+  {
+    name: "--shell-measure",
+    value: "72rem",
+    role: "Reading measure for prose pages. Left-anchored: it trims the right side only.",
+  },
+] as const;
+
 export default function DesignPage() {
   const rows = useMemo(() => makeRows(10_000), []);
   const [feed, setFeed] = useState<TradeRow[]>(() => [fakeTrade()]);
@@ -483,6 +525,35 @@ export default function DesignPage() {
             <span className="num text-base text-ink">1,204,880 · 0.00 · $2.79M · ₹24.5 Cr</span>
           </div>
         </div>
+      </Section>
+
+      <Section
+        title="The frame — centred, capped, and used"
+        note="Two rules, and keeping them apart is the point. The SHELL is centred and capped at 88rem, so above the cap its left edge stops moving. The BLOCKS inside it are not: every heading, card, form and table keys to the shell's own start edge, and `margin-inline: auto` on anything inside the content region is still forbidden. r3 had one rule for both jobs — nothing is ever centred — which pinned the page to the left bezel and left a dead strip of paper down the right of any wide screen."
+      >
+        <div className="surface flex flex-col divide-y divide-border rounded-lg px-4">
+          {SHELL_TOKENS.map((t) => (
+            <div key={t.name} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
+              <span className="num w-48 shrink-0 text-2xs text-ink">{t.name}</span>
+              <span className="num w-40 shrink-0 text-2xs text-ink-faint">{t.value}</span>
+              <span className="min-w-0 flex-1 text-sm text-ink-muted">{t.role}</span>
+            </div>
+          ))}
+        </div>
+
+        <p className="max-w-[80ch] text-sm leading-relaxed text-ink-muted">
+          The width has to be USED, or a centred shell has only moved the dead zone one level down.
+          At <span className="num">xl</span> a page with real secondary content becomes an
+          asymmetric two-column grid across the whole frame — the landing hero at{" "}
+          <span className="num">7/12</span> beside the live tape at{" "}
+          <span className="num">5/12</span>, <span className="num">/stock</span> as a panel rail
+          beside the record, <span className="num">/settings</span> as two columns of cards. Inside
+          the sidebar shell that split starts at <span className="num">xl</span> and not{" "}
+          <span className="num">lg</span>, because <span className="num">lg</span> leaves 716px of
+          content region and dividing it again reproduces the same problem in miniature. A single
+          column of prose caps at <span className="num">--shell-measure</span> and keeps its left
+          edge: a right margin inside a centred frame is whitespace on purpose.
+        </p>
       </Section>
 
       <Section
