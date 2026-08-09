@@ -229,6 +229,29 @@ test.describe("the landing: the masthead is the hero's own shell", () => {
     });
   }
 
+  for (const width of [1280, 1440, 1920]) {
+    test(`the footer stands on the hero's left edge at ${width}`, async ({ page }) => {
+      // The third edge on this page, and the one a footer most easily
+      // loses: it sits inside the same content region as the hero, so it
+      // has nothing of its own to keep in sync.
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      const h1 = await page.locator("[data-content-region] h1:visible").first().boundingBox();
+      const footer = await page.locator("[data-content-region] footer").boundingBox();
+      expect(footer, "the landing has a footer").not.toBeNull();
+      expect(
+        Math.abs(footer!.x - h1!.x),
+        `@${width}: footer at ${Math.round(footer!.x)}, hero at ${Math.round(h1!.x)}`,
+      ).toBeLessThanOrEqual(EXACT);
+      // …and it reaches the far gutter, like every other block here.
+      const g = await readGeometry(page);
+      expect(
+        Math.abs(footer!.x + footer!.width - g.regionRight),
+        `@${width}: footer right edge`,
+      ).toBeLessThanOrEqual(EXACT);
+    });
+  }
+
   test("the bar takes the shell's own padding token, not a copy of it", async ({ page }) => {
     // Two `clamp()`s that agree today are two `clamp()`s that can stop
     // agreeing. The alignment above is only durable if both sides read the

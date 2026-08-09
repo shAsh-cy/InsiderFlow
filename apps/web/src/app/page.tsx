@@ -6,6 +6,7 @@ import { SectionHeader } from "@/components/domain/section-header";
 import { StatCard } from "@/components/domain/stat-card";
 import { SyntheticDataNotice } from "@/components/domain/synthetic-data-notice";
 import { FlowSparkline } from "@/components/landing/flow-sparkline";
+import { LandingFooter } from "@/components/landing/landing-footer";
 import { LiveFeedStrip } from "@/components/landing/live-feed-strip";
 import { LineReveal, Reveal } from "@/components/motion/reveal";
 import { Button } from "@/components/ui/button";
@@ -127,15 +128,14 @@ export default async function Home() {
                 </Button>
               </div>
 
+              {/* The one honesty note the hero keeps: it names the licence
+                  and the funding model in a line, which is a fact about
+                  what this is rather than a caveat about what it is not.
+                  "Not investment advice" moved to the footer — as a
+                  bordered `role="alert"` block under the primary call to
+                  action it was announced on load by every screen reader
+                  and stood between the headline and the product. */}
               <p className="mt-6 text-2xs text-ink-faint">{t("badge")}</p>
-
-              <p
-                role="alert"
-                className="rail-quiet mt-8 max-w-[62ch] pl-4 text-xs leading-relaxed text-ink-muted"
-              >
-                <strong className="font-semibold text-ink">{t("disclaimerLead")}</strong>{" "}
-                {t("disclaimerBody")}
-              </p>
             </div>
 
             {/* The right side is the live product, not decoration. */}
@@ -258,44 +258,12 @@ export default async function Home() {
             </div>
           </section>
 
-          {/* ── Footer ────────────────────────────────────────────────────── */}
-          <footer className="border-t border-border py-10">
-            {/* The testid spans both paragraphs: sources first, then the
-            licence line that carries the "not investment advice" statement. */}
-            <div
-              data-testid="footer-disclaimer"
-              className="flex flex-col gap-3 text-xs leading-relaxed text-ink-faint"
-            >
-              <p className="max-w-[80ch]">
-                <strong className="text-ink-muted">{t("footer.sourcesLead")}</strong>{" "}
-                {t("footer.sourcesBody")}
-              </p>
-              <p className="max-w-[80ch]">{t("footer.licence")}</p>
-              <nav
-                aria-label="Legal and reference"
-                className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3"
-              >
-                <Link
-                  href="/legal"
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
-                >
-                  Legal &amp; data sources
-                </Link>
-                <Link
-                  href="/docs/methodology"
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
-                >
-                  Methodology
-                </Link>
-                <Link
-                  href="/status"
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
-                >
-                  Status
-                </Link>
-              </nav>
-            </div>
-          </footer>
+          {/* ── Footer ────────────────────────────────────────────────────
+              Landing-only. App routes keep `SiteFooter`, whose whole job is
+              that the disclaimer appears on every page; this one says what
+              the project is, under whose licence, and where the source
+              lives — which AGPL-3.0 §13 requires the interface to offer. */}
+          <LandingFooter />
         </div>
       </div>
     </main>
