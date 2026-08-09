@@ -40,6 +40,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { STAGGER_DENSE, springs } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
+import { BrandLink } from "./brand";
 import { activeNavHref, NAV } from "./nav-items";
 
 export default function NavDrawer({
@@ -96,8 +97,15 @@ export default function NavDrawer({
               >
                 <DialogTitle className="sr-only">{t("menu")}</DialogTitle>
 
-                <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-                  <span className="text-2xs text-ink-faint">{t("menu")}</span>
+                {/* The brand, not the word "Menu". The drawer IS the
+                    sidebar, and since r6 the sidebar is where identity
+                    lives; a panel that slides over the whole left of a
+                    phone screen and does not say what product it belongs
+                    to is the same lost-identity problem the masthead had.
+                    `ps-5` puts the mark on the same x as the nav items
+                    below it (8px list padding + 2px state rule + 10px). */}
+                <div className="flex h-14 shrink-0 items-center justify-between border-b border-border pe-4 ps-5">
+                  <BrandLink />
                   <DialogPrimitive.Close
                     aria-label={t("closeMenu")}
                     className="-mr-2 inline-flex size-11 cursor-pointer items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-fill hover:text-ink"

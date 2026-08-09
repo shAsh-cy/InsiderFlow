@@ -8,36 +8,55 @@ import {
 } from "./fixtures";
 
 /**
- * LAYOUT v3. Rewritten from r4, which was rewritten from r3.
+ * LAYOUT v3.1 — ONE LEFT EDGE PER SHELL. Rewritten from v3 (r5), which was
+ * rewritten from r4, which was rewritten from r3.
  *
- * Two rounds went past each other, and this file has to encode why so the
- * third correction is the last one.
+ * This file has to encode WHY, so that the seventh correction is not
+ * invited.
  *
- * r3 pinned every page to the viewport's left edge, which left a dead strip
- * of paper down the right of any wide screen. r4 fixed that by centring the
- * whole frame — and centring the frame centred the CHROME with it, so at
- * 1920 the sidebar floated 250px in from the bezel and the application read
- * as an island sitting on a desktop rather than as the window it is.
+ * v3 got the two halves right and then let them argue with each other.
+ * CHROME PINS said the masthead spans the viewport and the sidebar's left
+ * edge is the screen's left edge; CONTENT IS FLUID said the page starts at
+ * the content gutter. Both are defensible. Having both on one screen is
+ * not: it put the brand at x≈24 above a hero that started at 77, and a
+ * page heading that started at 256 — two competing left edges, which is
+ * exactly what was reported ("the icon is at the extreme left and the
+ * content below has gaps").
  *
- * Both applied one rule to two things that want opposite treatment:
+ * The fix is NOT to drag the content back out to the bezel. That was r3,
+ * and it cost the right-hand gutter. It is to make the chrome share the
+ * content's edges:
  *
- *   CHROME PINS. The masthead spans the viewport; the sidebar's left edge
- *   IS the screen's left edge. A window frame that floats is not a frame.
+ *   LANDING. The masthead's inner container is the same shell as the hero
+ *   — the same padding token, not a second value that happens to agree —
+ *   so the logo's left edge and the H1's left edge are one number.
  *
- *   CONTENT IS FLUID. The region runs from (sidebar + gutter) to (viewport
- *   − gutter), with no cap. A tape, a table and a stat strip all get better
- *   with width.
+ *   APP ROUTES. The SIDEBAR owns product identity (shadcn/ui's
+ *   SidebarHeader is documented as the place for branding; Catalyst,
+ *   GitHub, Linear, Slack and Vercel all put the mark in the corner of the
+ *   sidebar), so the brand moves there and the masthead becomes an action
+ *   bar running from the sidebar's right edge to the content's right edge.
+ *   Nothing in the top bar claims an edge of its own, because there is
+ *   nothing left up there that could.
  *
- *   PROSE IS THE EXCEPTION. A reading block caps at ~72ch keyed to the
- *   region's LEFT edge, and the right-hand whitespace there is the point.
- *
- * r4's frame-centring assertions are deleted rather than adjusted: they
- * asserted the opposite of the contract, and a test that has to be inverted
- * is a test that was encoding an implementation instead of a rule.
+ * Chrome still pins — the sidebar's left edge is still x=0, and it now
+ * runs the full height of the viewport so the mark sits in the corner of
+ * the window rather than floating in a bar above it. Content is still
+ * fluid, prose is still the one exception, and r3's composition rules
+ * still stand. Those tests are kept verbatim; what is deleted is the set
+ * that asserted the masthead's CONTENTS start at the bezel, because that
+ * is the assertion that was wrong.
  */
 
 /** ±4px, as specified: sub-pixel layout rounding is not a design failure. */
 const TOLERANCE = 4;
+
+/**
+ * ±1px for the alignments this round exists to fix. These are the claims
+ * that were violated by 53–296px, so a loose tolerance here would let the
+ * bug back in while the suite stayed green.
+ */
+const EXACT = 1;
 
 /** Routes the sidebar shell owns — the content region is fluid on all of them. */
 const APP_ROUTES = [
@@ -86,10 +105,19 @@ async function readShellTokens(page: Page) {
 
 interface Geometry {
   viewport: number;
-  headerWidth: number;
-  headerBarLeft: number | null;
+  /** The masthead's inner container — the thing that holds the controls. */
+  barLeft: number;
+  barRight: number;
+  /** The furthest right edge any masthead control reaches. */
+  controlsRight: number;
   sidebarLeft: number | null;
+  sidebarRight: number | null;
+  /** Where the brand is actually mounted and drawn. */
+  brandHost: "masthead" | "sidebar" | "drawer" | "other" | "none";
+  brandLeft: number | null;
+  /** The content region's BOX — its right edge is the far gutter. */
   regionLeft: number;
+  regionRight: number;
   regionWidth: number;
   /** Furthest right edge any top-level block on the page reaches. */
   contentRight: number;
@@ -101,10 +129,32 @@ async function readGeometry(page: Page): Promise<Geometry> {
   return page.evaluate(() => {
     const viewport = window.innerWidth;
     const header = document.querySelector("header")!;
-    const bar = header.firstElementChild;
+    const bar = header.querySelector(".masthead-shell") ?? header.firstElementChild!;
     const side = document.querySelector("aside.sticky");
     const region = document.querySelector("[data-content-region]")!;
     const rb = region.getBoundingClientRect();
+    const bb = bar.getBoundingClientRect();
+
+    /** Drawn, not merely present: `display:none` has no edges to align. */
+    const drawn = (el: Element | null) => Boolean(el && el.getClientRects().length > 0);
+
+    let controlsRight = bb.left;
+    for (const child of Array.from(bar.children)) {
+      const b = child.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) continue;
+      controlsRight = Math.max(controlsRight, b.right);
+    }
+
+    const brand = Array.from(document.querySelectorAll("[data-brand]")).find(drawn) ?? null;
+    const brandHost = !brand
+      ? "none"
+      : brand.closest("header")
+        ? "masthead"
+        : brand.closest("aside")
+          ? "sidebar"
+          : brand.closest("[data-testid='nav-drawer']")
+            ? "drawer"
+            : "other";
 
     let contentRight = rb.x;
     for (const child of Array.from(region.children)) {
@@ -114,7 +164,7 @@ async function readGeometry(page: Page): Promise<Geometry> {
     }
 
     // A frame is a materially narrower box with roughly equal auto margins.
-    // r4 had one on every page; v3 must have none anywhere.
+    // r4 had one on every page; nothing since is allowed one anywhere.
     let framed: string | null = null;
     for (const el of Array.from(
       document.querySelectorAll("main, main > div, header > div, footer > div, [data-shell-frame]"),
@@ -131,10 +181,15 @@ async function readGeometry(page: Page): Promise<Geometry> {
 
     return {
       viewport,
-      headerWidth: header.getBoundingClientRect().width,
-      headerBarLeft: bar ? bar.getBoundingClientRect().x : null,
+      barLeft: bb.left,
+      barRight: bb.right,
+      controlsRight,
       sidebarLeft: side ? side.getBoundingClientRect().x : null,
+      sidebarRight: side ? side.getBoundingClientRect().right : null,
+      brandHost,
+      brandLeft: brand ? brand.getBoundingClientRect().x : null,
       regionLeft: rb.x,
+      regionRight: rb.right,
       regionWidth: rb.width,
       contentRight,
       framed,
@@ -142,36 +197,193 @@ async function readGeometry(page: Page): Promise<Geometry> {
   });
 }
 
-test.describe("chrome pins to the viewport", () => {
+/* ══════════════════════════════════════════════════════════════════════
+   THE r6 CONTRACT — one left edge per shell
+   ══════════════════════════════════════════════════════════════════════ */
+
+test.describe("the landing: the masthead is the hero's own shell", () => {
   for (const width of [1280, 1440, 1920]) {
-    test(`the masthead spans the screen and the sidebar starts at it, at ${width}`, async ({
+    test(`the logo and the hero start on one x at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      const g = await readGeometry(page);
+
+      // The reported bug, measured directly. Before r6 this was 53px at
+      // 1280, 62 at 1440 and 91 at 1920 — the brand pinned to the bezel
+      // while the hero started at the fluid shell's margin.
+      expect(g.brandHost, `the landing has no sidebar, so the brand is up top`).toBe("masthead");
+      const h1 = await page.locator("[data-content-region] h1:visible").first().boundingBox();
+      expect(h1, "the hero heading has no box").not.toBeNull();
+      expect(
+        Math.abs(g.brandLeft! - h1!.x),
+        `@${width}: logo at ${Math.round(g.brandLeft!)}, hero H1 at ${Math.round(h1!.x)}`,
+      ).toBeLessThanOrEqual(EXACT);
+
+      // …and the other end of the same bar. `lg:pe-8` used to run the
+      // controls 45–83px past the content's right edge, which is the same
+      // failure seen from the other side.
+      expect(
+        Math.abs(g.controlsRight - g.regionRight),
+        `@${width}: controls end at ${Math.round(g.controlsRight)}, content at ${Math.round(g.regionRight)}`,
+      ).toBeLessThanOrEqual(EXACT);
+    });
+  }
+
+  test("the bar takes the shell's own padding token, not a copy of it", async ({ page }) => {
+    // Two `clamp()`s that agree today are two `clamp()`s that can stop
+    // agreeing. The alignment above is only durable if both sides read the
+    // same custom property, so assert that they do.
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto("/");
+    const pads = await page.evaluate(() => {
+      const bar = document.querySelector(".masthead-shell")!;
+      const shell = document.querySelector("main .shell-fluid, main.shell-fluid")!;
+      return {
+        bar: getComputedStyle(bar).paddingLeft,
+        shell: getComputedStyle(shell).paddingLeft,
+      };
+    });
+    expect(pads.bar, `bar ${pads.bar} vs shell ${pads.shell}`).toBe(pads.shell);
+  });
+});
+
+test.describe("app routes: the sidebar owns identity, the bar owns actions", () => {
+  for (const width of [1280, 1440, 1920]) {
+    test(`the brand is in the sidebar and the bar keys to the content at ${width}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
       for (const route of APP_ROUTES) {
         await page.goto(route);
+
+        // DOM containment, not just position: the mark belongs to the
+        // navigation column, which is what makes it stop competing with
+        // the page's own heading for the left edge.
+        await expect(
+          page.locator("aside [data-brand]"),
+          `${route} @${width}: the brand lives in the sidebar`,
+        ).toBeVisible();
+        expect(
+          await page.locator("header [data-brand]:visible").count(),
+          `${route} @${width}: nothing in the masthead may claim a brand edge`,
+        ).toBe(0);
+
         const g = await readGeometry(page);
+        expect(g.brandHost, `${route} @${width}: brand host`).toBe("sidebar");
 
+        // The action cluster ends where the content ends.
         expect(
-          Math.round(g.headerWidth),
-          `${route} @${width}: masthead should span the viewport`,
-        ).toBeGreaterThanOrEqual(width - 1);
+          Math.abs(g.controlsRight - g.regionRight),
+          `${route} @${width}: controls end at ${Math.round(g.controlsRight)}, content at ${Math.round(g.regionRight)}`,
+        ).toBeLessThanOrEqual(EXACT);
 
-        // The bar's CONTENTS, not just its rule. r4 rode the contents on a
-        // centred frame while the rule beneath them spanned the screen,
-        // which is the visual tell that the two had come apart.
+        // …and begins where the content begins, because the bar's box
+        // starts at the sidebar's right edge and then takes the same
+        // gutter the content well does.
         expect(
-          g.headerBarLeft,
-          `${route} @${width}: the bar's contents start at the screen edge`,
-        ).toBeLessThanOrEqual(TOLERANCE);
+          Math.abs(g.barLeft - (g.sidebarRight ?? 0)),
+          `${route} @${width}: bar starts at ${Math.round(g.barLeft)}, sidebar ends at ${Math.round(g.sidebarRight ?? 0)}`,
+        ).toBeLessThanOrEqual(EXACT);
+      }
+    });
+  }
 
-        expect(
-          g.sidebarLeft,
-          `${route} @${width}: sidebar left edge is the screen's left edge`,
-        ).not.toBeNull();
+  test("the first content block sits on the content region's left edge", async ({ page }) => {
+    // The other half of "one left edge": with the brand gone from the bar,
+    // the only left edge left on an app screen is this one.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const route of [...APP_ROUTES, ...PROSE_ROUTES]) {
+      await page.goto(route);
+      const g = await readGeometry(page);
+      const first = await page.evaluate(() => {
+        const region = document.querySelector("[data-content-region]")!;
+        for (const child of Array.from(region.children)) {
+          const b = child.getBoundingClientRect();
+          if (b.width === 0 && b.height === 0) continue;
+          // Margin box: a block that deliberately hangs its rule into the
+          // gutter is judged by where it was PLACED.
+          return b.x - parseFloat(getComputedStyle(child).marginLeft);
+        }
+        return null;
+      });
+      expect(first, `${route}: no visible content block`).not.toBeNull();
+      expect(
+        Math.abs(first! - g.regionLeft),
+        `${route}: first block at ${Math.round(first!)}, region at ${Math.round(g.regionLeft)}`,
+      ).toBeLessThanOrEqual(EXACT);
+    }
+  });
+
+  test("the sidebar rises to the top of the window and its brand is not a nav state", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/trades");
+    const side = await page.locator("aside.sticky").boundingBox();
+    expect(side!.y, "the sidebar starts at the top of the viewport").toBeLessThanOrEqual(TOLERANCE);
+    expect(side!.height, "the sidebar runs the height of the window").toBeGreaterThan(800);
+
+    // The r3 rule survives the move: three signals mean "you are here" and
+    // the brand gets none of them, or it reads as a stuck highlight again.
+    const brand = await page.locator("aside [data-brand]").evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        current: el.getAttribute("aria-current"),
+        rule: s.borderLeftStyle === "none" ? 0 : parseFloat(s.borderLeftWidth),
+        ground: s.backgroundColor,
+      };
+    });
+    expect(brand.current, "the brand is never current").toBeNull();
+    expect(brand.rule, "the brand carries no accent rule").toBe(0);
+    expect(brand.ground, "the brand carries no tinted ground").toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("the active nav item still carries aria-current AND a drawn accent bar", async ({
+    page,
+  }) => {
+    for (const route of ["/trades", "/leaderboard", "/settings"]) {
+      await page.goto(route);
+      const current = page.locator("aside nav [aria-current='page']");
+      if (route === "/settings") {
+        // Settings is reached from the masthead, not the index — nothing in
+        // the sidebar owns it, and nothing may pretend to.
+        await expect(current, "no sidebar item owns /settings").toHaveCount(0);
+        continue;
+      }
+      await expect(current, `${route}: exactly one current item`).toHaveCount(1);
+      await expect(current).toHaveAttribute("href", route);
+      const mark = await current.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { width: parseFloat(s.borderLeftWidth), colour: s.borderLeftColor };
+      });
+      expect(mark.width, `${route}: the accent bar has width`).toBeGreaterThan(0);
+      expect(mark.colour, `${route}: the accent bar is drawn`).not.toBe("rgba(0, 0, 0, 0)");
+    }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+   WHAT v3 GOT RIGHT AND r6 KEEPS
+   ══════════════════════════════════════════════════════════════════════ */
+
+test.describe("chrome still pins to the viewport", () => {
+  // One test per width, not one test walking all three: 27 page loads in a
+  // 30s budget is a timeout, and a timeout says nothing about the layout.
+  for (const width of [1280, 1440, 1920]) {
+    test(`the sidebar's left edge is the screen's left edge at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      for (const route of APP_ROUTES) {
+        await page.goto(route);
+        const g = await readGeometry(page);
+        expect(g.sidebarLeft, `${route} @${width}: no sidebar`).not.toBeNull();
         expect(
           Math.abs(g.sidebarLeft!),
           `${route} @${width}: sidebar at x=${g.sidebarLeft}`,
+        ).toBeLessThanOrEqual(TOLERANCE);
+        // The bar reaches the far bezel: it is chrome on that side.
+        expect(
+          Math.abs(g.viewport - g.barRight),
+          `${route} @${width}: the bar stops ${Math.round(g.viewport - g.barRight)}px short`,
         ).toBeLessThanOrEqual(TOLERANCE);
       }
     });
@@ -348,10 +560,14 @@ test.describe("composition inside the region", () => {
         const g = await readGeometry(page);
         const box = await heading.boundingBox();
         expect(box, `${route}: visible h1 has no box`).not.toBeNull();
-        expect(
-          Math.abs(box!.x - g.regionLeft),
-          `${route}: h1 at ${box!.x} should sit on the left edge at ${g.regionLeft}`,
-        ).toBeLessThanOrEqual(TOLERANCE);
+        // /stock composes its heading beside a symbol tile, so the BLOCK is
+        // on the edge and the heading is inset by the tile — checked above.
+        if (!route.startsWith("/stock")) {
+          expect(
+            Math.abs(box!.x - g.regionLeft),
+            `${route}: h1 at ${box!.x} should sit on the left edge at ${g.regionLeft}`,
+          ).toBeLessThanOrEqual(TOLERANCE);
+        }
       }
     }
   });
@@ -474,6 +690,11 @@ test.describe("detail routes key to the same edge", () => {
         Math.abs(g.viewport - g.contentRight - gutter),
         `${route}: right gutter`,
       ).toBeLessThanOrEqual(8);
+      // …and the bar above them ends on the same right edge.
+      expect(
+        Math.abs(g.controlsRight - g.regionRight),
+        `${route}: masthead controls off the content's right edge`,
+      ).toBeLessThanOrEqual(EXACT);
     }
   });
 
@@ -523,5 +744,39 @@ test.describe("detail routes key to the same edge", () => {
     expect(narrow.railTop, "figures come before the record on a narrow screen").toBeLessThan(
       narrow.recordTop,
     );
+  });
+});
+
+test.describe("identity survives the drawer @mobile", () => {
+  test("the mark stands beside the hamburger while the drawer is shut", async ({ page }) => {
+    // Below 1024 the sidebar is off-canvas, so the sidebar's copy of the
+    // brand is not drawn. Something still has to say what product this is,
+    // or closing the drawer erases the identity of the page.
+    await page.goto("/trades");
+    const g = await readGeometry(page);
+    expect(g.brandHost, "the brand is drawn in the masthead on a phone").toBe("masthead");
+    await expect(page.locator("header [data-brand]")).toHaveAccessibleName(/InsiderFlow/);
+
+    // The hamburger's DRAWN icon — not its 44px hit area — starts on the
+    // content's left edge, so the bar and the page share one x here too.
+    const icon = await page.locator("[data-testid='nav-drawer-trigger'] svg").boundingBox();
+    expect(
+      Math.abs(icon!.x - g.regionLeft),
+      `menu glyph at ${Math.round(icon!.x)}, content at ${Math.round(g.regionLeft)}`,
+    ).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  test("the drawer header carries the brand, not the word 'Menu' @mobile", async ({ page }) => {
+    await page.goto("/trades");
+    await page.getByTestId("nav-drawer-trigger").click();
+    const drawer = page.getByTestId("nav-drawer");
+    await expect(drawer).toBeVisible();
+    // Polled through `toBeVisible`, which retries: the panel springs in
+    // from x:-100% and a box read on the first frame is a position it is
+    // passing through.
+    await expect(drawer.locator("[data-brand]")).toBeVisible();
+    await expect(drawer.locator("[data-brand]")).toHaveAccessibleName(/InsiderFlow/);
+    // Still never a nav state, in the drawer as everywhere else.
+    await expect(drawer.locator("[data-brand][aria-current]")).toHaveCount(0);
   });
 });

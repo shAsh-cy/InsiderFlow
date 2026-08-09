@@ -361,6 +361,44 @@
    r3's composition rules stand and are not up for revision: inside any
    region there is ONE shared left edge, and centring survives only on
    authentication screens and true empty / error states.
+
+   ── r6 AMENDMENT: ONE LEFT EDGE PER SHELL ──────────────────────────────
+
+   v3 got the two halves right and then let them argue. Pinning the chrome
+   to the viewport put the brand at x≈24 while the content it sits above
+   started at 77px on the landing and at (sidebar + 32) on an app route —
+   two competing left edges on one screen, which is what people actually
+   reported: "the icon is at the extreme left and the content below has
+   gaps". Both edges were defensible; having both was not.
+
+   The fix is not to move the content back out to the bezel — that was r3,
+   and it cost the right-hand gutter. It is to make the CHROME SHARE THE
+   CONTENT'S EDGES, which is what every product with this shape does:
+
+     LANDING. The masthead's inner container is the same shell as the hero
+     — literally the same padding token — so the logo's left edge and the
+     H1's left edge are the same number by construction rather than by two
+     values that happen to agree.
+
+     APP ROUTES. The SIDEBAR owns product identity (shadcn/ui's
+     SidebarHeader: "sticky at the top; use for branding"; Tailwind
+     Catalyst puts the logo there and leaves the navbar for search and
+     actions; GitHub, Linear, Slack and Vercel all do the same), so the
+     brand moves into the sidebar header and the masthead becomes an
+     action bar that starts at the sidebar's right edge and ends on the
+     content's right edge. Nothing in the top bar claims an edge of its
+     own any more, because there is nothing left up there to claim one.
+
+   Chrome still pins: the sidebar's left edge is still x=0 and it now runs
+   the full height of the viewport, so the brand sits in the corner of the
+   window rather than floating in a bar above it.
+
+   Which shell is on screen is read from the page's own layout — the app
+   shell renders `[data-app-shell]` — rather than from a list of pathnames
+   in the masthead that someone has to remember to update. `:has()` costs
+   nothing here: its argument is an attribute that appears exactly once in
+   the document and never on a node the virtualizer churns, so row
+   insertion and removal cannot invalidate it.
    ═════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -376,11 +414,17 @@
   /* The sidebar's width, or zero where it is not rendered. Bands that
      sit outside the sidebar row (the footer) add it back by hand. */
   --shell-sidebar: 0rem;
-  /* Viewport edge → sidebar item LABEL. The sidebar is `px-3` and its
-     items carry a 2px state rule plus `pl-2.5`: 12 + 2 + 10 = 24px.
-     The masthead brand borrows it so the wordmark and the navigation
-     beneath it stand on one line. Zero where there is no sidebar. */
+  /* Sidebar edge → sidebar item CONTENT. The nav list is `px-3` and its
+     items carry a 2px state rule plus `pl-2.5`: 12 + 2 + 10 = 24px. The
+     sidebar's brand header borrows it, so the wordmark and the eleven
+     items beneath it stand on one line. Zero where there is no sidebar. */
   --shell-nav-inset: 0rem;
+  /* The no-sidebar shell's margin, as a token rather than a literal, so
+     the masthead can take the identical value instead of a matching one.
+     Two `clamp()`s that agree today are two `clamp()`s that can stop
+     agreeing; the landing's brand-to-hero alignment is the thing that
+     breaks when they do. */
+  --shell-fluid-pad: clamp(1.5rem, 6vw, 7.5rem);
 }
 
 @media (min-width: 1024px) {
@@ -404,7 +448,41 @@
    does not push the column into a letterbox. */
 .shell-fluid {
   width: 100%;
-  padding-inline: clamp(1.5rem, 6vw, 7.5rem);
+  padding-inline: var(--shell-fluid-pad);
+}
+
+/* ── The masthead, r6: chrome that shares the content's edges ──────────
+   The bar is rendered once, in the root layout, above both shells. What
+   it should measure itself against is decided by the shell that is
+   actually on the page, not by a pathname list. */
+
+/* Default (no sidebar): the bar spans the viewport and its CONTENTS take
+   the landing's own margin — so the logo and the hero's H1 start on one
+   x, at every width, without either side knowing the number. */
+.masthead-shell {
+  width: 100%;
+  padding-inline: var(--shell-fluid-pad);
+}
+
+/* App shell: the bar begins where the sidebar ends and its contents take
+   the content well's gutter, so the action cluster's right edge is the
+   content's right edge. Below 1024 `--shell-sidebar` is 0 and this
+   collapses to a full-width bar with the content's own 24px margin. */
+body:has([data-app-shell]) [data-masthead] {
+  inset-inline-start: var(--shell-sidebar);
+}
+
+body:has([data-app-shell]) .masthead-shell {
+  padding-inline: var(--shell-gutter);
+}
+
+/* …and the brand is not up there at all, because the sidebar is holding
+   it. Kept in the markup below 1024, where the sidebar is off-canvas and
+   the only thing identifying the product would otherwise be a hamburger. */
+@media (min-width: 1024px) {
+  body:has([data-app-shell]) [data-masthead] [data-brand] {
+    display: none;
+  }
 }
 
 /* The content well on a sidebar route: gutter on both sides, no cap. */

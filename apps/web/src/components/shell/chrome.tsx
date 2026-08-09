@@ -8,9 +8,12 @@
  * download once someone actually reaches for them, keeping all of it off
  * the landing page's critical path.
  *
- * The bar itself is opaque rather than translucent-and-blurred. A blurred
- * fixed header forces the compositor to re-sample everything beneath it
- * on every scroll frame, and paper does not blur anyway.
+ * r6 moved the brand out of here on app shells. The bar used to pin its
+ * contents to the viewport's left edge while the page beneath started at
+ * the content gutter, which put the logo and the page's own H1 on two
+ * different left edges — the misalignment people reported. The sidebar
+ * owns product identity now, and this is an action bar that shares the
+ * content's margins: see the r6 amendment at the top of globals.css.
  */
 import { ChevronDown, Menu, Search, Settings2 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -21,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { BrandLink } from "./brand";
 import { LocaleSwitcher } from "./locale-switcher";
 import type { SessionInfo } from "./session-provider";
 import { ShellMenu } from "./shell-menu";
@@ -28,39 +32,6 @@ import { ThemeToggle } from "./theme-toggle";
 
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
 const NavDrawer = dynamic(() => import("./nav-drawer"), { ssr: false });
-
-/**
- * The mark.
- *
- * It used to be a 4px vertical accent rule beside the wordmark — visually
- * identical to the rule the sidebar draws down the left of the CURRENT
- * page, which made the brand read as a permanently-active nav item.
- * People reported it as a stuck highlight, and they were right to.
- *
- * A logo has to be shaped like nothing else in the system. This one is a
- * bordered square holding a tape line: enclosed and horizontally
- * symmetric, where every state marker in the product is an open vertical
- * rule or an underline. It is decorative — the wordmark beside it is the
- * accessible name — and it is never given `aria-current`.
- */
-function BrandMark() {
-  return (
-    <span
-      aria-hidden
-      className="grid size-5 shrink-0 place-items-center rounded-sm border border-accent-bright/55 text-accent-bright"
-    >
-      <svg viewBox="0 0 12 12" className="size-3" fill="none" aria-hidden focusable="false">
-        <path
-          d="M1 8.5 L4 5.5 L6.5 7.5 L11 2.5"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
-  );
-}
 
 export function ShellChrome({ session }: { session?: SessionInfo }) {
   const t = useTranslations("nav");
@@ -98,22 +69,23 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg">
-        {/* Full-bleed. The bar is chrome, and chrome pins to the viewport —
-            r4 rode it on the same centred frame as the page, which put the
-            masthead's contents 250px in from the bezel at 1920 while the
-            rule beneath them still spanned the screen. The brand is indented
-            by `--shell-nav-inset`, the exact distance from the viewport edge
-            to a sidebar item's LABEL, so the wordmark and the navigation
-            beneath it stand on one line. */}
-        <div className="flex h-14 items-center gap-1 ps-4 pe-4 sm:gap-2 md:gap-3 lg:ps-0 lg:pe-8">
+      <header data-masthead className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg">
+        {/* `.masthead-shell` is the whole of the r6 alignment fix: on the
+            landing it resolves to the landing's own margin token, so the
+            logo and the hero H1 share one x by construction; on an app
+            shell it resolves to the content well's gutter, and the bar's
+            box has already been moved to start at the sidebar's right
+            edge. Either way the bar measures itself against the content
+            beneath it rather than against the bezel. */}
+        <div className="masthead-shell flex h-14 items-center gap-1 sm:gap-2 md:gap-3">
           {/* The drawer trigger, on the LEADING edge. The sidebar it stands
               in for is on the left and the drawer slides from the left, so
               the control that opens it belongs on the left; a right-hand
               trigger for a left-hand panel is a small lie about where the
-              thing you are opening lives. `-ms-2` lets the 44px hit area
-              hang back into the frame padding so the drawn icon still lines
-              up with the frame edge. */}
+              thing you are opening lives. `-ms-3` lets the 44px hit area
+              hang back by exactly the icon's own centring inset (44 − 20)/2,
+              so the DRAWN icon — not the button's box — starts on the
+              content's left edge. */}
           <button
             ref={menuButtonRef}
             type="button"
@@ -123,27 +95,20 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
             data-testid="nav-drawer-trigger"
-            className="-ms-2 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-fill hover:text-ink lg:hidden"
+            className="-ms-3 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-fill hover:text-ink lg:hidden"
           >
             <Menu className="size-5" aria-hidden />
           </button>
 
-          {/* The brand is a link home, never a nav state. It carries no
-              `aria-current` under any route, including "/". */}
-          <Link
-            href="/"
-            data-brand
-            style={{ marginInlineStart: "var(--shell-nav-inset)" }}
-            // `min-h-11`: with the wordmark `sr-only` below sm the link is only
-            // as tall as the 20px mark, and it is a navigation target.
-            className="flex min-h-11 min-w-11 shrink-0 items-center gap-2.5 rounded-sm text-sm font-semibold tracking-tight text-ink sm:min-w-0 md:min-h-0"
-          >
-            <BrandMark />
-            {/* `sr-only`, not `hidden`: the wordmark IS this link's
-                accessible name, and hiding it below sm would leave a link
-                to the home page with no name at all on every phone. */}
-            <span className="sr-only sm:not-sr-only">InsiderFlow</span>
-          </Link>
+          {/* The brand, on the shells that have nowhere better to put it.
+              On an app shell above 1024 this is `display:none` and the
+              sidebar's header carries it instead — see globals.css. Below
+              1024 the sidebar is off-canvas, so it stays here: identity
+              must not disappear the moment the drawer closes.
+
+              `min-h-11`: with the wordmark `sr-only` below sm the link is
+              only as tall as the 20px mark, and it is a navigation target. */}
+          <BrandLink wordmark="responsive" className="min-h-11 min-w-11 sm:min-w-0 md:min-h-0" />
 
           {/* Design and API docs used to sit here as well as in the sidebar's
               Reference section. One destination reachable from two places in

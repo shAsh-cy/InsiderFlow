@@ -318,7 +318,12 @@ const SHELL_TOKENS = [
   {
     name: "--shell-nav-inset",
     value: "0 / 1.5rem \u22651024",
-    role: "Viewport edge to a sidebar item LABEL (12 + 2 + 10). The masthead brand borrows it, so the wordmark and the navigation beneath it stand on one line.",
+    role: "Sidebar edge to a sidebar item CONTENT (12 + 2 + 10). The sidebar brand header takes it, so the mark and the eleven glyphs beneath it stand on one line.",
+  },
+  {
+    name: "--shell-fluid-pad",
+    value: "clamp(24px, 6vw, 120px)",
+    role: "The no-sidebar shell's margin, as a token rather than a literal, so the masthead can take the identical value instead of a matching one. Two clamps that agree today are two clamps that can stop agreeing.",
   },
   {
     name: "--shell-rail-inset",
@@ -332,16 +337,20 @@ const SHELL_TOKENS = [
   },
   {
     name: ".shell-fluid",
-    value: "clamp(24px, 6vw, 120px)",
+    value: "padding: var(--shell-fluid-pad)",
     role: "The no-sidebar shell (landing, auth, legal). Tracks the viewport instead of stepping; the 120px ceiling stops a 2560px screen becoming a letterbox.",
   },
 ] as const;
 
-/** The three rules of Layout v3, stated once so they can be quoted. */
+/** The four rules of the layout contract, stated once so they can be quoted. */
 const LAYOUT_RULES = [
   {
+    title: "One left edge per shell",
+    body: "The chrome shares the content's edges. On the landing the masthead's inner container is the hero's own shell, so the logo and the H1 start on one x. On an app route the SIDEBAR owns identity and the masthead is an action bar running from the sidebar's right edge to the content's right edge.",
+  },
+  {
     title: "Chrome pins to the viewport",
-    body: "The masthead spans the full width; the sidebar left edge IS the screen left edge. Neither is ever centred, because a window frame that floats is not a frame.",
+    body: "The sidebar left edge IS the screen left edge, and it runs the full height of the window. Neither the sidebar nor the bar is ever centred, because a window frame that floats is not a frame.",
   },
   {
     title: "Content is fluid",
@@ -369,7 +378,7 @@ function LayoutDiagram() {
         viewBox="0 0 640 176"
         className="w-full"
         role="img"
-        aria-label="Layout v3. The masthead spans the viewport and the sidebar left edge is the screen left edge. The content region runs from the sidebar plus one gutter to the viewport minus one gutter, with no cap. A prose block inside it stops at about 72 characters, keyed to the region left edge."
+        aria-label="The app shell. The sidebar's left edge is the screen's left edge and it runs the full height of the window, carrying the brand in its header. The masthead begins at the sidebar's right edge and holds only actions. Its contents and the content region below start on the same left edge, and both end on the same right edge. A prose block inside the region stops at about 72 characters, keyed to the region's left edge."
       >
         <rect
           x="1"
@@ -381,19 +390,35 @@ function LayoutDiagram() {
           stroke="var(--border-strong)"
           strokeWidth="1.5"
         />
-        <rect x="1" y="1" width="638" height="26" fill="var(--surface-raised)" />
-        <line x1="1" y1="27" x2="639" y2="27" stroke="var(--border-strong)" strokeWidth="1.5" />
-        <text x="12" y="18" className="num fill-[var(--text-muted)] text-[9px]">
-          masthead, spans the viewport
+        {/* The sidebar runs the full height, from y=0, and carries the mark. */}
+        <rect x="1" y="1" width="96" height="174" fill="var(--surface)" />
+        <line x1="97" y1="1" x2="97" y2="175" stroke="var(--border)" />
+        <rect x="1" y="1" width="96" height="26" fill="var(--surface-raised)" />
+        <line x1="1" y1="27" x2="97" y2="27" stroke="var(--border-strong)" strokeWidth="1.5" />
+        <text x="12" y="18" className="num fill-[var(--text)] text-[9px]">
+          brand
         </text>
-        <rect x="1" y="27" width="96" height="148" fill="var(--surface)" />
-        <line x1="97" y1="27" x2="97" y2="175" stroke="var(--border)" />
         <text x="12" y="48" className="num fill-[var(--text-muted)] text-[9px]">
           sidebar
         </text>
         <text x="12" y="60" className="num fill-[var(--text-muted)] text-[9px]">
           x = 0
         </text>
+        {/* The bar begins where the sidebar ends: actions only. */}
+        <rect x="97" y="1" width="542" height="26" fill="var(--surface-raised)" />
+        <line x1="97" y1="27" x2="639" y2="27" stroke="var(--border-strong)" strokeWidth="1.5" />
+        <text x="123" y="18" className="num fill-[var(--text-muted)] text-[9px]">
+          action bar — no brand edge of its own
+        </text>
+        {/* The shared left edge, drawn: bar contents and content region. */}
+        <line
+          x1="123"
+          y1="1"
+          x2="123"
+          y2="175"
+          stroke="var(--accent-bright)"
+          strokeDasharray="2 3"
+        />
         <rect x="97" y="27" width="26" height="148" fill="var(--accent-bright)" opacity="0.14" />
         <rect x="613" y="27" width="26" height="148" fill="var(--accent-bright)" opacity="0.14" />
         <rect
@@ -432,7 +457,9 @@ function LayoutDiagram() {
         </text>
       </svg>
       <figcaption className="text-2xs text-ink-faint">
-        Chrome meets the bezel; the content breathes to the far gutter; only prose stops short.
+        The sidebar meets the bezel and holds the mark; the bar and the content share one left edge
+        and one right edge; only prose stops short. On the landing there is no sidebar, so the bar
+        takes the hero&rsquo;s own margin token instead and the logo stands directly above the H1.
       </figcaption>
     </figure>
   );
@@ -636,8 +663,8 @@ export default function DesignPage() {
       </Section>
 
       <Section
-        title="Layout v3 \u2014 chrome pins, content is fluid"
-        note="The canonical layout contract, and the third attempt at it. r3 pinned every page to the viewport left edge and left a dead strip of paper down the right of a wide screen. r4 corrected that by centring the whole frame, which centred the CHROME with it: at 1920 the sidebar floated 250px in from the bezel and the app read as an island on a desktop rather than as the window it is. Both applied one rule to two things that want opposite treatment."
+        title="Layout \u2014 one left edge per shell"
+        note="The canonical layout contract. r3 pinned every page to the viewport left edge and left a dead strip of paper down the right of a wide screen. r4 corrected that by centring the whole frame, which centred the CHROME with it. r5 separated the two \u2014 chrome pins, content is fluid \u2014 and then let them argue: the brand sat at x=24 above a hero starting at 77 and a page heading starting at 256, which reads exactly as it was reported, an icon at the extreme left with gaps under it. r6 keeps the separation and removes the argument by making the chrome share the content's edges."
       >
         <LayoutDiagram />
 

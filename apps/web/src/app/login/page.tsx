@@ -58,6 +58,7 @@ export default function LoginPage() {
   return (
     <main
       id="main"
+      tabIndex={-1}
       className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-24"
     >
       {/* One card on the page ground — the whole view is this card, which is

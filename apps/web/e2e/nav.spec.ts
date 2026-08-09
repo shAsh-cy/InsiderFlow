@@ -56,29 +56,33 @@ test.describe("navigation state", () => {
   test("the brand is never styled or marked as active", async ({ page }) => {
     for (const route of ["/", "/trades", "/design", "/settings"]) {
       await page.goto(route);
-      const brand = page.locator("[data-brand]");
-      await expect(brand).toHaveCount(1);
-      await expect(brand, `${route}: the brand must not be current`).not.toHaveAttribute(
-        "aria-current",
-        "page",
+      // EVERY mount, not one. r6 gave the brand a second home — the
+      // sidebar header on an app shell, with the masthead's copy kept for
+      // the phone where the sidebar is off-canvas — so a locator that
+      // assumed a single node would have stopped checking the one that is
+      // actually on screen. Each is measured; none may claim state.
+      const rules = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("[data-brand]")).map((el) => {
+          const s = getComputedStyle(el);
+          return {
+            where: el.closest("aside") ? "sidebar" : el.closest("header") ? "masthead" : "other",
+            current: el.getAttribute("aria-current"),
+            // It must not carry the marker the sidebar uses for state — a
+            // left accent rule beside a label is what made it read as
+            // active. Read inside the page rather than through an element
+            // handle: a handle captured before hydration can be detached by
+            // the time it is measured, and getComputedStyle on a detached
+            // node returns empty strings that fail for reasons that have
+            // nothing to do with borders.
+            rule: s.borderLeftStyle === "none" ? 0 : parseFloat(s.borderLeftWidth) || 0,
+          };
+        }),
       );
-      // It must also not carry the marker the sidebar uses for state — a
-      // left accent rule beside a label is what made it read as active.
-      // Re-queried inside the page rather than through an element handle:
-      // a handle captured before hydration can be detached by the time it
-      // is measured, and getComputedStyle on a detached node returns empty
-      // strings that fail for reasons that have nothing to do with borders.
-      const rule = await page.evaluate(() => {
-        const el = document.querySelector("[data-brand]");
-        if (!el) return null;
-        const s = getComputedStyle(el);
-        return { width: parseFloat(s.borderLeftWidth) || 0, style: s.borderLeftStyle };
-      });
-      expect(rule, `${route}: the brand must be in the DOM`).not.toBeNull();
-      expect(
-        rule!.width === 0 || rule!.style === "none",
-        `${route}: the brand must not carry a left rule`,
-      ).toBe(true);
+      expect(rules.length, `${route}: the brand must be in the DOM`).toBeGreaterThan(0);
+      for (const r of rules) {
+        expect(r.current, `${route}: the ${r.where} brand must not be current`).toBeNull();
+        expect(r.rule, `${route}: the ${r.where} brand must not carry a left rule`).toBe(0);
+      }
     }
   });
 

@@ -150,9 +150,19 @@ test.describe("the condensed masthead @mobile", () => {
 
   test("the brand keeps its accessible name with the wordmark hidden", async ({ page }) => {
     await page.goto("/trades");
+    // Scoped to the masthead since r6: the sidebar carries the brand on a
+    // desktop and is `display:none` here, so the page holds two nodes and
+    // only one of them is the one a phone can see.
+    //
     // `sr-only`, not `hidden`: a link to the home page with no accessible
     // name is what `hidden` would have produced on every phone.
-    await expect(page.locator("[data-brand]")).toHaveAccessibleName(/InsiderFlow/);
+    const masthead = page.locator("header [data-brand]");
+    await expect(masthead).toBeVisible();
+    await expect(masthead).toHaveAccessibleName(/InsiderFlow/);
+    // The off-canvas copy must not be reachable while it is off-canvas —
+    // two links to the home page in the tab order, one of them invisible,
+    // is a keyboard trap for a screen-reader user rather than a redundancy.
+    await expect(page.locator("aside [data-brand]")).toBeHidden();
   });
 
   test("language and theme are reachable — the r3 build hid both below 640", async ({ page }) => {

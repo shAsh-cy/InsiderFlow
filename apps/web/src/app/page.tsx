@@ -73,7 +73,7 @@ export default async function Home() {
   ]);
 
   return (
-    <main id="main" className="relative min-h-screen overflow-x-clip pt-14">
+    <main id="main" tabIndex={-1} className="relative min-h-screen overflow-x-clip pt-14">
       {/* No sidebar here, so no chrome to pin against: the shell is fluid
           and its margin tracks the viewport through `clamp(24px, 6vw,
           120px)` rather than stepping at a breakpoint. The 120px ceiling is
