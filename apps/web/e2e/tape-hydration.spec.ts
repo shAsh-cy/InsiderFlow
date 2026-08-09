@@ -17,19 +17,52 @@ import { test, expect, type Page } from "@playwright/test";
  *   - The stamp beside it does not move when that happens.
  */
 
-/** The tape's freshness stamp, wherever the header has right-aligned it. */
+/**
+ * The tape's freshness stamp, wherever the header has right-aligned it.
+ *
+ * Measured inside ONE `evaluate`, not as `toBeVisible()` followed by
+ * `boundingBox()`. Those are two round trips with a live React tree
+ * between them: the stamp's text changes whenever a row arrives, and a
+ * locator that has just been asserted visible can return a null box on the
+ * next call. The failure then reads "Cannot read properties of null",
+ * which says nothing about layout at all. Reading position in the same
+ * turn as the existence check removes the gap rather than waiting on it.
+ */
 async function stampX(page: Page): Promise<number> {
-  const box = await page.getByTestId("tape-as-of").boundingBox();
-  return box!.x;
+  const x = await page.evaluate(() => {
+    const el = document.querySelector("[data-testid='tape-as-of']");
+    return el ? el.getBoundingClientRect().x : null;
+  });
+  expect(x, "the tape has no freshness stamp to measure").not.toBeNull();
+  return x!;
+}
+
+/**
+ * A stream that opens and says nothing.
+ *
+ * `EventSource` fires `open` on the response headers, which is all this
+ * file needs — none of these tests care what arrives afterwards.
+ *
+ * Deliberately NOT the real endpoint. `/api/stream` caps concurrent SSE
+ * connections at four per IP and every Playwright worker on this box is
+ * the same IP, so a test that needs a live connection is a test that fails
+ * whenever three others happen to be holding one. That ceiling is the
+ * product working as designed; retrying around it would have made this
+ * file permanently flaky for a reason that has nothing to do with what it
+ * asserts. Fulfilling in the browser takes no server slot at all.
+ */
+async function openStream(page: Page, delayMs = 0) {
+  await page.route("**/api/stream**", async (route) => {
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+      body: ": open\n\n",
+    });
+  });
 }
 
 test.describe("the landing tape upgrades from a snapshot", () => {
-  // Two of these need a real SSE connection, and `/api/stream` caps
-  // concurrent connections at four per IP — every Playwright worker on this
-  // box is the same IP. That ceiling is the product working as designed, so
-  // it is retried rather than raised. Same reasoning as e2e/tape.spec.ts.
-  test.describe.configure({ retries: 2 });
-
   test("claims nothing before the stream is up", async ({ page }) => {
     // Held open, not refused: a refused stream falls back to polling, which
     // IS an attached state and would legitimately show an indicator. A
@@ -60,12 +93,8 @@ test.describe("the landing tape upgrades from a snapshot", () => {
   });
 
   test("shows the indicator once it is up, and the stamp does not move", async ({ page }) => {
-    await page.route("**/api/stream**", async (route) => {
-      // Hold it long enough to measure the pre-attach layout, then let it
-      // through so the upgrade is a real one.
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      await route.continue();
-    });
+    // Held for long enough to measure the pre-attach layout, then opened.
+    await openStream(page, 1200);
     await page.goto("/");
 
     await expect(page.getByTestId("tape-live-slot")).toHaveText("");
@@ -86,6 +115,7 @@ test.describe("the landing tape upgrades from a snapshot", () => {
   });
 
   test("the reader's first interaction starts the stream", async ({ page }) => {
+    await openStream(page);
     await page.goto("/");
     // Not a proof that interaction beat idle — idle is 1.5s and this is a
     // fast machine. What it does pin is that interacting does not PREVENT

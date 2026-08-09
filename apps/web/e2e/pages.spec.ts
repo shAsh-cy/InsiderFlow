@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { psql } from "./fixtures";
+import { busiestSeedInsiderId, busiestSeedTicker, psql } from "./fixtures";
 
 /**
  * Phase 6 page acceptance. Run against a production build on :3100 with
@@ -35,9 +35,7 @@ test.describe("live feed (/trades)", () => {
 
 test.describe("companies directory", () => {
   test("searches and links to stock pages", async ({ page }) => {
-    const ticker = psql(
-      "SELECT c.ticker FROM companies c JOIN transactions t ON t.company_id=c.id WHERE c.ticker IS NOT NULL GROUP BY c.ticker ORDER BY count(*) DESC LIMIT 1;",
-    );
+    const ticker = busiestSeedTicker();
     await page.goto(`/companies?q=${ticker}`);
     const link = page.getByRole("link", { name: new RegExp(ticker) }).first();
     await expect(link).toBeVisible();
@@ -49,9 +47,7 @@ test.describe("companies directory", () => {
 
 test.describe("stock page", () => {
   test("shows stats, trade table, and honest empty states", async ({ page }) => {
-    const ticker = psql(
-      "SELECT c.ticker FROM companies c JOIN transactions t ON t.company_id=c.id WHERE c.ticker IS NOT NULL GROUP BY c.ticker ORDER BY count(*) DESC LIMIT 1;",
-    );
+    const ticker = busiestSeedTicker();
     await page.goto(`/stock/${ticker}`);
     await expect(page.getByLabel("Insider trade history")).toBeVisible();
     await expect(page.getByText("Net insider flow")).toBeVisible();
@@ -167,9 +163,7 @@ test.describe("screener", () => {
 
 test.describe("watchlist", () => {
   test("add via search, persists across reload, remove", async ({ page }) => {
-    const ticker = psql(
-      "SELECT c.ticker FROM companies c JOIN transactions t ON t.company_id=c.id WHERE c.ticker IS NOT NULL GROUP BY c.ticker ORDER BY count(*) DESC LIMIT 1;",
-    );
+    const ticker = busiestSeedTicker();
     await page.goto("/watchlist");
     // r3 replaced the ad-hoc empty panel with the shared EmptyState.
     // Assert the STRUCTURE as well as the words, so a future rewording
@@ -200,9 +194,7 @@ test.describe("watchlist", () => {
 
 test.describe("insider profile", () => {
   test("renders roles, stats, and the performance panel", async ({ page }) => {
-    const insiderId = psql(
-      "SELECT insider_id FROM transactions GROUP BY insider_id ORDER BY count(*) DESC LIMIT 1;",
-    );
+    const insiderId = busiestSeedInsiderId();
     await page.goto(`/insider/${insiderId}`);
 
     // Phase 8 filled the "coming soon" slot with real scoring. Either state is

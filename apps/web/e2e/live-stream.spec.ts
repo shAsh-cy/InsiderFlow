@@ -29,12 +29,15 @@ import type { SyntheticCompany } from "./fixtures";
  * it just gets a second attempt once the other workers have handed their slots
  * back. A failure that survives the retry is a real one.
  */
-test.describe.configure({ retries: 2 });
+// No retries any more: the contention this used to work around is gone.
+// These tests run in their own serial `stream` project (see
+// playwright.config.ts), so nothing else is holding an SSE slot while
+// they run, and a failure here is now a real one.
 
 // Deliberately long: the test must outlive a full ~25s server window.
 test.setTimeout(120_000);
 
-test("live strip shows a DB insert and survives the SSE window close", async ({ page }) => {
+test("live strip shows a DB insert and survives the SSE window close @stream", async ({ page }) => {
   let target: SyntheticCompany | null = null;
   try {
     await page.goto("/", { waitUntil: "networkidle" });

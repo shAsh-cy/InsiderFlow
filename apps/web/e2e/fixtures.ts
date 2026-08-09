@@ -195,3 +195,41 @@ export function cleanupSyntheticCompany(target: SyntheticCompany): void {
      DELETE FROM insiders WHERE id = '${target.insiderId}';`,
   );
 }
+
+/**
+ * The busiest company in the SEED, never a test fixture.
+ *
+ * `ORDER BY count(*) DESC LIMIT 1` over the whole companies table is a
+ * race against the rest of the suite: `createSyntheticCompany` inserts a
+ * company with transactions and `cleanupSyntheticCompany` deletes it again,
+ * so a worker running in between can pick a ticker that stops existing
+ * before it is searched for. Two specs failed that way, intermittently,
+ * with an error about a missing button.
+ *
+ * Every transient fixture is stamped `sector = 'Testing'`, so excluding
+ * that sector removes the race at the source rather than retrying past it.
+ * The seeded ZZ* companies are still fair game — they are stable rows that
+ * nothing deletes mid-run.
+ */
+export function busiestSeedTicker(): string {
+  return psql(
+    `SELECT c.ticker FROM companies c
+       JOIN transactions t ON t.company_id = c.id
+      WHERE c.ticker IS NOT NULL AND c.sector IS DISTINCT FROM 'Testing'
+      GROUP BY c.ticker
+      ORDER BY count(*) DESC
+      LIMIT 1;`,
+  );
+}
+
+/** The busiest insider in the seed, chosen the same way and for the same reason. */
+export function busiestSeedInsiderId(): string {
+  return psql(
+    `SELECT t.insider_id FROM transactions t
+       JOIN companies c ON c.id = t.company_id
+      WHERE c.sector IS DISTINCT FROM 'Testing'
+      GROUP BY t.insider_id
+      ORDER BY count(*) DESC
+      LIMIT 1;`,
+  );
+}

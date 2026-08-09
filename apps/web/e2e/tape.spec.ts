@@ -201,11 +201,12 @@ test.describe("arrival flash", () => {
   // Long enough to outlive a full ~25s server SSE window, as live-stream
   // does — the row has to arrive over the wire for the flash to be real.
   test.setTimeout(120_000);
-  // And retried for the same reason live-stream is: the four-per-client SSE
-  // ceiling is shared with every other worker. See e2e/live-stream.spec.ts.
-  test.describe.configure({ retries: 2 });
-
-  test("a streamed row flashes its value in the direction's own tint", async ({ page }) => {
+  // It used to be retried, because the four-per-client SSE ceiling is
+  // shared with every other worker and three of them holding a connection
+  // starved this one. That is now fixed at the source rather than retried
+  // around: `@stream` puts it in a serial project that runs after
+  // everything else, so nothing else is connected while it measures.
+  test("a streamed row flashes its value in the direction's own tint @stream", async ({ page }) => {
     await gotoTape(page);
     await expect(page.getByTestId("live-fold")).toBeVisible();
 

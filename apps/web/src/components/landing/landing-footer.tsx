@@ -59,9 +59,12 @@ export async function LandingFooter() {
                 href={link.href}
                 target="_blank"
                 rel="noreferrer"
-                // 44px on a phone, back to a text row from md — the same
-                // shape every link list in this product uses.
-                className="inline-flex min-h-11 items-center transition-colors hover:text-ink md:min-h-0"
+                // 44x44 on a phone, back to a text row from md — the same
+                // shape every link list in this product uses. `min-w-11`
+                // is not decoration: "Source" and "Status" are 40px and
+                // 37px of text, so height alone leaves both short of the
+                // AAA target size and the touch-target sweep says so.
+                className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
               >
                 {link.label}
               </a>
@@ -69,7 +72,7 @@ export async function LandingFooter() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="inline-flex min-h-11 items-center transition-colors hover:text-ink md:min-h-0"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:justify-start"
               >
                 {link.label}
               </Link>

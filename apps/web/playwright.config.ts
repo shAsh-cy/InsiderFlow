@@ -36,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      grepInvert: /60fps|@mobile/,
+      grepInvert: /60fps|@mobile|@stream/,
     },
     /**
      * The mobile matrix.
@@ -65,14 +65,37 @@ export default defineConfig({
         deviceScaleFactor: 2,
       },
       grep: /@mobile/,
-      grepInvert: /60fps/,
+      grepInvert: /60fps|@stream/,
+    },
+    /**
+     * The live-stream tests, for the same reason as `perf` and a different
+     * shared resource.
+     *
+     * `/api/stream` caps concurrent SSE connections at four per IP, and
+     * every worker on this box is the same IP. Two tests need a real
+     * connection AND a row to arrive over it; run beside seven other
+     * workers they were starved by a limit that is the product working as
+     * designed, and they had been carrying `retries: 2` to paper over it.
+     * A retry that exists to survive the suite's own contention is a test
+     * that has stopped measuring the product.
+     *
+     * So they run alone, after everything else. The retries are gone with
+     * the contention, and a failure here means something is actually wrong.
+     */
+    {
+      name: "stream",
+      use: { ...devices["Desktop Chrome"] },
+      grep: /@stream/,
+      fullyParallel: false,
+      workers: 1,
+      dependencies: ["chromium", "mobile"],
     },
     {
       name: "perf",
       use: { ...devices["Desktop Chrome"] },
       grep: /60fps/,
       fullyParallel: false,
-      dependencies: ["chromium", "mobile"],
+      dependencies: ["stream"],
     },
   ],
   ...(externalBaseUrl
