@@ -113,16 +113,20 @@ export async function LandingFooter() {
                       // `noreferrer` implies `noopener`: a target=_blank
                       // without it hands the opened page a handle on this one.
                       rel="noreferrer"
-                      // 44px tall on a phone, back to a text row from md —
-                      // the same shape every link list in this product uses.
-                      className="inline-flex min-h-11 items-center transition-colors hover:text-ink md:min-h-0 md:py-1"
+                      // 44x44 on a phone, back to a text row from md — the
+                      // same shape every link list in this product uses.
+                      // `min-w-11` is not decoration: "Source" and "Status"
+                      // are 40px and 37px of text, so height alone leaves
+                      // both short of the AAA target size. Left-aligned
+                      // rather than centred, because this is a column.
+                      className="inline-flex min-h-11 min-w-11 items-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:py-1"
                     >
                       {link.label}
                     </a>
                   ) : (
                     <Link
                       href={link.href}
-                      className="inline-flex min-h-11 items-center transition-colors hover:text-ink md:min-h-0 md:py-1"
+                      className="inline-flex min-h-11 min-w-11 items-center transition-colors hover:text-ink md:min-h-0 md:min-w-0 md:py-1"
                     >
                       {link.label}
                     </Link>

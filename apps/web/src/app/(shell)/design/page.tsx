@@ -10,7 +10,7 @@
  */
 import { SEC_TRANSACTION_CODES } from "@insiderflow/core";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Star } from "lucide-react";
@@ -155,12 +155,35 @@ const DEMO_COLUMNS: ColumnDef<DemoRow, unknown>[] = [
   },
 ];
 
-let demoId = 0;
-function fakeTrade(): TradeRow {
-  demoId++;
-  const buy = demoId % 2 === 0;
+/**
+ * The showcase's demo filing, and its clock.
+ *
+ * Both are fixed constants, and that is the whole point. This fixture used
+ * to call `Math.random()` for its id and `new Date()` for its arrival time,
+ * and it incremented a module-level counter that decided the row's
+ * DIRECTION — so the server and the browser rendered different text and
+ * React tore the tree down and rebuilt it on hydration. It cost this route
+ * a console error, ~0.16 of layout shift and about eight points of
+ * performance, and it did it silently for six revisions.
+ *
+ * `LiveFeedRow` has carried an injectable `now` since r1 for exactly this
+ * reason. The showcase simply never used it.
+ *
+ * Named on the ZZ* convention like every other fabricated row in this
+ * project: a page demonstrating a design system should not put a real
+ * company's ticker next to an invented trade.
+ */
+// Not exported: a route module may only export the handful of names Next
+// recognises, and a stray `export const` here is a build-time type error.
+const DEMO_FILED_AT = "2026-07-30T13:47:00.000Z";
+const DEMO_NOW = new Date("2026-07-30T14:05:00.000Z");
+
+function fakeTrade(seq: number): TradeRow {
+  const buy = seq % 2 === 0;
   return {
-    id: `demo-${demoId}-${Math.random().toString(36).slice(2, 8)}`,
+    // Deterministic, and stable across the server/client boundary: the
+    // sequence number is the only input.
+    id: `ZZDEMO-${String(seq).padStart(3, "0")}`,
     source: buy ? "edgar" : "nse-bse",
     market: buy ? "US" : "IN",
     txnDate: "2026-07-30",
@@ -169,7 +192,7 @@ function fakeTrade(): TradeRow {
     direction: buy ? "buy" : "sell",
     relevance: "opportunistic",
     signalWeight: buy ? 1 : -1,
-    shares: 2500 + demoId * 111,
+    shares: 2500 + seq * 111,
     price: buy ? 226.1 : 2450,
     value: buy ? 565_250 : 245_000_000,
     currency: buy ? "USD" : "INR",
@@ -180,14 +203,14 @@ function fakeTrade(): TradeRow {
     is10b51: false,
     isDerivative: false,
     footnote: null,
-    createdAt: new Date().toISOString(),
+    createdAt: DEMO_FILED_AT,
     company: buy
-      ? { id: "c1", ticker: "AAPL", name: "Apple Inc." }
-      : { id: "c2", ticker: "RELIANCE", name: "Reliance Industries" },
+      ? { id: "zz-demo-us", ticker: "ZZNOVA", name: "ZZ Nova Robotics Inc." }
+      : { id: "zz-demo-in", ticker: "ZZBHARAT", name: "ZZ Bharat Industries Ltd." },
     insider: {
-      id: "i1",
-      name: buy ? "DOE JANE A" : "KUMAR RAJESH",
-      title: buy ? "CFO" : "Promoter",
+      id: "zz-demo-insider",
+      name: buy ? "ZZ AVERY STONE" : "ZZ PRIYA RAMANATHAN",
+      title: buy ? "Chief Financial Officer" : "Promoter",
       isDirector: true,
       isOfficer: buy,
       isTenPctOwner: !buy,
@@ -472,7 +495,11 @@ function LayoutDiagram() {
 
 export default function DesignPage() {
   const rows = useMemo(() => makeRows(10_000), []);
-  const [feed, setFeed] = useState<TradeRow[]>(() => [fakeTrade()]);
+  // Seq 0 is the row the server renders, so both sides start from the same
+  // one. Everything after it is produced by a click, which only ever
+  // happens on the client.
+  const [feed, setFeed] = useState<TradeRow[]>(() => [fakeTrade(0)]);
+  const nextSeq = useRef(1);
 
   return (
     <div className="flex flex-col gap-12 pb-24">
@@ -855,7 +882,9 @@ export default function DesignPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setFeed((current) => [fakeTrade(), ...current].slice(0, 5))}
+              onClick={() =>
+                setFeed((current) => [fakeTrade(nextSeq.current++), ...current].slice(0, 5))
+              }
             >
               Inject demo trade
             </Button>
@@ -863,7 +892,11 @@ export default function DesignPage() {
           <div className="surface overflow-hidden rounded-lg">
             <ul data-testid="demo-feed">
               {feed.map((trade) => (
-                <LiveFeedRow key={trade.id} trade={trade} />
+                // The injected clock is what makes "18m ago" the same
+                // string on the server and in the browser. Without it the
+                // row reads the wall clock twice, ~200ms apart, and the
+                // showcase becomes the one page that cannot hydrate.
+                <LiveFeedRow key={trade.id} trade={trade} now={DEMO_NOW} />
               ))}
             </ul>
           </div>

@@ -1,13 +1,48 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 /**
  * Acceptance checks for the design system: every primitive renders, the
  * 10k-row DataTable actually virtualizes (few DOM rows, smooth scroll),
- * and reduced-motion is honored.
+ * reduced-motion is honored — and the page hydrates cleanly.
  */
 test.setTimeout(90_000);
 
+/**
+ * Watches the browser console for the whole test.
+ *
+ * Added in r7 because this page shipped a hydration mismatch for six
+ * revisions without a single test noticing. The showcase fixture built its
+ * demo row with `Math.random()` and `new Date()`, so the server and the
+ * browser rendered different text, React discarded the server tree and
+ * rebuilt it, and the only evidence was a minified error in a console
+ * nothing was reading — worth about eight points of performance and 0.16
+ * of layout shift on this route.
+ *
+ * A mismatch cannot return silently now: any console error, and any
+ * warning that mentions hydration, fails the test that observed it.
+ */
+function watchConsole(page: Page): () => void {
+  const problems: string[] = [];
+  page.on("console", (message) => {
+    const type = message.type();
+    const text = message.text();
+    if (type === "error") problems.push(`error: ${text}`);
+    // React logs the recoverable-hydration path as a warning, and the
+    // minified build points at react.dev/errors/418 and /423 rather than
+    // saying the words. Both spellings are caught.
+    else if (type === "warning" && /hydrat|errors\/(418|423|425)/i.test(text)) {
+      problems.push(`warning: ${text}`);
+    }
+  });
+  page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
+
+  return () => {
+    expect(problems, `console must be clean:\n${problems.join("\n")}`).toEqual([]);
+  };
+}
+
 test("design showcase renders every primitive", async ({ page }) => {
+  const assertCleanConsole = watchConsole(page);
   await page.goto("/design", { waitUntil: "networkidle" });
 
   // All 20 transaction codes render as badges in the showcase grid.
@@ -24,6 +59,15 @@ test("design showcase renders every primitive", async ({ page }) => {
   await expect(page.getByText("opportunistic").first()).toBeVisible();
   await expect(page.getByText("EDGAR").first()).toBeVisible();
   await expect(page.getByText("Live", { exact: true }).first()).toBeVisible();
+
+  // The demo filing is deterministic and clearly synthetic: one fixed
+  // sequence number, one fixed arrival time, ZZ* names like every other
+  // fabricated row in this project.
+  const demo = page.getByTestId("demo-feed");
+  await expect(demo.locator("li").first()).toContainText("ZZNOVA");
+  await expect(demo).not.toContainText(/AAPL|RELIANCE/);
+
+  assertCleanConsole();
 });
 
 test("DataTable virtualizes 10k rows and sorts", async ({ page }) => {
