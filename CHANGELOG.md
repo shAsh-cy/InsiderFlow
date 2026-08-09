@@ -2,6 +2,208 @@
 
 All notable changes to InsiderFlow. Newest first.
 
+## r6 — One left edge per shell, a masthead that says where you are, and a footer that says what this is
+
+### One left edge per shell
+
+The report was "the InsiderFlow icon at the top and the content on the
+left are misaligned — the icon is at the extreme left and the content
+below has gaps", and it was exactly right.
+
+r5 separated chrome from content, which was the correct move, and then
+let the two disagree about where "left" is. The brand pinned to the
+viewport at x≈24; the hero it stood above started at 77, and a page
+heading at 256. Measured: **53px apart at 1280, 62 at 1440, 91 at 1920 on
+the landing, and 232px on every app route**. Both edges were defensible.
+Having both on one screen is what people saw.
+
+The fix is not to drag the content back out to the bezel — that was r3,
+and it cost the right-hand gutter. It is to make the CHROME SHARE THE
+CONTENT'S EDGES.
+
+**On the landing**, the masthead's inner container takes
+`--shell-fluid-pad`: not a matching value, the same token the hero's
+shell takes. Two `clamp()`s that agree today are two `clamp()`s that can
+stop agreeing, and the alignment is only durable if one number feeds
+both. Measured 77/77, 86/86, 115/115 at 1280/1440/1920 — zero, not
+"within tolerance". The action cluster now ends on the content's right
+edge too; `lg:pe-8` had been running it 45–83px past.
+
+**On app routes**, the sidebar takes the brand. That is the pattern the
+shape already implies: shadcn/ui documents SidebarHeader as the place for
+branding, Catalyst puts the logo there and leaves the navbar for search
+and actions, and GitHub, Linear, Slack and Vercel all put the mark in the
+corner of the window rather than in a bar floating above it. So the
+sidebar rises to y=0 and its header rule continues the masthead's rule
+across the screen, and the masthead becomes an action bar running from
+the sidebar's right edge to the content's right edge. Nothing up there
+claims an edge of its own any more, because nothing is left up there that
+could.
+
+Below 1024 the sidebar is off-canvas, so the mark stays in the bar and
+also appears in the drawer's header. Identity must not vanish the moment
+the drawer closes. The hamburger's `-ms-3` is the icon's own centring
+inset, so the DRAWN glyph — not the button's 44px box — starts on the
+content's left edge.
+
+Which shell is on screen is read from the layout that renders it: the app
+shell marks itself `data-app-shell` and the masthead reads it in CSS.
+A pathname list in the masthead is a second place that has to learn about
+every new route.
+
+The layout spec is rewritten rather than adjusted, on the r4 precedent:
+the assertions that the bar's CONTENTS start at the bezel asserted the
+thing being corrected, and a test that has to be inverted was encoding an
+implementation instead of a rule. 20 tests to 32, with the two alignments
+this round exists to fix held to ±1px rather than ±4.
+
+### The masthead's four small promises
+
+**No rule until something has scrolled under it.** A line across the
+screen before anything has passed beneath it is a line about nothing. The
+1px is always reserved and only its colour changes, so gaining the rule
+cannot move the page. r5 refused the blur outright, on the grounds that a
+translucent fixed header makes the compositor re-sample everything under
+it on every scroll frame; that cost is real, so this is 8px over an
+88%-opaque ground rather than the usual 16-over-60 — the layer does
+almost all the work and the filter is a finishing pass. The 60fps
+virtualized-scroll tests are the check on that claim, and axe was re-run
+against the translucent state rather than only the opaque one it sees at
+rest.
+
+The state comes from an IntersectionObserver on a 1px sentinel at the
+document's origin. The bar sits over a route that can be a 10,000-row
+virtualized table, and running a listener per scroll frame to read
+`scrollY` is main-thread work spent on a boolean that changes twice.
+
+**Breadcrumbs on the two routes no sidebar item owns.** `/stock/[ticker]`
+and `/insider/[id]` are the only pages you arrive at from somewhere else
+and that the index deliberately highlights nothing for. Every other route
+IS a sidebar entry, where a crumb would restate the accent bar. The trail
+is set by the PAGE, not derived from the pathname, because the entity
+crumb is a ticker or a person's name and only the server that resolved
+the page knows either — a URL-derived trail prints a uuid at an insider.
+The section label is a nav key, so the crumb and the item it points at
+are translated by one string. Cleared on unmount: a stale breadcrumb is
+worse than none, because it is a claim about where you are.
+
+**The accelerator names the key the reader has** — Ctrl K off macOS,
+where it had been promising a Command key to most people. The swap
+happens after hydration and `min-w-12` is what makes it free: sized for
+the longer string, so the search button's width and every control right
+of it stay put.
+
+**The skip link** was already first in the tab order; every `<main>` now
+also takes `tabindex="-1"`, so following the fragment moves the KEYBOARD
+and not just the scroll position.
+
+A tab icon, drawn from the same geometry as the mark. It and
+`viewport.themeColor` are the only two places allowed to name a colour
+literally: a favicon is rasterised before any stylesheet exists.
+
+Rejected, and why: **condense-on-scroll**, because a shrinking bar
+reflows the page next to a virtualized table for decoration;
+**breadcrumbs on shallow routes**, because the sidebar's accent bar
+already says it and a second answer to one question is noise; **an
+always-on border**, because it draws a line about nothing at the top of
+every page.
+
+### A footer that says what this is
+
+The landing page had no statement of what the project is — a paragraph of
+provenance and a licence sentence, which is not the same thing — and it
+carried "Not investment advice" as a bordered `role="alert"` block
+directly under the primary call to action. `role="alert"` is an assertive
+live region, so every screen reader interrupted itself to read a static
+legal notice on every arrival, and visually it was the fourth thing
+standing between the headline and the product. The claim is not less true
+at the bottom of the page.
+
+Source and Licence come first, because AGPL-3.0 §13 makes the source link
+a licence term rather than a courtesy: network-served software has to
+offer the Corresponding Source through the interface itself. Then API
+docs, methodology, status and legal; then the disclaimer, the provenance
+and the licence line; then the build.
+
+One link for `/docs` and not two. `/docs` IS the API reference here, and a
+separate "API" entry pointing at the same page is a second name for one
+destination — the redundancy r3 took out of the top bar.
+
+The build string reads its version from package.json rather than
+restating it, and prints a commit only when the build actually knew one.
+A footer that says "dev" or a zeroed hash on a deployed site is the same
+class of mistake as a fabricated zero in a filing: it looks like a fact.
+
+App routes are untouched. `SiteFooter` exists because any page can be
+somebody's entry point from a search result, so the disclaimer stays on
+all of them; what is landing-only is the project-identity block.
+
+### The tape, and a target reported as not met
+
+The indicator now waits for the stream. It used to mount during hydration
+reading "Connecting", which described an intention rather than a state —
+the connection had been deliberately deferred. Until the stream is up the
+"as of <time>" stamp carries freshness on its own, which is the true
+claim: these rows are a server-rendered snapshot and that is when it was
+taken. The slot holds its width either way, so the upgrade moves nothing;
+landing CLS measured 0.0000 / 0.0001 / 0.0002.
+
+The stream also starts on first interaction, not on idle alone. A phone
+still busy at the 1.5s deadline is exactly the phone where the deadline
+fires into a contended main thread. The trigger wiring moved to
+`lib/activation`, where which trigger wins — and whether the loser is
+cleaned up — is tested against a fake host rather than a browser.
+
+**Mobile Lighthouse ≥90 on the landing is not met, and the reason is
+measured rather than assumed.** A throwaway build with the tape's client
+code removed entirely — pure server-rendered rows, no list, no stream, no
+indicator — scored 75/76/77/78 against a 64/78/81 baseline. The tape is
+not the cost, so no amount of deferring it can be the fix. First Load JS
+moved 352 kB to 347 kB; that is the whole prize.
+
+Where the landing's 1.19 MB of uncompressed JS actually goes: 187 kB
+Supabase, so the masthead can tell "Sign in" from an avatar; ~400 kB
+React and the Next runtime; ~270 kB Radix across two chunks; 123 kB
+motion. TBT is 580–630 ms at 4× CPU and LCP 3.4–4.0 s. TBT alone is 15 of
+the 30 points it is weighted, and it is React hydrating those islands.
+Reaching 90 means removing one of the four, and each is a product
+decision rather than a polish one — the largest is auth state on a page
+with no auth interaction.
+
+### Two races removed rather than retried
+
+`/api/stream` caps concurrent SSE connections at four per IP, and every
+Playwright worker on this box is the same IP. The two tests that need a
+real connection had been carrying `retries: 2` to survive the suite's own
+contention, which is a test that has stopped measuring the product. They
+now run in their own serial project after everything else, on the same
+precedent as the 60fps project, and the retries are gone with the cause.
+
+Three other tests picked their subject with `ORDER BY count(*) DESC LIMIT
+1` across the whole companies table, which can return a synthetic fixture
+another worker is about to delete — the failure reads as a missing button
+on a page that was fine. Every transient fixture is stamped `sector =
+'Testing'`, so the picker excludes that sector.
+
+### Verification
+
+- 296 unit/integration (287 + 9 for the activation wiring); 234 Playwright
+  e2e across four projects (was 192), two consecutive clean runs.
+- Lighthouse desktop: **accessibility 100 on all 15 routes**; performance
+  97–100 on every route except the 10k-row `/design` showcase at 91–92.
+- axe-core contrast: zero failures, 15 routes × both themes, including the
+  masthead in its scrolled translucent state.
+- 17/17 domain primitives and `SectionHeader` byte-identical to the r5 tip.
+- Landing CLS 0.0000–0.0002.
+
+Found during the sweep and NOT fixed here, because it is unrelated to this
+cycle and predates it: `/design` logs a React hydration mismatch and
+carries CLS 0.195. Its showcase fixture builds a row with
+`Math.random()` and `new Date()`, so the server and the client render
+different text. Introduced in `ed1420f`; it costs that route ~8 points of
+performance and 4 of best practices, and it is the internal design-system
+page.
+
 ## r5 — Layout v3, dark by default, and width that buys information
 
 ### Layout v3 — chrome pins, content is fluid
