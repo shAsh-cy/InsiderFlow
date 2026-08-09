@@ -16,6 +16,7 @@
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "menu": "Menu",
+    "breadcrumb": "Breadcrumb",
     "sections": {
       "app": "App",
       "analytics": "Analytics",

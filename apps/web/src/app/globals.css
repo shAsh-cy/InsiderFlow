@@ -485,6 +485,44 @@ body:has([data-app-shell]) .masthead-shell {
   }
 }
 
+/* ── The bar's two states ──────────────────────────────────────────────
+   At the top of the page the masthead and the page are one surface, so
+   the bar draws no rule: a line across the screen before anything has
+   scrolled under it is a line about nothing. Once content passes beneath
+   it, the rule and a light backdrop blur say what the bar is doing —
+   holding its place over something rather than sitting on top of it.
+
+   r5 refused the blur outright, on the grounds that a translucent fixed
+   header makes the compositor re-sample everything under it on every
+   scroll frame. That cost is real and it is why the blur is 8px over an
+   88%-opaque ground rather than the usual 16-over-60: at that ratio the
+   layer is doing almost all of the work and the filter is a finishing
+   pass. The 60fps virtualized-scroll test is the check on this claim. */
+[data-masthead] {
+  border-bottom-color: transparent;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+[data-masthead][data-scrolled="true"] {
+  border-bottom-color: var(--border);
+  background-color: color-mix(in srgb, var(--bg) 88%, transparent);
+  /* Standard property only. Writing the -webkit- alias by hand made
+     Lightning CSS emit the alias and drop the standard one, which works in
+     Blink (it aliases both) and silently would not elsewhere. The build
+     adds whatever prefixes the browserslist targets need. */
+  backdrop-filter: blur(8px);
+}
+
+/* No dedicated reduced-motion rule here on purpose: the blanket
+   `transition-duration: 0.01ms !important` further down this file already
+   collapses the crossfade, and a `transition: none` beside it would be a
+   declaration that never wins — a rule that looks like the intent while
+   the other one does the work. What the preference must NOT remove is the
+   state itself: a reader who has asked for less motion still needs to be
+   able to tell a bar holding its place from one sitting still. */
+
 /* The content well on a sidebar route: gutter on both sides, no cap. */
 .shell-content {
   padding-inline: var(--shell-gutter);

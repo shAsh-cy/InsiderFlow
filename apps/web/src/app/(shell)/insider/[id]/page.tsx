@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { InsiderScorePanel } from "@/components/analytics/insider-score-panel";
 import { StatCard } from "@/components/domain/stat-card";
+import { SetBreadcrumb } from "@/components/shell/breadcrumb";
 import { TradeTable } from "@/components/trades/trade-table";
 import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { queryInsiderScore } from "@/lib/api/analytics-queries";
@@ -42,6 +43,16 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="flex flex-col gap-8 pb-24">
+      {/* The filer's NAME, not the uuid in the URL. Only the server that
+          resolved the profile knows it, which is why the trail is set by the
+          page rather than derived from the pathname. */}
+      <SetBreadcrumb
+        trail={{
+          sectionKey: "leaderboard",
+          sectionHref: "/leaderboard",
+          entity: insider.name,
+        }}
+      />
       <header className="rail-bleed flex flex-wrap items-center gap-4">
         {/* A stamped tile, matching the ticker monogram on the stock page.
             Square rather than circular on purpose: this is a filer's mark on

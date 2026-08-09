@@ -5,6 +5,7 @@ import { CountryFlag } from "@/components/domain/country-flag";
 import { SectionHeader } from "@/components/domain/section-header";
 import { StatCard } from "@/components/domain/stat-card";
 import { PoliticianTradeTable } from "@/components/politicians/politician-trade-table";
+import { SetBreadcrumb } from "@/components/shell/breadcrumb";
 import { ChartsPanel } from "@/components/stock/charts-panel";
 import { BulkBlockPanel, PledgePanel, SastPanel } from "@/components/stock/india-panels";
 import { TradeTable } from "@/components/trades/trade-table";
@@ -109,6 +110,13 @@ export default async function StockPage({
      * being told the ninety-day net flow.
      */
     <div className="grid gap-8 pb-24 xl:grid-cols-[minmax(0,1fr)_21rem] xl:gap-x-8">
+      {/* One of the two routes in the product that no sidebar item owns, so
+          the masthead says where this sits instead. The section label is a
+          nav key, not a literal, so the crumb and the item it points at are
+          translated by one string. */}
+      <SetBreadcrumb
+        trail={{ sectionKey: "companies", sectionHref: "/companies", entity: ticker, mono: true }}
+      />
       {/* Header */}
       <header className="rail-bleed flex flex-wrap items-center gap-4 xl:col-span-2">
         {/* A tile of stock with the symbol stamped on it — not a gradient

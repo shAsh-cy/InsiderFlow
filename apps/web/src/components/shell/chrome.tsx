@@ -22,12 +22,15 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 
+import { useScrolled } from "@/hooks/use-scrolled";
 import { cn } from "@/lib/utils";
 
 import { BrandLink } from "./brand";
+import { Breadcrumbs } from "./breadcrumb";
 import { LocaleSwitcher } from "./locale-switcher";
 import type { SessionInfo } from "./session-provider";
 import { ShellMenu } from "./shell-menu";
+import { ShortcutHint } from "./shortcut-hint";
 import { ThemeToggle } from "./theme-toggle";
 
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
@@ -44,6 +47,7 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
   const [menuLoaded, setMenuLoaded] = useState(false);
   /** Handed to the drawer so Escape returns focus here — see NavDrawer. */
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const { scrolled, sentinelRef } = useScrolled();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -69,7 +73,28 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
 
   return (
     <>
-      <header data-masthead className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg">
+      {/* The scroll sentinel: 1px of nothing at the document's origin. The
+          bar's border and blur key off whether this is still on screen, so
+          nothing has to run a listener per scroll frame over a 10,000-row
+          table to know whether the page has moved. */}
+      <div
+        ref={sentinelRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+      />
+
+      {/* At the top of the page the bar has no rule and no blur: the
+          masthead and the page are one surface, and drawing a line across
+          the screen before anything has scrolled under it is a line about
+          nothing. Once content passes beneath it, the rule and a light
+          backdrop blur say what the bar is now doing — holding its place
+          over something. Both are token-driven and the transition is off
+          under prefers-reduced-motion; see globals.css. */}
+      <header
+        data-masthead
+        data-scrolled={scrolled ? "true" : "false"}
+        className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg"
+      >
         {/* `.masthead-shell` is the whole of the r6 alignment fix: on the
             landing it resolves to the landing's own margin token, so the
             logo and the hero H1 share one x by construction; on an app
@@ -110,6 +135,13 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
               only as tall as the 20px mark, and it is a navigation target. */}
           <BrandLink wordmark="responsive" className="min-h-11 min-w-11 sm:min-w-0 md:min-h-0" />
 
+          {/* The trail, on the two routes deep enough to need one. It sits
+              BEFORE the spacer on purpose: appearing after hydration then
+              moves nothing to its right, so a crumb costs no layout shift.
+              On an app shell above 1024 this is the only thing in the left
+              half of the bar, which is the space the brand vacated. */}
+          <Breadcrumbs />
+
           {/* Design and API docs used to sit here as well as in the sidebar's
               Reference section. One destination reachable from two places in
               the same viewport is not redundancy, it is two things to keep in
@@ -138,14 +170,9 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
           >
             <Search className="size-5 md:size-3.5" aria-hidden />
             <span className="hidden md:inline">{t("search")}</span>
-            {/* Decorative for assistive tech: the accessible name already
-                says what the button does, and "⌘K" read aloud is noise. */}
-            <kbd
-              aria-hidden
-              className="num hidden rounded-sm border border-border px-1 text-2xs text-ink-faint md:inline"
-            >
-              ⌘K
-            </kbd>
+            {/* ⌘K on a Mac, Ctrl K everywhere else — it used to promise a
+                Command key to the ~85% of readers who do not have one. */}
+            <ShortcutHint className="hidden md:inline-flex" />
           </button>
 
           <ThemeToggle className="hidden md:inline-flex" />

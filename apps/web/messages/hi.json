@@ -13,6 +13,7 @@
     "openMenu": "मेन्यू खोलें",
     "closeMenu": "मेन्यू बंद करें",
     "menu": "मेन्यू",
+    "breadcrumb": "नेविगेशन पथ",
     "sections": {
       "app": "ऐप",
       "analytics": "विश्लेषण",

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!--
+    The brand mark, as the tab icon: a bordered square holding a tape line.
+    Identical geometry to <BrandMark> in components/shell/brand.tsx, scaled
+    from a 20px box to 32.
+
+    This file and `viewport.themeColor` in app/layout.tsx are the only two
+    places allowed to name a colour literally. A favicon is fetched and
+    rasterised before any stylesheet exists, so it cannot read a custom
+    property; #3DA574 is `--accent-bright` on Terminal, and it is legible on
+    both a dark and a light tab strip because the ground here is
+    transparent and only the stroke carries the mark.
+  -->
+  <rect
+    x="2.5"
+    y="2.5"
+    width="27"
+    height="27"
+    rx="5"
+    fill="none"
+    stroke="#3DA574"
+    stroke-width="2.5"
+  />
+  <path
+    d="M8.5 21 L13.5 16 L17.5 19.5 L24 10.5"
+    fill="none"
+    stroke="#3DA574"
+    stroke-width="2.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

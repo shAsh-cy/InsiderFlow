@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { PendingWatchReplay } from "@/components/access/pending-watch-replay";
+import { BreadcrumbProvider } from "@/components/shell/breadcrumb";
 import { ShellChrome } from "@/components/shell/chrome";
 import { Providers } from "@/components/shell/providers";
 import { SessionProvider } from "@/components/shell/session-provider";
@@ -89,13 +90,18 @@ export default async function RootLayout({
         <NextIntlClientProvider>
           <Providers>
             <SessionProvider session={session}>
-              <ShellChrome session={session} />
-              {/* Mounted at the root, not in the tape: the auth callback
-                  can land the reader on any page, and an intent that
-                  expires because they came back somewhere else is the
-                  same broken promise as sending them to /login. */}
-              <PendingWatchReplay />
-              {children}
+              {/* Wraps the bar AND the page: a breadcrumb's entity name is
+                  known only to the page that rendered it, and the bar that
+                  draws it is a sibling above. State has to live over both. */}
+              <BreadcrumbProvider>
+                <ShellChrome session={session} />
+                {/* Mounted at the root, not in the tape: the auth callback
+                    can land the reader on any page, and an intent that
+                    expires because they came back somewhere else is the
+                    same broken promise as sending them to /login. */}
+                <PendingWatchReplay />
+                {children}
+              </BreadcrumbProvider>
             </SessionProvider>
           </Providers>
         </NextIntlClientProvider>
