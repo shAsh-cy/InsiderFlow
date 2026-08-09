@@ -99,13 +99,14 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg">
-        {/* The rule is full-bleed; the bar's contents ride the same centred
-            frame as the page below, so the masthead and the sidebar are one
-            object rather than two that happen to be adjacent. The brand is
-            then indented by `--shell-nav-inset` — the exact distance from the
-            frame edge to a sidebar item's LABEL — so the wordmark and the
-            navigation beneath it stand on one line. */}
-        <div className="shell-frame flex h-14 items-center gap-1 sm:gap-2 md:gap-3">
+        {/* Full-bleed. The bar is chrome, and chrome pins to the viewport —
+            r4 rode it on the same centred frame as the page, which put the
+            masthead's contents 250px in from the bezel at 1920 while the
+            rule beneath them still spanned the screen. The brand is indented
+            by `--shell-nav-inset`, the exact distance from the viewport edge
+            to a sidebar item's LABEL, so the wordmark and the navigation
+            beneath it stand on one line. */}
+        <div className="flex h-14 items-center gap-1 ps-4 pe-4 sm:gap-2 md:gap-3 lg:ps-0 lg:pe-8">
           {/* The drawer trigger, on the LEADING edge. The sidebar it stands
               in for is on the left and the drawer slides from the left, so
               the control that opens it belongs on the left; a right-hand

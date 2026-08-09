@@ -8,38 +8,39 @@ import {
 } from "./fixtures";
 
 /**
- * LAYOUT EQUILIBRIUM (r4). Rewritten from r3's "the left edge".
+ * LAYOUT v3. Rewritten from r4, which was rewritten from r3.
  *
- * r3's contract was "nothing is ever centred", and this file enforced it by
- * walking from the content region up to <body> looking for equal margins.
- * That rule was too blunt: it produced a page pinned to the left bezel with
- * a dead strip of paper down the right at any width above ~1500px, and the
- * test that guarded it would now fail on the correct layout.
+ * Two rounds went past each other, and this file has to encode why so the
+ * third correction is the last one.
  *
- * The contract is now two rules, and keeping them apart is the whole point:
+ * r3 pinned every page to the viewport's left edge, which left a dead strip
+ * of paper down the right of any wide screen. r4 fixed that by centring the
+ * whole frame — and centring the frame centred the CHROME with it, so at
+ * 1920 the sidebar floated 250px in from the bezel and the application read
+ * as an island sitting on a desktop rather than as the window it is.
  *
- *   1. The SHELL is centred and capped at `--shell-max`. Above that cap the
- *      left edge stops moving — which is what r3 actually wanted, obtained by
- *      bounding the frame rather than by pinning it to x=0.
+ * Both applied one rule to two things that want opposite treatment:
  *
- *   2. The BLOCKS inside it are not. Every top-level block on a page starts
- *      on the content region's left edge, and none of them re-centres itself.
+ *   CHROME PINS. The masthead spans the viewport; the sidebar's left edge
+ *   IS the screen's left edge. A window frame that floats is not a frame.
  *
- * …plus a third thing r3 never checked and which is the real point of a
- * bounded frame: the width inside it has to be USED. A centred shell with a
- * 72rem column inside it has simply moved the dead zone rather than removed
- * it, so landing and /stock are measured for a dead right zone directly.
+ *   CONTENT IS FLUID. The region runs from (sidebar + gutter) to (viewport
+ *   − gutter), with no cap. A tape, a table and a stat strip all get better
+ *   with width.
  *
- * Two of these are measured at more than one viewport on purpose. r3's whole
- * suite ran at 1280 and only ever exercised the >=1024 branch of every rule.
+ *   PROSE IS THE EXCEPTION. A reading block caps at ~72ch keyed to the
+ *   region's LEFT edge, and the right-hand whitespace there is the point.
+ *
+ * r4's frame-centring assertions are deleted rather than adjusted: they
+ * asserted the opposite of the contract, and a test that has to be inverted
+ * is a test that was encoding an implementation instead of a rule.
  */
 
 /** ±4px, as specified: sub-pixel layout rounding is not a design failure. */
 const TOLERANCE = 4;
 
-/** Every route the app shell owns, plus the standalone reference pages. */
-const STATIC_ROUTES = [
-  "/",
+/** Routes the sidebar shell owns — the content region is fluid on all of them. */
+const APP_ROUTES = [
   "/trades",
   "/screener",
   "/companies",
@@ -49,18 +50,19 @@ const STATIC_ROUTES = [
   "/politicians",
   "/settings",
   "/design",
-  "/status",
-  "/docs",
-  "/docs/methodology",
-  "/legal",
 ];
 
 /**
- * Pages that are a single column of prose and cap at a reading measure. A
- * right-hand margin on these is intentional whitespace, so they are exempt
- * from the dead-zone check and from nothing else.
+ * Sidebar routes whose CONTENT deliberately stops short of the far gutter:
+ * long-form reading blocks capped at a measure. Exempt from the dead-zone
+ * check and from nothing else.
  */
-const PROSE_ROUTES = new Set(["/docs", "/docs/methodology", "/legal", "/status"]);
+const PROSE_ROUTES = ["/docs", "/docs/methodology"];
+
+/** No sidebar, no chrome to pin against: a fluid shell with clamped padding. */
+const STANDALONE_ROUTES = ["/", "/status", "/legal"];
+
+const ALL_ROUTES = [...APP_ROUTES, ...PROSE_ROUTES, ...STANDALONE_ROUTES];
 
 async function readShellTokens(page: Page) {
   return page.evaluate(() => {
@@ -75,8 +77,6 @@ async function readShellTokens(page: Page) {
       return value;
     };
     return {
-      max: px("--shell-max"),
-      pad: px("--shell-pad"),
       gutter: px("--shell-gutter"),
       railInset: px("--shell-rail-inset"),
       sidebar: px("--shell-sidebar"),
@@ -84,112 +84,226 @@ async function readShellTokens(page: Page) {
   });
 }
 
-/** The frame's box, its content box, and the region inside it. */
-async function readFrame(page: Page) {
+interface Geometry {
+  viewport: number;
+  headerWidth: number;
+  headerBarLeft: number | null;
+  sidebarLeft: number | null;
+  regionLeft: number;
+  regionWidth: number;
+  /** Furthest right edge any top-level block on the page reaches. */
+  contentRight: number;
+  /** Anything imposing a fixed frame: capped and auto-margined. */
+  framed: string | null;
+}
+
+async function readGeometry(page: Page): Promise<Geometry> {
   return page.evaluate(() => {
-    const frame = document.querySelector("[data-shell-frame]");
-    const region = document.querySelector("[data-content-region]");
-    if (!frame || !region) return null;
-    const fb = frame.getBoundingClientRect();
-    const fs = getComputedStyle(frame);
+    const viewport = window.innerWidth;
+    const header = document.querySelector("header")!;
+    const bar = header.firstElementChild;
+    const side = document.querySelector("aside.sticky");
+    const region = document.querySelector("[data-content-region]")!;
     const rb = region.getBoundingClientRect();
-    // The deepest right edge any top-level block on the page reaches.
+
     let contentRight = rb.x;
     for (const child of Array.from(region.children)) {
       const b = child.getBoundingClientRect();
       if (b.width === 0 && b.height === 0) continue;
       contentRight = Math.max(contentRight, b.right);
     }
+
+    // A frame is a materially narrower box with roughly equal auto margins.
+    // r4 had one on every page; v3 must have none anywhere.
+    let framed: string | null = null;
+    for (const el of Array.from(
+      document.querySelectorAll("main, main > div, header > div, footer > div, [data-shell-frame]"),
+    )) {
+      const b = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      const ml = parseFloat(s.marginLeft);
+      const mr = parseFloat(s.marginRight);
+      if (ml > 8 && Math.abs(ml - mr) < 2 && b.width < viewport - 40) {
+        framed = `${el.tagName}.${String(el.className).slice(0, 48)} width=${Math.round(b.width)} margin=${Math.round(ml)}`;
+        break;
+      }
+    }
+
     return {
-      viewport: window.innerWidth,
-      frameLeft: fb.x,
-      frameRight: window.innerWidth - fb.right,
-      frameWidth: fb.width,
-      innerLeft: fb.x + parseFloat(fs.paddingLeft),
-      innerRight: fb.right - parseFloat(fs.paddingRight),
-      padLeft: parseFloat(fs.paddingLeft),
-      padRight: parseFloat(fs.paddingRight),
+      viewport,
+      headerWidth: header.getBoundingClientRect().width,
+      headerBarLeft: bar ? bar.getBoundingClientRect().x : null,
+      sidebarLeft: side ? side.getBoundingClientRect().x : null,
       regionLeft: rb.x,
       regionWidth: rb.width,
       contentRight,
+      framed,
     };
   });
 }
 
-test.describe("the shell is centred", () => {
-  // 1440 sits below the 88rem cap (the frame fills the viewport minus its
-  // padding); 1920 sits above it (the cap bites and the surplus is split).
-  // Both are asserted because they are two different code paths through the
-  // same rule, and r3's suite would have passed while failing either.
-  for (const width of [1440, 1920]) {
-    test(`the frame is horizontally centred at ${width}`, async ({ page }) => {
+test.describe("chrome pins to the viewport", () => {
+  for (const width of [1280, 1440, 1920]) {
+    test(`the masthead spans the screen and the sidebar starts at it, at ${width}`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 900 });
-      for (const route of STATIC_ROUTES) {
+      for (const route of APP_ROUTES) {
         await page.goto(route);
-        const frame = await readFrame(page);
-        expect(frame, `${route} has no [data-shell-frame]`).not.toBeNull();
+        const g = await readGeometry(page);
+
         expect(
-          Math.abs(frame!.frameLeft - frame!.frameRight),
-          `${route} @${width}: frame gutters are ${Math.round(frame!.frameLeft)} / ${Math.round(frame!.frameRight)}`,
+          Math.round(g.headerWidth),
+          `${route} @${width}: masthead should span the viewport`,
+        ).toBeGreaterThanOrEqual(width - 1);
+
+        // The bar's CONTENTS, not just its rule. r4 rode the contents on a
+        // centred frame while the rule beneath them spanned the screen,
+        // which is the visual tell that the two had come apart.
+        expect(
+          g.headerBarLeft,
+          `${route} @${width}: the bar's contents start at the screen edge`,
+        ).toBeLessThanOrEqual(TOLERANCE);
+
+        expect(
+          g.sidebarLeft,
+          `${route} @${width}: sidebar left edge is the screen's left edge`,
+        ).not.toBeNull();
+        expect(
+          Math.abs(g.sidebarLeft!),
+          `${route} @${width}: sidebar at x=${g.sidebarLeft}`,
+        ).toBeLessThanOrEqual(TOLERANCE);
+      }
+    });
+  }
+
+  test("nothing anywhere imposes a fixed frame", async ({ page }) => {
+    // The r4 failure mode, asserted directly: a capped, auto-margined box
+    // around the application. Checked at 1920 where a 1408 frame would show
+    // 256px of margin either side.
+    await page.setViewportSize({ width: 1920, height: 900 });
+    for (const route of ALL_ROUTES) {
+      await page.goto(route);
+      const g = await readGeometry(page);
+      expect(g.framed, `${route}: a frame reappeared`).toBeNull();
+    }
+  });
+});
+
+test.describe("content is fluid", () => {
+  for (const width of [1280, 1440, 1920]) {
+    test(`the region reaches the far gutter at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      for (const route of APP_ROUTES) {
+        await page.goto(route);
+        const g = await readGeometry(page);
+        const { gutter, sidebar } = await readShellTokens(page);
+
+        // Left: sidebar + one gutter.
+        expect(
+          Math.abs(g.regionLeft - (sidebar + gutter)),
+          `${route} @${width}: region starts at ${Math.round(g.regionLeft)}, expected ${sidebar + gutter}`,
+        ).toBeLessThanOrEqual(TOLERANCE);
+
+        // Right: one gutter from the viewport, and no more. This is the
+        // whole of "no cap" — a 1408 frame at 1920 would leave 288px here.
+        expect(
+          Math.abs(g.viewport - g.contentRight - gutter),
+          `${route} @${width}: ${Math.round(g.viewport - g.contentRight)}px of dead paper on the right`,
         ).toBeLessThanOrEqual(8);
       }
     });
   }
 
-  test("the frame is capped at --shell-max and stops growing above it", async ({ page }) => {
-    await page.setViewportSize({ width: 1920, height: 900 });
-    await page.goto("/trades");
-    const { max } = await readShellTokens(page);
-    const wide = await readFrame(page);
-    expect(wide!.frameWidth).toBeLessThanOrEqual(max + 1);
-    expect(Math.abs(wide!.frameWidth - max)).toBeLessThanOrEqual(1);
-
-    // …and the left edge is the same distance from the content at 2560 as at
-    // 1920, which is the property that made bounding the frame worth doing.
-    await page.setViewportSize({ width: 2560, height: 900 });
-    await page.goto("/trades");
-    const wider = await readFrame(page);
-    expect(wider!.frameWidth).toBeLessThanOrEqual(max + 1);
-    expect(Math.abs(wider!.regionWidth - wide!.regionWidth)).toBeLessThanOrEqual(1);
-  });
-
-  test("the frame padding is 16px below 640 and 24px above it", async ({ page }) => {
-    for (const [width, expected] of [
-      [360, 16],
-      [390, 16],
-      [639, 16],
-      [640, 24],
-      [1024, 24],
-      [1920, 24],
-    ] as const) {
+  test("the region grows with the window rather than stopping", async ({ page }) => {
+    // The property r4 bought with a cap and v3 gets for free: at 2560 the
+    // content is genuinely wider, not the same width further from the edge.
+    const widths = [1440, 1920, 2560];
+    const measured: number[] = [];
+    for (const width of widths) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/trades");
-      const { pad, gutter, railInset } = await readShellTokens(page);
-      const frame = await readFrame(page);
-      expect(pad, `--shell-pad at ${width}`).toBe(expected);
-      expect(Math.round(frame!.padLeft), `frame padding-left at ${width}`).toBe(expected);
-      expect(Math.round(frame!.padRight), `frame padding-right at ${width}`).toBe(expected);
+      measured.push((await readGeometry(page)).regionWidth);
+    }
+    for (let i = 1; i < measured.length; i += 1) {
+      expect(
+        measured[i]! - measured[i - 1]!,
+        `region should widen from ${widths[i - 1]} to ${widths[i]}: ${measured.join(" → ")}`,
+      ).toBeGreaterThan(400);
+    }
+  });
 
-      // The hanging rail has to fit in the space to the left of the content
-      // with air to spare, at EVERY width. r3 checked this at 1280 only, and
-      // 1rem of rail inside 16px of padding would have gone unnoticed.
-      expect(railInset, `rail inset must fit inside pad+gutter at ${width}`).toBeLessThan(
-        pad + gutter,
-      );
+  test("prose caps at a measure and keeps the region's left edge", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    for (const route of PROSE_ROUTES) {
+      await page.goto(route);
+      const g = await readGeometry(page);
+      const { gutter, sidebar } = await readShellTokens(page);
+
+      // Left edge: the same as every other app route.
+      expect(
+        Math.abs(g.regionLeft - (sidebar + gutter)),
+        `${route}: prose starts on the region edge`,
+      ).toBeLessThanOrEqual(TOLERANCE);
+
+      // …and it deliberately does NOT reach the far gutter. A reading
+      // block that ran to 1632px would be ~200 characters a line.
+      const measure = g.contentRight - g.regionLeft;
+      expect(measure, `${route}: measure is ${Math.round(measure)}px`).toBeLessThan(1100);
+      expect(measure, `${route}: measure collapsed`).toBeGreaterThan(400);
     }
   });
 });
 
-test.describe("blocks inside the shell are not centred", () => {
-  test("every top-level block on the page shares one left edge", async ({ page }) => {
-    for (const route of STATIC_ROUTES) {
+test.describe("the standalone shell is fluid and even", () => {
+  for (const width of [1280, 1440, 1920]) {
+    test(`landing gutters are equal and bounded at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      const g = await readGeometry(page);
+      const rightGutter = g.viewport - g.contentRight;
+
+      expect(
+        Math.abs(g.regionLeft - rightGutter),
+        `landing @${width}: gutters ${Math.round(g.regionLeft)} / ${Math.round(rightGutter)}`,
+      ).toBeLessThanOrEqual(8);
+
+      // `clamp(24px, 6vw, 120px)` — tracks the window, stops at 120 so a
+      // 2560px screen does not turn the page into a letterbox.
+      expect(g.regionLeft, `landing @${width}: gutter too wide`).toBeLessThanOrEqual(130);
+      expect(g.regionLeft, `landing @${width}: gutter too narrow`).toBeGreaterThanOrEqual(24);
+    });
+  }
+
+  test("the landing hero keeps its 7/5 asymmetry across the fluid shell", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto("/");
+    const hero = await page.locator("[data-content-region] > section").first().boundingBox();
+    const cols = await page.evaluate(() => {
+      const section = document.querySelector("[data-content-region] > section")!;
+      return Array.from(section.children).map((c) => {
+        const b = c.getBoundingClientRect();
+        return { x: Math.round(b.x), w: Math.round(b.width) };
+      });
+    });
+    expect(cols.length, "the hero has two columns").toBe(2);
+    expect(cols[1]!.x, "the tape sits to the right of the hero").toBeGreaterThan(
+      cols[0]!.x + cols[0]!.w - 1,
+    );
+    expect(cols[0]!.w / hero!.width).toBeGreaterThan(0.5);
+    expect(cols[0]!.w).toBeGreaterThan(cols[1]!.w);
+  });
+});
+
+test.describe("composition inside the region", () => {
+  test("every top-level block shares one left edge", async ({ page }) => {
+    for (const route of ALL_ROUTES) {
       await page.goto(route);
 
       // Measured on the MARGIN box, so an element that deliberately hangs
       // into the gutter (the rail) is judged by where it was placed, not by
       // how far its own rule reaches back. Nested content is exempt on
-      // purpose: a table inside a padded card is inset by that card, and
-      // demanding otherwise would forbid cards from having padding.
+      // purpose: a table inside a padded card is inset by that card.
       const strays = await page.evaluate(() => {
         const region = document.querySelector("[data-content-region]")!;
         const edge = region.getBoundingClientRect().x;
@@ -210,26 +324,27 @@ test.describe("blocks inside the shell are not centred", () => {
       });
       expect(strays, `${route}: blocks off the left edge`).toEqual([]);
 
-      // The page heading specifically, wherever it is nested.
-      const heading = page.locator("[data-content-region] h1").first();
+      // `:visible`, not `.first()`: /design opens with a `sr-only` heading
+      // above the showcase, and an off-screen box has no x to compare.
+      const heading = page.locator("[data-content-region] h1:visible").first();
       if ((await heading.count()) > 0) {
-        const frame = await readFrame(page);
+        const g = await readGeometry(page);
         const box = await heading.boundingBox();
+        expect(box, `${route}: visible h1 has no box`).not.toBeNull();
         expect(
-          Math.abs(box!.x - frame!.regionLeft),
-          `${route}: h1 at ${box!.x} should sit on the left edge at ${frame!.regionLeft}`,
+          Math.abs(box!.x - g.regionLeft),
+          `${route}: h1 at ${box!.x} should sit on the left edge at ${g.regionLeft}`,
         ).toBeLessThanOrEqual(TOLERANCE);
       }
     }
   });
 
   test("nothing inside the content region re-centres itself", async ({ page }) => {
-    // Measured at 1920, where a stray `mx-auto` has real surplus to split.
-    // r3's guard walked UP to <body> and would now flag the shell's own
-    // (correct) centring; this walks DOWN from the region, which is the
-    // only place the rule was ever meant to apply.
+    // r3's rule, kept verbatim and kept where it belongs: the BLOCKS may
+    // not centre. Measured at 1920, where a stray `mx-auto` has real
+    // surplus to split.
     await page.setViewportSize({ width: 1920, height: 900 });
-    for (const route of STATIC_ROUTES) {
+    for (const route of ALL_ROUTES) {
       await page.goto(route);
       const centred = await page.evaluate(() => {
         const region = document.querySelector("[data-content-region]");
@@ -240,8 +355,7 @@ test.describe("blocks inside the shell are not centred", () => {
           for (const child of Array.from(node.children)) {
             const el = child as HTMLElement;
             // True empty and error states are allowed to centre — one
-            // object on the page and no column to scan. So are overlays,
-            // which are not part of the page's column at all.
+            // object on the page and no column to scan. So are overlays.
             if (el.closest("[data-empty-state],[role='dialog'],[role='status']")) continue;
             const s = getComputedStyle(el);
             const left = parseFloat(s.marginLeft);
@@ -257,7 +371,41 @@ test.describe("blocks inside the shell are not centred", () => {
         walk(region, 1);
         return out;
       });
-      expect(centred, `${route}: content re-centred inside the shell`).toEqual([]);
+      expect(centred, `${route}: content re-centred inside the region`).toEqual([]);
+    }
+  });
+
+  test("the frame padding is 24px below 1024 and 32px above it", async ({ page }) => {
+    for (const [width, expected] of [
+      [360, 24],
+      [768, 24],
+      [1023, 24],
+      [1024, 32],
+      [1920, 32],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/trades");
+      const { gutter, railInset } = await readShellTokens(page);
+      expect(gutter, `--shell-gutter at ${width}`).toBe(expected);
+      // The hanging rail has to fit in the gutter with air to spare, at
+      // every width — r3 checked this at 1280 only.
+      expect(railInset, `rail must fit inside the gutter at ${width}`).toBeLessThan(gutter);
+    }
+  });
+
+  test("the hanging rail sits IN the gutter, not in the text column", async ({ page }) => {
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/trades");
+      const g = await readGeometry(page);
+      const rail = page.locator("[data-content-region] .rail-bleed").first();
+      const box = await rail.boundingBox();
+
+      expect(box, `no rail at ${width}`).not.toBeNull();
+      expect(box!.x, `rail should hang left of the edge at ${width}`).toBeLessThan(g.regionLeft);
+      expect(box!.x, `rail must not escape the viewport at ${width}`).toBeGreaterThanOrEqual(-1);
+      const heading = await page.locator("[data-content-region] h1").first().boundingBox();
+      expect(Math.abs(heading!.x - g.regionLeft)).toBeLessThanOrEqual(TOLERANCE);
     }
   });
 
@@ -271,92 +419,6 @@ test.describe("blocks inside the shell are not centred", () => {
     // The exemption is deliberate and narrow: one form, no column to scan.
     expect(centred).toBe(true);
   });
-
-  test("the hanging rail sits IN the gutter, not in the text column", async ({ page }) => {
-    for (const width of [360, 768, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto("/trades");
-      const frame = await readFrame(page);
-      const rail = page.locator("[data-content-region] .rail-bleed").first();
-      const box = await rail.boundingBox();
-
-      expect(box, `no rail at ${width}`).not.toBeNull();
-      // The rail's own box hangs left of the edge; the text it marks does not.
-      expect(box!.x, `rail should hang left of the edge at ${width}`).toBeLessThan(
-        frame!.regionLeft,
-      );
-      // …and it never reaches out past the frame, which would clip it.
-      expect(box!.x, `rail must not escape the frame at ${width}`).toBeGreaterThanOrEqual(
-        frame!.frameLeft - 1,
-      );
-      const heading = await page.locator("[data-content-region] h1").first().boundingBox();
-      expect(Math.abs(heading!.x - frame!.regionLeft)).toBeLessThanOrEqual(TOLERANCE);
-    }
-  });
-});
-
-test.describe("the width inside the frame is used", () => {
-  // The failure a centred shell invites: cap the content at a measure inside
-  // an already-capped frame and the dead zone comes straight back, one level
-  // down. Landing and /stock are the two pages the brief names.
-  for (const width of [1280, 1440, 1920]) {
-    test(`landing has no dead right zone at ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto("/");
-      const frame = await readFrame(page);
-      expect(
-        frame!.innerRight - frame!.contentRight,
-        `landing @${width}: ${Math.round(frame!.innerRight - frame!.contentRight)}px of dead paper on the right`,
-      ).toBeLessThanOrEqual(8);
-      // …and the region itself spans the frame, rather than the content
-      // merely reaching across a narrow region.
-      expect(frame!.regionWidth / (frame!.innerRight - frame!.innerLeft)).toBeGreaterThanOrEqual(
-        0.9,
-      );
-    });
-  }
-
-  test("every non-prose app route fills the region beside the sidebar", async ({ page }) => {
-    await page.setViewportSize({ width: 1920, height: 900 });
-    for (const route of STATIC_ROUTES) {
-      if (PROSE_ROUTES.has(route)) continue;
-      await page.goto(route);
-      const frame = await readFrame(page);
-      const { sidebar } = await readShellTokens(page);
-      const available = frame!.innerRight - frame!.innerLeft - sidebar;
-      expect(
-        frame!.regionWidth / available,
-        `${route}: region is ${Math.round(frame!.regionWidth)} of ${Math.round(available)} available`,
-      ).toBeGreaterThanOrEqual(0.9);
-      expect(
-        frame!.innerRight - frame!.contentRight,
-        `${route}: dead right zone`,
-      ).toBeLessThanOrEqual(8);
-    }
-  });
-
-  test("landing and /stock become two columns once there is width to divide", async ({ page }) => {
-    // The composition rule, asserted structurally rather than by eye: the
-    // hero and the tape sit side by side, and the stock rail sits beside the
-    // record — same top, different left edges.
-    await page.setViewportSize({ width: 1600, height: 900 });
-    await page.goto("/");
-    const hero = await page.locator("[data-content-region] > section").first().boundingBox();
-    const heroCols = await page.evaluate(() => {
-      const section = document.querySelector("[data-content-region] > section")!;
-      return Array.from(section.children).map((c) => {
-        const b = c.getBoundingClientRect();
-        return { x: Math.round(b.x), w: Math.round(b.width) };
-      });
-    });
-    expect(heroCols.length, "landing hero should have two columns").toBe(2);
-    expect(heroCols[1]!.x, "the tape sits to the right of the hero").toBeGreaterThan(
-      heroCols[0]!.x + heroCols[0]!.w - 1,
-    );
-    // 7/12 vs 5/12, allowing for the gap.
-    expect(heroCols[0]!.w / hero!.width).toBeGreaterThan(0.5);
-    expect(heroCols[0]!.w).toBeGreaterThan(heroCols[1]!.w);
-  });
 });
 
 test.describe("detail routes key to the same edge", () => {
@@ -365,8 +427,7 @@ test.describe("detail routes key to the same edge", () => {
   test.beforeAll(() => {
     // Short prefix on purpose: the stock route truncates a ticker to 12
     // characters, so a longer fixture name resolves to a company that does
-    // not exist and the page 404s for reasons that have nothing to do with
-    // layout. `ZZLAY` + a five-digit suffix is ten.
+    // not exist and the page 404s for reasons unrelated to layout.
     target = createSyntheticCompany("ZZLAY");
     insertSyntheticTrade(target, { tag: "layout" });
   });
@@ -375,25 +436,22 @@ test.describe("detail routes key to the same edge", () => {
     cleanupSyntheticCompany(target);
   });
 
-  test("stock and insider pages start on the region edge", async ({ page }) => {
+  test("stock and insider pages start on the region edge and reach the gutter", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
     for (const route of [`/stock/${target.ticker}`, `/insider/${target.insiderId}`]) {
       await page.goto(route);
-      const frame = await readFrame(page);
-      const measured = await page.evaluate(() => {
-        const region = document.querySelector("[data-content-region]")!;
-        const first = region.firstElementChild!;
-        const s = getComputedStyle(first);
-        return {
-          firstX:
-            first.getBoundingClientRect().x +
-            parseFloat(s.borderLeftWidth) +
-            parseFloat(s.paddingLeft),
-        };
-      });
+      const g = await readGeometry(page);
+      const { gutter, sidebar } = await readShellTokens(page);
       expect(
-        Math.abs(measured.firstX - frame!.regionLeft),
-        `${route}: first element on the edge`,
+        Math.abs(g.regionLeft - (sidebar + gutter)),
+        `${route}: left edge`,
       ).toBeLessThanOrEqual(TOLERANCE);
+      expect(
+        Math.abs(g.viewport - g.contentRight - gutter),
+        `${route}: right gutter`,
+      ).toBeLessThanOrEqual(8);
     }
   });
 
@@ -412,10 +470,9 @@ test.describe("detail routes key to the same edge", () => {
     );
     expect(wide.sameRow, "record and rail start on the same line").toBe(true);
 
-    // …and the tables get the whole frame back. The insider-trade table's
-    // columns sum to ~1016px: beside a 21rem rail the main column is 732px
-    // at 1920, so leaving them there would trade a dead right zone for a
-    // hidden one — a table that fits at 1440 scrolling at every width.
+    // …and the tables get the whole region back. Their columns sum to
+    // ~1016px: leaving them beside a 21rem rail made a table that fitted at
+    // 1440 scroll at every width — a dead right zone traded for a hidden one.
     const tables = await page.evaluate(() => {
       const region = document.querySelector("[data-content-region]")!;
       const block = document.querySelector("[data-testid='stock-tables']")!;
@@ -426,11 +483,11 @@ test.describe("detail routes key to the same edge", () => {
     });
     expect(
       tables.blockWidth / tables.regionWidth,
-      "the record spans the frame, not the column beside the rail",
+      "the record spans the region, not the column beside the rail",
     ).toBeGreaterThan(0.98);
 
-    // Below xl it is one column, and — the part that matters — the rail's
-    // figures still come BEFORE the tables in reading order.
+    // Below xl it is one column, and the rail's figures still come BEFORE
+    // the tables in reading order.
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto(`/stock/${target.ticker}`);
     const narrow = await page.evaluate(() => {

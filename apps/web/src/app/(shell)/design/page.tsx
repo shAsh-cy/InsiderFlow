@@ -306,41 +306,137 @@ const MOTION_PRESETS = [
  */
 const SHELL_TOKENS = [
   {
-    name: "--shell-max",
-    value: "88rem (1408px)",
-    role: "The frame. Centred; above this width the left edge stops moving.",
-  },
-  {
-    name: "--shell-pad",
-    value: "1rem / 1.5rem ≥640",
-    role: "Frame edge to the first thing inside it.",
-  },
-  {
     name: "--shell-gutter",
-    value: "0 / 2.25rem ≥1024",
-    role: "Sidebar to content. Zero where there is no sidebar — the frame padding already is that gap.",
-  },
-  {
-    name: "--shell-rail-inset",
-    value: "0.5 / 1 / 1.5rem",
-    role: "How far the hanging rail reaches back. Three steps, so it keeps ~6px of air at every breakpoint.",
+    value: "1.5rem / 2rem \u22651024",
+    role: "Content region to viewport edge, and sidebar to content. One number, because they are the same gutter seen from two sides.",
   },
   {
     name: "--shell-sidebar",
-    value: "0 / 14rem ≥1024",
-    role: "Added back by bands that sit outside the sidebar row, so the footer lands on the content edge.",
+    value: "0 / 14rem \u22651024",
+    role: "Added back by bands outside the sidebar row, so the footer lands on the content edge.",
   },
   {
     name: "--shell-nav-inset",
-    value: "0 / 1.5rem ≥1024",
-    role: "Frame edge to a sidebar item's LABEL (12 + 2 + 10). The masthead brand borrows it.",
+    value: "0 / 1.5rem \u22651024",
+    role: "Viewport edge to a sidebar item LABEL (12 + 2 + 10). The masthead brand borrows it, so the wordmark and the navigation beneath it stand on one line.",
+  },
+  {
+    name: "--shell-rail-inset",
+    value: "1rem / 1.25rem \u22651024",
+    role: "How far the hanging rail reaches back out of the column. Always leaves ~6px of air inside the gutter.",
   },
   {
     name: "--shell-measure",
-    value: "72rem",
-    role: "Reading measure for prose pages. Left-anchored: it trims the right side only.",
+    value: "72ch",
+    role: "The reading measure. Applied per BLOCK, never by the shell: a table wants the region, a paragraph wants 72ch.",
+  },
+  {
+    name: ".shell-fluid",
+    value: "clamp(24px, 6vw, 120px)",
+    role: "The no-sidebar shell (landing, auth, legal). Tracks the viewport instead of stepping; the 120px ceiling stops a 2560px screen becoming a letterbox.",
   },
 ] as const;
+
+/** The three rules of Layout v3, stated once so they can be quoted. */
+const LAYOUT_RULES = [
+  {
+    title: "Chrome pins to the viewport",
+    body: "The masthead spans the full width; the sidebar left edge IS the screen left edge. Neither is ever centred, because a window frame that floats is not a frame.",
+  },
+  {
+    title: "Content is fluid",
+    body: "The region runs from (sidebar + gutter) to (viewport minus gutter), with no cap. A tape, a table and a stat strip all get better with width; capping them buys nothing.",
+  },
+  {
+    title: "Prose is the one exception",
+    body: "A long-form reading block caps at ~72ch keyed to the region LEFT edge. There the right-hand whitespace is the point: a 150-character line is unreadable.",
+  },
+] as const;
+
+/**
+ * The contract, drawn.
+ *
+ * Deliberately schematic and deliberately labelled: the failure this
+ * replaces was two rounds reading the same sentence and picturing different
+ * boxes. One `aria-label` on the figure carries the whole claim; the
+ * internals are not separately announced, because a screen reader should
+ * get this once rather than as fourteen stray words.
+ */
+function LayoutDiagram() {
+  return (
+    <figure className="surface flex flex-col gap-3 rounded-lg p-4">
+      <svg
+        viewBox="0 0 640 176"
+        className="w-full"
+        role="img"
+        aria-label="Layout v3. The masthead spans the viewport and the sidebar left edge is the screen left edge. The content region runs from the sidebar plus one gutter to the viewport minus one gutter, with no cap. A prose block inside it stops at about 72 characters, keyed to the region left edge."
+      >
+        <rect
+          x="1"
+          y="1"
+          width="638"
+          height="174"
+          rx="4"
+          fill="none"
+          stroke="var(--border-strong)"
+          strokeWidth="1.5"
+        />
+        <rect x="1" y="1" width="638" height="26" fill="var(--surface-raised)" />
+        <line x1="1" y1="27" x2="639" y2="27" stroke="var(--border-strong)" strokeWidth="1.5" />
+        <text x="12" y="18" className="num fill-[var(--text-muted)] text-[9px]">
+          masthead, spans the viewport
+        </text>
+        <rect x="1" y="27" width="96" height="148" fill="var(--surface)" />
+        <line x1="97" y1="27" x2="97" y2="175" stroke="var(--border)" />
+        <text x="12" y="48" className="num fill-[var(--text-muted)] text-[9px]">
+          sidebar
+        </text>
+        <text x="12" y="60" className="num fill-[var(--text-muted)] text-[9px]">
+          x = 0
+        </text>
+        <rect x="97" y="27" width="26" height="148" fill="var(--accent-bright)" opacity="0.14" />
+        <rect x="613" y="27" width="26" height="148" fill="var(--accent-bright)" opacity="0.14" />
+        <rect
+          x="123"
+          y="39"
+          width="490"
+          height="124"
+          rx="3"
+          fill="none"
+          stroke="var(--accent-bright)"
+          strokeDasharray="3 3"
+        />
+        <text x="133" y="56" className="num fill-[var(--text)] text-[9px]">
+          content region, fluid, no cap
+        </text>
+        <rect
+          x="133"
+          y="66"
+          width="240"
+          height="86"
+          rx="2"
+          fill="var(--surface-sunken)"
+          stroke="var(--border)"
+        />
+        <text x="141" y="82" className="num fill-[var(--text-muted)] text-[9px]">
+          prose block
+        </text>
+        <text x="141" y="94" className="num fill-[var(--text-muted)] text-[9px]">
+          72ch, left-keyed
+        </text>
+        <text x="100" y="171" className="num fill-[var(--text-muted)] text-[8px]">
+          gutter
+        </text>
+        <text x="616" y="171" className="num fill-[var(--text-muted)] text-[8px]">
+          gutter
+        </text>
+      </svg>
+      <figcaption className="text-2xs text-ink-faint">
+        Chrome meets the bezel; the content breathes to the far gutter; only prose stops short.
+      </figcaption>
+    </figure>
+  );
+}
 
 export default function DesignPage() {
   const rows = useMemo(() => makeRows(10_000), []);
@@ -528,31 +624,41 @@ export default function DesignPage() {
       </Section>
 
       <Section
-        title="The frame — centred, capped, and used"
-        note="Two rules, and keeping them apart is the point. The SHELL is centred and capped at 88rem, so above the cap its left edge stops moving. The BLOCKS inside it are not: every heading, card, form and table keys to the shell's own start edge, and `margin-inline: auto` on anything inside the content region is still forbidden. r3 had one rule for both jobs — nothing is ever centred — which pinned the page to the left bezel and left a dead strip of paper down the right of any wide screen."
+        title="Layout v3 \u2014 chrome pins, content is fluid"
+        note="The canonical layout contract, and the third attempt at it. r3 pinned every page to the viewport left edge and left a dead strip of paper down the right of a wide screen. r4 corrected that by centring the whole frame, which centred the CHROME with it: at 1920 the sidebar floated 250px in from the bezel and the app read as an island on a desktop rather than as the window it is. Both applied one rule to two things that want opposite treatment."
       >
+        <LayoutDiagram />
+
         <div className="surface flex flex-col divide-y divide-border rounded-lg px-4">
           {SHELL_TOKENS.map((t) => (
             <div key={t.name} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
               <span className="num w-48 shrink-0 text-2xs text-ink">{t.name}</span>
-              <span className="num w-40 shrink-0 text-2xs text-ink-faint">{t.value}</span>
+              <span className="num w-52 shrink-0 text-2xs text-ink-faint">{t.value}</span>
               <span className="min-w-0 flex-1 text-sm text-ink-muted">{t.role}</span>
             </div>
           ))}
         </div>
 
+        <div className="grid gap-4 lg:grid-cols-3">
+          {LAYOUT_RULES.map((rule) => (
+            <div key={rule.title} className="surface-sunken flex flex-col gap-2 rounded-lg p-4">
+              <p className="text-sm font-semibold text-ink">{rule.title}</p>
+              <p className="text-sm leading-relaxed text-ink-muted">{rule.body}</p>
+            </div>
+          ))}
+        </div>
+
         <p className="max-w-[80ch] text-sm leading-relaxed text-ink-muted">
-          The width has to be USED, or a centred shell has only moved the dead zone one level down.
-          At <span className="num">xl</span> a page with real secondary content becomes an
-          asymmetric two-column grid across the whole frame — the landing hero at{" "}
-          <span className="num">7/12</span> beside the live tape at{" "}
+          Width is spent on information, not on stretch. At <span className="num">xl</span> a page
+          with real secondary content becomes an asymmetric two-column grid across the whole region
+          \u2014 the landing hero at <span className="num">7/12</span> beside the live tape at{" "}
           <span className="num">5/12</span>, <span className="num">/stock</span> as a panel rail
           beside the record, <span className="num">/settings</span> as two columns of cards. Inside
           the sidebar shell that split starts at <span className="num">xl</span> and not{" "}
-          <span className="num">lg</span>, because <span className="num">lg</span> leaves 716px of
-          content region and dividing it again reproduces the same problem in miniature. A single
-          column of prose caps at <span className="num">--shell-measure</span> and keeps its left
-          edge: a right margin inside a centred frame is whitespace on purpose.
+          <span className="num">lg</span>, because <span className="num">lg</span> leaves ~736px of
+          content region and dividing it again reproduces the same problem in miniature. Beyond
+          that, rows earn their width by gaining COLUMNS rather than by stretching a void down their
+          middle \u2014 see the tape at <span className="num">1440</span> and above.
         </p>
       </Section>
 

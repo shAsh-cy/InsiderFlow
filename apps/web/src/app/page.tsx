@@ -73,12 +73,11 @@ export default async function Home() {
 
   return (
     <main id="main" className="relative min-h-screen overflow-x-clip pt-14">
-      {/* One frame around the whole page, centred and capped, with every
-          section keyed to its start edge. r3 had four separately-padded
-          full-bleed bands here; that works while the frame begins at x=0
-          and stops working the moment it does not, so the frame is now a
-          single object and the sections are blocks inside it. */}
-      <div data-shell-frame className="shell-frame">
+      {/* No sidebar here, so no chrome to pin against: the shell is fluid
+          and its margin tracks the viewport through `clamp(24px, 6vw,
+          120px)` rather than stepping at a breakpoint. The 120px ceiling is
+          what stops a 2560px screen turning the page into a letterbox. */}
+      <div className="shell-fluid">
         <div data-content-region>
           {/* ── Hero ──────────────────────────────────────────────────────
           Editorial-left, not centred. Every block on this page — headline,
