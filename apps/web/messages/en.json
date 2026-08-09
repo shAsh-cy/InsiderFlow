@@ -81,9 +81,12 @@
     "footer": {
       "sourcesLead": "Data sources:",
       "sourcesBody": "US data comes from SEC EDGAR, a US-government service whose filings are in the public domain; access follows the SEC fair-access policy. NSE/BSE (India) data is subject to restrictive exchange terms and is not redistributed by this project.",
-      "licence": "InsiderFlow is free software licensed under AGPL-3.0. Nothing on this site is investment advice or a recommendation to buy or sell any security.",
       "navLabel": "Project and legal",
       "links": {
+        "liveTape": "Live tape",
+        "screener": "Screener",
+        "heatmap": "Heatmap",
+        "leaderboard": "Leaderboard",
         "source": "Source",
         "licence": "Licence (AGPL-3.0)",
         "apiDocs": "API docs",
@@ -92,7 +95,13 @@
         "legal": "Legal & data sources"
       },
       "disclaimerLead": "Not investment advice.",
-      "disclaimerBody": "InsiderFlow republishes public regulatory filings for research and education. Filings can be late, amended, incomplete, or wrong, and insider activity is not a reliable predictor of returns. Analytics on this site are backward-looking descriptive statistics, not forecasts."
+      "disclaimerBody": "InsiderFlow republishes public regulatory filings for research and education. Filings can be late, amended, incomplete, or wrong, and insider activity is not a reliable predictor of returns. Analytics on this site are backward-looking descriptive statistics, not forecasts.",
+      "tagline": "The real-time insider-trading tape",
+      "groups": {
+        "product": "Product",
+        "project": "Project",
+        "reference": "Reference"
+      }
     },
     "accessLead": "All insider data is free to read.",
     "accessBody": "No account, no paywall, no row limits. Sign in only to save watchlists, set alerts, and get an API key."

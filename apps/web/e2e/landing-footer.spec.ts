@@ -39,7 +39,7 @@ test.describe("the landing footer", () => {
     const hrefs = await footer
       .locator("a[href^='/']")
       .evaluateAll((els) => els.map((el) => el.getAttribute("href")!));
-    expect(hrefs.length, "internal links present").toBeGreaterThanOrEqual(4);
+    expect(hrefs.length, "internal links present").toBeGreaterThanOrEqual(7);
     for (const href of hrefs) {
       const res = await page.goto(href);
       expect(res?.status(), `${href} should resolve`).toBe(200);
@@ -75,6 +75,83 @@ test.describe("the landing footer", () => {
     await expect(footer).toContainText(/not investment advice/i);
     // Provenance travels with it: what the data is and where it came from.
     await expect(footer).toContainText(/SEC EDGAR/i);
+  });
+
+  test("the index is four groups and uses the whole shell width", async ({ page }) => {
+    // r6 put every link in one narrow left-hand column, which at 1920 left
+    // the right two thirds of the band empty — a footer that had stopped
+    // using the page it sits on.
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await page.goto("/");
+    const footer = page.locator("[data-content-region] footer");
+
+    for (const group of ["Product", "Project", "Reference"]) {
+      await expect(
+        footer.getByRole("navigation", { name: group }),
+        `the ${group} group`,
+      ).toBeVisible();
+    }
+    // The brand column is a column of the grid, not a banner above it.
+    await expect(footer.getByText("The real-time insider-trading tape")).toBeVisible();
+
+    const spread = await page.evaluate(() => {
+      const foot = document.querySelector("[data-content-region] footer")!;
+      const grid = foot.firstElementChild!;
+      const cols = Array.from(grid.children).map((c) => c.getBoundingClientRect());
+      const box = grid.getBoundingClientRect();
+      return {
+        columns: cols.length,
+        rows: new Set(cols.map((c) => Math.round(c.y))).size,
+        // How far the rightmost column reaches across the band.
+        reach: (Math.max(...cols.map((c) => c.right)) - box.x) / box.width,
+      };
+    });
+    expect(spread.columns, "four columns").toBe(4);
+    expect(spread.rows, "on one row at 1920").toBe(1);
+    expect(spread.reach, "the grid must not stop half way").toBeGreaterThan(0.95);
+  });
+
+  test("the index collapses 4 to 2 to 1", async ({ page }) => {
+    await page.goto("/");
+    const rowsAt = async (width: number) => {
+      await page.setViewportSize({ width, height: 1000 });
+      return page.evaluate(() => {
+        const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
+        const tops = Array.from(grid.children).map((c) => Math.round(c.getBoundingClientRect().y));
+        return new Set(tops).size;
+      });
+    };
+    expect(await rowsAt(1440), "four across on a desktop").toBe(1);
+    expect(await rowsAt(800), "two by two on a tablet").toBe(2);
+    expect(await rowsAt(390), "one column on a phone").toBe(4);
+  });
+
+  test("the fine print keeps a measure, and the bands are ruled apart", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await page.goto("/");
+    const band = page.getByTestId("footer-disclaimer");
+    const measured = await band.evaluate((el) => {
+      const paras = Array.from(el.querySelectorAll("p"));
+      return {
+        widths: paras.map((p) => p.getBoundingClientRect().width),
+        bandWidth: el.getBoundingClientRect().width,
+        rule: getComputedStyle(el).borderTopWidth,
+        ruleColour: getComputedStyle(el).borderTopColor,
+      };
+    });
+    // Full-width band, capped paragraphs. At 1920 the band is ~1790px and a
+    // 66ch line is nowhere near it — that gap is the whole point.
+    expect(measured.bandWidth).toBeGreaterThan(1000);
+    for (const w of measured.widths) {
+      expect(w, `fine-print line is ${Math.round(w)}px`).toBeLessThan(760);
+    }
+    expect(parseFloat(measured.rule), "the fine print is ruled off").toBeGreaterThan(0);
+    expect(measured.ruleColour).not.toBe("rgba(0, 0, 0, 0)");
+
+    const metaRule = await page
+      .getByTestId("build-string")
+      .evaluate((el) => getComputedStyle(el.parentElement!).borderTopWidth);
+    expect(parseFloat(metaRule), "the build row is ruled off too").toBeGreaterThan(0);
   });
 
   test("app routes keep their own footer and do not get this one", async ({ page }) => {
