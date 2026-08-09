@@ -40,19 +40,29 @@ export function LiveFeedStrip({
   emptyMessage?: string;
 }) {
   /*
-   * The stream opens once the browser has a spare moment, not during
-   * hydration.
+   * The stream opens once the browser has a spare moment or the reader
+   * touches the page, not during hydration.
    *
    * The rows on screen are server-rendered — the stream is what keeps them
    * CURRENT, not what puts them there — so nothing a reader can see waits
    * on this. Opening an EventSource inside the hydration window spends
    * main-thread time, at 4x CPU throttling, on a connection nobody is
-   * waiting for; deferring it to idle (with a 1.5s deadline, so it is a
-   * deferral and not an abandonment) takes that out of the critical path
-   * and changes nothing about what the page shows.
+   * waiting for; deferring it takes that out of the critical path and
+   * changes nothing about what the page shows.
    */
-  const idle = useIdle();
-  const { trades, status } = useTradeStream({ maxItems: limit, enabled: idle });
+  const started = useIdle();
+  const { trades, status } = useTradeStream({ maxItems: limit, enabled: started });
+  /**
+   * Whether the stream is actually up.
+   *
+   * The indicator used to mount immediately reading "Connecting", which
+   * was a claim that a connection was being attempted while it was in fact
+   * deliberately deferred — the tape was telling the reader about an
+   * intention rather than a state. Until the stream attaches, the "as of"
+   * stamp is the honest thing to show: these rows are a snapshot, and it
+   * says when they were taken.
+   */
+  const attached = started && status !== "connecting";
 
   /** Live arrivals first, then the server-rendered seed, deduped by id. */
   const rows = useMemo(() => {
@@ -108,7 +118,17 @@ export function LiveFeedStrip({
                 as of {utcClock(latestIngestAt)}
               </span>
             ) : null}
-            <LiveDot status={status} />
+            {/* The slot holds its width whether or not the dot is in it,
+                so the upgrade from snapshot to live stream moves nothing.
+                The meta row is right-aligned: without a reserved box the
+                "as of" stamp slides left the moment the indicator mounts,
+                and again when "Connecting" becomes "Live". */}
+            <span
+              data-testid="tape-live-slot"
+              className="inline-flex min-w-16 shrink-0 justify-end"
+            >
+              {attached ? <LiveDot status={status} /> : null}
+            </span>
           </>
         }
       />

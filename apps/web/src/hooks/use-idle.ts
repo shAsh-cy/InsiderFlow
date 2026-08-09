@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 
+import { activateWhenReady } from "@/lib/activation";
+
 /**
- * False until the browser has a spare moment, then true forever.
+ * False until the browser has a spare moment OR the reader touches the
+ * page, whichever comes first. True forever after.
  *
  * For work that must happen but must not happen DURING hydration. The
  * landing page's tape is the case this exists for: its rows are already in
@@ -12,23 +15,16 @@ import { useEffect, useState } from "react";
  * hydration window spends main-thread time on a connection nobody is
  * waiting for yet.
  *
- * `requestIdleCallback` with a timeout, so it is a deferral and never an
- * abandonment: a page that never goes idle still starts the work by the
- * deadline. Browsers without it (Safari, at time of writing) fall through
- * to a timer, which is the same promise with a worse guarantee.
+ * The trigger wiring lives in `lib/activation`, where it can be tested
+ * against a fake host instead of a browser.
  */
 export function useIdle(timeoutMs = 1500): boolean {
-  const [idle, setIdle] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const request = window.requestIdleCallback;
-    if (typeof request === "function") {
-      const handle = request(() => setIdle(true), { timeout: timeoutMs });
-      return () => window.cancelIdleCallback?.(handle);
-    }
-    const timer = window.setTimeout(() => setIdle(true), Math.min(timeoutMs, 200));
-    return () => window.clearTimeout(timer);
-  }, [timeoutMs]);
+    if (ready) return;
+    return activateWhenReady(window, timeoutMs, () => setReady(true));
+  }, [ready, timeoutMs]);
 
-  return idle;
+  return ready;
 }
