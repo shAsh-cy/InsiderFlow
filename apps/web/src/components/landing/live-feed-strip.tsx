@@ -17,6 +17,7 @@ import { LiveDot } from "@/components/domain/live-dot";
 import { SectionHeader } from "@/components/domain/section-header";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { TapeList } from "@/components/feed/tape-list";
+import { useIdle } from "@/hooks/use-idle";
 import { useTradeStream } from "@/hooks/use-trade-stream";
 import type { TradeRow } from "@/lib/api/queries";
 import { utcClock } from "@/lib/format";
@@ -38,7 +39,20 @@ export function LiveFeedStrip({
   label?: string;
   emptyMessage?: string;
 }) {
-  const { trades, status } = useTradeStream({ maxItems: limit });
+  /*
+   * The stream opens once the browser has a spare moment, not during
+   * hydration.
+   *
+   * The rows on screen are server-rendered — the stream is what keeps them
+   * CURRENT, not what puts them there — so nothing a reader can see waits
+   * on this. Opening an EventSource inside the hydration window spends
+   * main-thread time, at 4x CPU throttling, on a connection nobody is
+   * waiting for; deferring it to idle (with a 1.5s deadline, so it is a
+   * deferral and not an abandonment) takes that out of the critical path
+   * and changes nothing about what the page shows.
+   */
+  const idle = useIdle();
+  const { trades, status } = useTradeStream({ maxItems: limit, enabled: idle });
 
   /** Live arrivals first, then the server-rendered seed, deduped by id. */
   const rows = useMemo(() => {
