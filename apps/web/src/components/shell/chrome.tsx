@@ -83,17 +83,17 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
         className="pointer-events-none absolute inset-x-0 top-0 h-px"
       />
 
-      {/* At the top of the page the bar has no rule and no blur: the
-          masthead and the page are one surface, and drawing a line across
-          the screen before anything has scrolled under it is a line about
-          nothing. Once content passes beneath it, the rule and a light
-          backdrop blur say what the bar is now doing — holding its place
-          over something. Both are token-driven and the transition is off
-          under prefers-reduced-motion; see globals.css. */}
+      {/* The bar always has a ground and always has an edge — r7. Both are
+          tokens (`--masthead-bar-bg`, `--masthead-hairline`) applied in
+          globals.css, which is why there is no `bg-*` or `border-*` utility
+          here: r6 drew neither until something scrolled under the bar, and
+          the result was a brand sitting on the page with nothing containing
+          it. Scroll is additive from there — more opacity and a blur — and
+          the transition is off under prefers-reduced-motion. */}
       <header
         data-masthead
         data-scrolled={scrolled ? "true" : "false"}
-        className="fixed inset-x-0 top-0 z-50 border-b border-border bg-bg"
+        className="fixed inset-x-0 top-0 z-50 border-b"
       >
         {/* `.masthead-shell` is the whole of the r6 alignment fix: on the
             landing it resolves to the landing's own margin token, so the

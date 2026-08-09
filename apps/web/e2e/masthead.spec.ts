@@ -42,41 +42,58 @@ async function barStyle(page: Page) {
 }
 
 test.describe("the bar responds to the page moving under it", () => {
-  test("no rule and no blur at the top; both once content passes beneath", async ({ page }) => {
+  test("a drawn bar at the top; blur added once content passes beneath", async ({ page }) => {
+    // AMENDED in r7. r6 asserted NO rule at rest, on the reasoning that a
+    // line across the screen before anything has scrolled under it is a
+    // line about nothing. That was right about the line and wrong about
+    // the bar: with neither ground nor edge, the landing's brand sat on
+    // the page with nothing containing it, and on an app route the line
+    // across the top of the window stopped dead at the sidebar's right
+    // edge because the sidebar's own header rule WAS drawn.
+    //
+    // So the resting state is now a drawn bar, and scroll is purely
+    // ADDITIVE. What this test protects is that the blur — the expensive
+    // part, over a virtualized table — is still absent until it is doing
+    // something.
     await page.goto("/trades");
     const top = await barStyle(page);
     expect(top.scrolled, "not scrolled yet").toBe("false");
-    // Transparent, not absent: the 1px is always reserved, so gaining the
-    // colour cannot move anything. A border that appears with WIDTH would
-    // push the whole page down by a pixel on first scroll.
-    expect(top.border, "no rule at rest").toBe("rgba(0, 0, 0, 0)");
+    expect(top.border, "the bar has an edge at rest").not.toBe("rgba(0, 0, 0, 0)");
     expect(parseFloat(top.borderWidth), "the 1px is reserved").toBeGreaterThan(0);
     expect(top.backdrop, "no blur at rest").toBe("");
 
     await page.evaluate(() => window.scrollTo(0, 600));
-    // Polled on the RULE, not on the attribute. `getComputedStyle` reports
-    // the value a transition is currently passing through, so reading the
-    // colour in the same frame the attribute flips returns the one it is
-    // leaving. The claim is about the bar once it has settled.
+    // Polled on the BLUR, which since r7 is the thing that actually
+    // changes: the rule and the ground are drawn at rest, and scroll adds
+    // the filter and more opacity on top of them. Polled rather than read
+    // once, because `getComputedStyle` reports the value a transition is
+    // passing through, and the claim is about the bar once it has settled.
     await expect
-      .poll(async () => (await barStyle(page)).border, { timeout: 8000 })
-      .not.toBe("rgba(0, 0, 0, 0)");
+      .poll(async () => (await barStyle(page)).backdrop, { timeout: 8000 })
+      .toContain("blur");
     expect((await barStyle(page)).scrolled, "and the state says so").toBe("true");
-    expect((await barStyle(page)).backdrop, "and a blur behind it").toContain("blur");
+    expect((await barStyle(page)).border, "the rule is still drawn under scroll").not.toBe(
+      "rgba(0, 0, 0, 0)",
+    );
 
-    // …and back. A one-way state would leave the rule on a page returned
-    // to the top, which is the claim inverted.
+    // …and back. A one-way state would leave the blur on a page returned
+    // to the top, which is the expensive half of the claim inverted.
     await page.evaluate(() => window.scrollTo(0, 0));
-    await expect.poll(async () => (await barStyle(page)).scrolled, { timeout: 8000 }).toBe("false");
+    await expect.poll(async () => (await barStyle(page)).backdrop, { timeout: 8000 }).toBe("");
+    expect((await barStyle(page)).scrolled).toBe("false");
   });
 
   test("the landing bar does the same thing", async ({ page }) => {
     await page.goto("/");
-    expect((await barStyle(page)).border).toBe("rgba(0, 0, 0, 0)");
+    const top = await barStyle(page);
+    // Drawn at rest here too — this is the page the floating-brand report
+    // was actually about.
+    expect(top.border, "the landing bar has an edge at rest").not.toBe("rgba(0, 0, 0, 0)");
+    expect(top.backdrop, "and no blur yet").toBe("");
     await page.evaluate(() => window.scrollTo(0, 600));
     await expect
-      .poll(async () => (await barStyle(page)).border, { timeout: 8000 })
-      .not.toBe("rgba(0, 0, 0, 0)");
+      .poll(async () => (await barStyle(page)).backdrop, { timeout: 8000 })
+      .toContain("blur");
   });
 
   test.describe("with prefers-reduced-motion", () => {
@@ -100,8 +117,8 @@ test.describe("the bar responds to the page moving under it", () => {
       // to tell a pinned bar from a static one.
       await page.evaluate(() => window.scrollTo(0, 600));
       await expect
-        .poll(async () => (await barStyle(page)).border, { timeout: 8000 })
-        .not.toBe("rgba(0, 0, 0, 0)");
+        .poll(async () => (await barStyle(page)).backdrop, { timeout: 8000 })
+        .toContain("blur");
       expect((await barStyle(page)).scrolled, "the state still reports itself").toBe("true");
     });
   });

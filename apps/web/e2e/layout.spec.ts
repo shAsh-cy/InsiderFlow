@@ -48,8 +48,48 @@ import {
  * is the assertion that was wrong.
  */
 
+/**
+ * ── r7 AMENDMENT: THE GUTTER CONTRACT, AND THE FOUR CORRECTIONS ────────
+ *
+ * The gutter assertions below are the one part of this file that has been
+ * rewritten rather than extended, because the gutter contract itself
+ * changed. The full history belongs here, in the file that enforces it, so
+ * that an eighth revision is not invited to guess:
+ *
+ *   r4 — LEFT-HUG. Every page pinned to the viewport's left edge. Rejected
+ *        on sight: "tons of space on the right".
+ *   r5 — CENTRED SHELL. The whole frame centred at 88rem, which centred the
+ *        CHROME with it: at 1920 the sidebar floated 250px in from the
+ *        bezel and the application read as an island on a desktop.
+ *   r6 — UNIFIED EDGE. Chrome pins, content is fluid, and the two share one
+ *        left edge: brand.left − heroH1.left = 0 at 1280/1440/1920. That is
+ *        the property this round must not lose, and the assertions for it
+ *        are UNCHANGED below.
+ *   r7 — FLUID TIGHTER GUTTER + A DEFINED BAR. The gutter becomes one
+ *        token, `clamp(24px, 6.25vw - 56px, 64px)`, shared by the landing
+ *        shell, the app shell's content well and the masthead's inner
+ *        container: 24px at 1280, 34 at 1440, 64 at 1920, replacing the
+ *        landing's 77/86/115 and the app shell's 32px step. And the
+ *        masthead gains an always-present ground and hairline, so the brand
+ *        no longer floats on the page at scrollTop=0.
+ *
+ * What changed is the NUMBER and where it comes from. The edges are still
+ * unified, and there is still no separate brand edge and no brand pinned to
+ * the bezel above inset content — those are the two failure modes this
+ * project has already paid for twice, and the tests for them stay.
+ */
+
 /** ±4px, as specified: sub-pixel layout rounding is not a design failure. */
 const TOLERANCE = 4;
+
+/**
+ * The gutter this file expects at each desktop width, from
+ * `clamp(24px, 6.25vw - 56px, 64px)`. Written out rather than recomputed,
+ * so the test states the contract instead of restating the formula: a typo
+ * in the CSS that still parses would agree with a recomputed expectation
+ * and disagree with these.
+ */
+const EXPECTED_GUTTER: Record<number, number> = { 1280: 24, 1440: 34, 1920: 64 };
 
 /**
  * ±1px for the alignments this round exists to fix. These are the claims
@@ -492,7 +532,7 @@ test.describe("content is fluid", () => {
 
 test.describe("the standalone shell is fluid and even", () => {
   for (const width of [1280, 1440, 1920]) {
-    test(`landing gutters are equal and bounded at ${width}`, async ({ page }) => {
+    test(`landing gutters are equal and measure the r7 value at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/");
       const g = await readGeometry(page);
@@ -503,12 +543,98 @@ test.describe("the standalone shell is fluid and even", () => {
         `landing @${width}: gutters ${Math.round(g.regionLeft)} / ${Math.round(rightGutter)}`,
       ).toBeLessThanOrEqual(8);
 
-      // `clamp(24px, 6vw, 120px)` — tracks the window, stops at 120 so a
-      // 2560px screen does not turn the page into a letterbox.
-      expect(g.regionLeft, `landing @${width}: gutter too wide`).toBeLessThanOrEqual(130);
-      expect(g.regionLeft, `landing @${width}: gutter too narrow`).toBeGreaterThanOrEqual(24);
+      // AMENDED in r7 — see the history block at the top of this file.
+      // r6 asserted only a range (24–130), which is how 77/86/115 passed
+      // for a round while the page visibly floated inside its own window.
+      // A range is the wrong instrument for a number the design states
+      // exactly, so this asserts the number.
+      expect(
+        Math.round(g.regionLeft),
+        `landing @${width}: gutter should be ${EXPECTED_GUTTER[width]}px`,
+      ).toBe(EXPECTED_GUTTER[width]);
     });
   }
+
+  test("the gutter is one token, and every shell reads it", async ({ page }) => {
+    // The property the number depends on. r6 kept the landing's margin and
+    // the masthead's padding in step by hand, as two `clamp()`s that agreed;
+    // two values that agree today are two values that can stop agreeing, and
+    // the brand-to-hero alignment is what breaks when they do.
+    for (const width of [1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+
+      await page.goto("/");
+      const landing = await page.evaluate(() => {
+        const bar = document.querySelector(".masthead-shell")!;
+        const shell = document.querySelector("main.shell-fluid, main .shell-fluid")!;
+        return {
+          bar: getComputedStyle(bar).paddingLeft,
+          shell: getComputedStyle(shell).paddingLeft,
+        };
+      });
+      expect(landing.bar, `landing @${width}: bar ${landing.bar} vs shell ${landing.shell}`).toBe(
+        landing.shell,
+      );
+      expect(Math.round(parseFloat(landing.shell))).toBe(EXPECTED_GUTTER[width]);
+
+      await page.goto("/trades");
+      const app = await page.evaluate(() => {
+        const bar = document.querySelector(".masthead-shell")!;
+        const well = document.querySelector("main.shell-content")!;
+        return {
+          bar: getComputedStyle(bar).paddingLeft,
+          well: getComputedStyle(well).paddingLeft,
+        };
+      });
+      expect(app.bar, `app @${width}: bar ${app.bar} vs well ${app.well}`).toBe(app.well);
+      // The same number as the landing's, not merely a number of its own:
+      // the app shell used to step 24 → 32 at 1024 and stop there.
+      expect(Math.round(parseFloat(app.well))).toBe(EXPECTED_GUTTER[width]);
+    }
+  });
+
+  test("the masthead is a bar at rest, not a floating brand", async ({ page }) => {
+    // r7's other half. r6 gave the bar no ground and no rule until
+    // something scrolled under it, which left the landing's brand sitting
+    // on the page with nothing containing it — and on an app route it meant
+    // the line across the top of the window stopped dead at the sidebar's
+    // right edge, because the sidebar's own header rule WAS drawn.
+    for (const [route, scheme] of [
+      ["/", "dark"],
+      ["/", "light"],
+      ["/trades", "dark"],
+      ["/trades", "light"],
+    ] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto(route);
+      const bar = await page.evaluate(() => {
+        const el = document.querySelector("[data-masthead]")!;
+        const s = getComputedStyle(el);
+        const alpha = (value: string) => {
+          const m = value.match(/[\d.]+\)$/);
+          return value.includes("rgba") || value.includes("/") ? parseFloat(m?.[0] ?? "1") : 1;
+        };
+        return {
+          scrolled: el.getAttribute("data-scrolled"),
+          bg: s.backgroundColor,
+          bgAlpha: alpha(s.backgroundColor),
+          border: s.borderBottomColor,
+          borderWidth: parseFloat(s.borderBottomWidth),
+          pageBg: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+
+      expect(bar.scrolled, `${route} ${scheme}: at rest`).toBe("false");
+      // A ground: present, and not the page's own — otherwise there is no
+      // bar, only a strip of page with a line under it.
+      expect(bar.bgAlpha, `${route} ${scheme}: the bar has no ground`).toBeGreaterThan(0);
+      expect(bar.bg, `${route} ${scheme}: the bar is the page`).not.toBe(bar.pageBg);
+      // …and an edge, drawn, at rest.
+      expect(bar.border, `${route} ${scheme}: no hairline at rest`).not.toBe("rgba(0, 0, 0, 0)");
+      expect(bar.borderWidth, `${route} ${scheme}: hairline has no width`).toBeGreaterThan(0);
+    }
+    await page.emulateMedia({ colorScheme: null });
+  });
 
   test("the landing hero keeps its 7/5 asymmetry across the fluid shell", async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
@@ -636,20 +762,31 @@ test.describe("composition inside the region", () => {
     }
   });
 
-  test("the frame padding is 24px below 1024 and 32px above it", async ({ page }) => {
+  test("the gutter holds its floor, then opens with the window", async ({ page }) => {
+    // AMENDED in r7 — see the history block at the top of this file. This
+    // used to assert a two-step ladder (24 below 1024, 32 above), which
+    // stopped growing at exactly the widths where there was room to grow.
+    // The curve is `clamp(24px, 6.25vw - 56px, 64px)`, and the shape of it
+    // is the point: pinned to the floor while width is scarce, opening
+    // only once the screen has surplus, capped so a 2560px screen does not
+    // become a letterbox.
     for (const [width, expected] of [
       [360, 24],
       [768, 24],
       [1023, 24],
-      [1024, 32],
-      [1920, 32],
+      [1024, 24],
+      [1280, 24],
+      [1440, 34],
+      [1920, 64],
+      [2560, 64],
     ] as const) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/trades");
       const { gutter, railInset } = await readShellTokens(page);
-      expect(gutter, `--shell-gutter at ${width}`).toBe(expected);
+      expect(Math.round(gutter), `--shell-gutter at ${width}`).toBe(expected);
       // The hanging rail has to fit in the gutter with air to spare, at
-      // every width — r3 checked this at 1280 only.
+      // every width — r3 checked this at 1280 only. It is tightest at the
+      // floor, where 20px of rail sits in 24px of gutter.
       expect(railInset, `rail must fit inside the gutter at ${width}`).toBeLessThan(gutter);
     }
   });

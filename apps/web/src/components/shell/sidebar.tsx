@@ -41,8 +41,13 @@ export function Sidebar() {
           the mark and the eleven glyphs beneath it stand on one line.
           `h-14` matches the masthead exactly: the two bottom rules meet
           and read as one line across the top of the window. */}
+      {/* `data-sidebar-brand`: this block is the left-hand quarter of the
+          masthead bar, so globals.css gives it the same ground and the same
+          hairline. Without that the band across the top of the window steps
+          tone at the sidebar's right edge. */}
       <div
-        className="flex h-14 shrink-0 items-center border-b border-border"
+        data-sidebar-brand
+        className="flex h-14 shrink-0 items-center border-b"
         style={{ paddingInlineStart: "var(--shell-nav-inset)" }}
       >
         <BrandLink />

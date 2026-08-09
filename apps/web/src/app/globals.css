@@ -402,11 +402,26 @@
    ═════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Content region → viewport edge, and sidebar → content. One number
-     for both, because they are the same gutter seen from two sides. */
-  --shell-gutter: 1.5rem;
+  /* ── r7: ONE GUTTER, FLUID, SHARED BY EVERY SHELL ───────────────────
+     Content region → viewport edge, sidebar → content, landing → bezel,
+     and the masthead's own inner container. One number for all of them,
+     because they are the same gutter seen from different sides, and the
+     fourth edge correction in this project happened because two of them
+     were allowed to be different numbers that happened to agree.
+
+     `clamp(24px, 6.25vw - 56px, 64px)` resolves to 24px at 1280, 34 at
+     1440 and 64 at 1920 — replacing the landing's old 77/86/115, which
+     read as a page floating inside its own window, and the app shell's
+     32px step, which stopped growing at exactly the widths where there
+     was room to grow. The linear term is deliberately steep and heavily
+     offset: the gutter should be at its floor on a laptop, where width
+     is scarce, and only open up once the screen has surplus. Below 1280
+     the negative offset holds it at the 24px floor; above 1920 the
+     ceiling stops the margins running away. */
+  --shell-gutter: clamp(24px, 6.25vw - 56px, 64px);
   /* How far the hanging rail reaches back out of the content column.
-     Always leaves ~6px of air between the rule and the region edge. */
+     Always leaves air between the rule and the region edge — 4px at the
+     gutter's 24px floor, more as it opens. */
   --shell-rail-inset: 1rem;
   /* The reading measure for prose. Left-anchored: it trims the right
      side only, and only on the blocks that opt in. */
@@ -419,17 +434,28 @@
      sidebar's brand header borrows it, so the wordmark and the eleven
      items beneath it stand on one line. Zero where there is no sidebar. */
   --shell-nav-inset: 0rem;
-  /* The no-sidebar shell's margin, as a token rather than a literal, so
-     the masthead can take the identical value instead of a matching one.
-     Two `clamp()`s that agree today are two `clamp()`s that can stop
-     agreeing; the landing's brand-to-hero alignment is the thing that
-     breaks when they do. */
-  --shell-fluid-pad: clamp(1.5rem, 6vw, 7.5rem);
+
+  /* ── The masthead's own surface ──────────────────────────────────────
+     Both are derived from themed tokens rather than restated per theme.
+     `.light` and `.dark` are declared on the SAME element as `:root`, so
+     `var(--surface)` and `var(--border)` here resolve to whichever theme
+     is applied — one declaration, two themes, and nothing that can drift
+     out of step with the palette it is made of. */
+
+  /* The bar's own ground: a faint lift off the page, not a slab. At rest
+     it is the difference between a masthead and a logo floating in space;
+     under scroll the alpha is what lets the blur do anything at all. */
+  --masthead-bar-bg: color-mix(in srgb, var(--surface) 82%, transparent);
+  /* The bar's bottom edge, always drawn. r6 left it transparent until
+     something scrolled under it, which was defensible on the landing and
+     wrong on an app route: the sidebar's own header rule was already
+     drawn, so the line across the top of the window stopped dead at the
+     sidebar's right edge. */
+  --masthead-hairline: var(--border);
 }
 
 @media (min-width: 1024px) {
   :root {
-    --shell-gutter: 2rem;
     --shell-rail-inset: 1.25rem;
     --shell-sidebar: 14rem;
     --shell-nav-inset: 1.5rem;
@@ -443,12 +469,11 @@
 }
 
 /* The no-sidebar shell: landing, auth, the standalone reference pages.
-   `clamp` rather than a breakpoint ladder, so the margin grows with the
-   window instead of stepping, and stops at 120px so a 2560px screen
-   does not push the column into a letterbox. */
+   Since r7 it takes the SAME `--shell-gutter` as the app shell's content
+   well and as the masthead — not a matching value, the same one. */
 .shell-fluid {
   width: 100%;
-  padding-inline: var(--shell-fluid-pad);
+  padding-inline: var(--shell-gutter);
 }
 
 /* ── The masthead, r6: chrome that shares the content's edges ──────────
@@ -456,24 +481,26 @@
    it should measure itself against is decided by the shell that is
    actually on the page, not by a pathname list. */
 
-/* Default (no sidebar): the bar spans the viewport and its CONTENTS take
-   the landing's own margin — so the logo and the hero's H1 start on one
-   x, at every width, without either side knowing the number. */
+/* The bar's CONTENTS take the same gutter as the content beneath them —
+   the landing's shell, the app shell's well, and this, all reading one
+   token. That is what makes brand.left − heroH1.left exactly 0 rather
+   than approximately 0, and r7 is the round where the two padding
+   declarations that r6 kept in step by hand became one.
+
+   No max-width, because the shell has none: an identical cap of `none`.
+   A capped, auto-margined box around the application is the r4 failure
+   mode, and the spec still asserts that nothing anywhere imposes one. */
 .masthead-shell {
   width: 100%;
-  padding-inline: var(--shell-fluid-pad);
+  padding-inline: var(--shell-gutter);
 }
 
-/* App shell: the bar begins where the sidebar ends and its contents take
-   the content well's gutter, so the action cluster's right edge is the
-   content's right edge. Below 1024 `--shell-sidebar` is 0 and this
-   collapses to a full-width bar with the content's own 24px margin. */
+/* App shell: the bar's BOX begins where the sidebar ends, so the action
+   cluster's right edge is the content's right edge and its left edge is
+   the content's left edge. Below 1024 `--shell-sidebar` is 0 and this
+   collapses to a full-width bar. */
 body:has([data-app-shell]) [data-masthead] {
   inset-inline-start: var(--shell-sidebar);
-}
-
-body:has([data-app-shell]) .masthead-shell {
-  padding-inline: var(--shell-gutter);
 }
 
 /* …and the brand is not up there at all, because the sidebar is holding
@@ -486,33 +513,49 @@ body:has([data-app-shell]) .masthead-shell {
 }
 
 /* ── The bar's two states ──────────────────────────────────────────────
-   At the top of the page the masthead and the page are one surface, so
-   the bar draws no rule: a line across the screen before anything has
-   scrolled under it is a line about nothing. Once content passes beneath
-   it, the rule and a light backdrop blur say what the bar is doing —
-   holding its place over something rather than sitting on top of it.
+   r6 gave the bar NO ground and NO rule until something scrolled under
+   it, on the reasoning that a line about nothing is a line not worth
+   drawing. That was right about the line and wrong about the bar: with
+   neither, the brand at the top of the landing page sat on the page
+   itself, with nothing containing it — the "floating logo" this round
+   exists to fix. On an app route it was worse than floating, because the
+   sidebar's own header rule WAS drawn, so the line across the top of the
+   window stopped dead at x=224.
 
-   r5 refused the blur outright, on the grounds that a translucent fixed
-   header makes the compositor re-sample everything under it on every
-   scroll frame. That cost is real and it is why the blur is 8px over an
-   88%-opaque ground rather than the usual 16-over-60: at that ratio the
-   layer is doing almost all of the work and the filter is a finishing
-   pass. The 60fps virtualized-scroll test is the check on this claim. */
+   So the bar always has a ground and always has an edge. Both are faint
+   and both are tokens: a masthead should read as a distinct surface, not
+   as a slab laid over the page.
+
+   Scroll is now purely ADDITIVE — more opacity and the blur, on top of a
+   bar that was already there. r5 refused the blur outright, because a
+   translucent fixed header makes the compositor re-sample everything
+   under it on every scroll frame. That cost is real and it is why this is
+   8px over a 94%-opaque ground rather than the usual 16-over-60: the
+   layer does almost all of the work and the filter is a finishing pass.
+   The 60fps virtualized-scroll tests are the check on that claim. */
 [data-masthead] {
-  border-bottom-color: transparent;
+  background-color: var(--masthead-bar-bg);
+  border-bottom-color: var(--masthead-hairline);
   transition:
     border-color 160ms ease,
     background-color 160ms ease;
 }
 
 [data-masthead][data-scrolled="true"] {
-  border-bottom-color: var(--border);
-  background-color: color-mix(in srgb, var(--bg) 88%, transparent);
+  background-color: color-mix(in srgb, var(--surface) 94%, transparent);
   /* Standard property only. Writing the -webkit- alias by hand made
      Lightning CSS emit the alias and drop the standard one, which works in
      Blink (it aliases both) and silently would not elsewhere. The build
      adds whatever prefixes the browserslist targets need. */
   backdrop-filter: blur(8px);
+}
+
+/* The sidebar's brand header is the left-hand quarter of the same bar, so
+   it takes the same ground. Without this the band across the top of an
+   app route steps tone at the sidebar's right edge. */
+aside.sticky > [data-sidebar-brand] {
+  background-color: var(--masthead-bar-bg);
+  border-bottom-color: var(--masthead-hairline);
 }
 
 /* No dedicated reduced-motion rule here on purpose: the blanket

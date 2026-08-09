@@ -307,8 +307,8 @@ const MOTION_PRESETS = [
 const SHELL_TOKENS = [
   {
     name: "--shell-gutter",
-    value: "1.5rem / 2rem \u22651024",
-    role: "Content region to viewport edge, and sidebar to content. One number, because they are the same gutter seen from two sides.",
+    value: "clamp(24px, 6.25vw - 56px, 64px)",
+    role: "ONE gutter, shared by the landing shell, the app shell's content well and the masthead's inner container. 24px at 1280, 34 at 1440, 64 at 1920 \u2014 at its floor where width is scarce, opening only once the screen has surplus.",
   },
   {
     name: "--shell-sidebar",
@@ -321,14 +321,19 @@ const SHELL_TOKENS = [
     role: "Sidebar edge to a sidebar item CONTENT (12 + 2 + 10). The sidebar brand header takes it, so the mark and the eleven glyphs beneath it stand on one line.",
   },
   {
-    name: "--shell-fluid-pad",
-    value: "clamp(24px, 6vw, 120px)",
-    role: "The no-sidebar shell's margin, as a token rather than a literal, so the masthead can take the identical value instead of a matching one. Two clamps that agree today are two clamps that can stop agreeing.",
+    name: "--masthead-bar-bg",
+    value: "surface at 82%",
+    role: "The masthead's own ground, always drawn, derived from --surface so it follows the palette in both themes. r6 drew nothing until something scrolled under the bar, which left the brand sitting on the page with nothing containing it.",
+  },
+  {
+    name: "--masthead-hairline",
+    value: "var(--border)",
+    role: "The bar's bottom edge, always drawn. It had been transparent at rest, which on an app route meant the line across the top of the window stopped dead at the sidebar's right edge.",
   },
   {
     name: "--shell-rail-inset",
     value: "1rem / 1.25rem \u22651024",
-    role: "How far the hanging rail reaches back out of the column. Always leaves ~6px of air inside the gutter.",
+    role: "How far the hanging rail reaches back out of the column. Always leaves air inside the gutter: 4px at the gutter's 24px floor, more as it opens.",
   },
   {
     name: "--shell-measure",
@@ -337,8 +342,8 @@ const SHELL_TOKENS = [
   },
   {
     name: ".shell-fluid",
-    value: "padding: var(--shell-fluid-pad)",
-    role: "The no-sidebar shell (landing, auth, legal). Tracks the viewport instead of stepping; the 120px ceiling stops a 2560px screen becoming a letterbox.",
+    value: "padding: var(--shell-gutter)",
+    role: "The no-sidebar shell (landing, auth, legal). Since r7 it takes the same gutter as everything else, rather than a second clamp kept in step by hand.",
   },
 ] as const;
 
