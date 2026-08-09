@@ -85,26 +85,31 @@ test.describe("loading", () => {
     expect(Math.abs(geometry.placeholder - geometry.real)).toBeLessThanOrEqual(6);
   });
 
+  /**
+   * Scoped to the documented skeleton demo, and polled.
+   *
+   * `[data-slot='skeleton'].first()` picks whichever skeleton the page has
+   * rendered SO FAR, and /design is a ten-thousand-row showcase: under eight
+   * parallel workers `networkidle` can resolve while the section this test is
+   * about is still arriving, so `.first()` lands on a different element and
+   * reports a design failure that is really a timing one.
+   */
+  async function shimmerName(page: import("@playwright/test").Page): Promise<string> {
+    const bar = page.locator("[data-testid='row-skeleton'] [data-slot='skeleton']").first();
+    await expect(bar).toBeVisible();
+    return bar.evaluate((el) => getComputedStyle(el).animationName);
+  }
+
   test("the shimmer stops under reduced motion", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/design", { waitUntil: "networkidle" });
-
-    const name = await page
-      .locator("[data-slot='skeleton']")
-      .first()
-      .evaluate((el) => getComputedStyle(el).animationName);
-    expect(name).toBe("none");
+    await expect.poll(() => shimmerName(page)).toBe("none");
   });
 
   test("the shimmer runs when motion is allowed", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto("/design", { waitUntil: "networkidle" });
-
-    const name = await page
-      .locator("[data-slot='skeleton']")
-      .first()
-      .evaluate((el) => getComputedStyle(el).animationName);
-    expect(name).not.toBe("none");
+    await expect.poll(() => shimmerName(page)).not.toBe("none");
   });
 });
 

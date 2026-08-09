@@ -19,14 +19,26 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 const TARGET = 44;
 
 async function expectTarget(locator: Locator, name: string) {
-  // `boundingBox()` does NOT auto-wait for visibility — it returns null the
-  // moment the element is attached but not yet laid out. Under eight workers
-  // that lost the race about one run in ten and reported it as "no box",
-  // which reads as a missing control rather than as a test that measured too
-  // early. `toBeVisible` is the wait.
-  await expect(locator, `${name} should be visible`).toBeVisible();
-  const box = await locator.boundingBox();
-  expect(box, `${name} has no box`).not.toBeNull();
+  /*
+   * Polled, not read once.
+   *
+   * `boundingBox()` does not auto-wait: it returns null the moment an element
+   * is attached but not yet laid out, and even a preceding `toBeVisible` only
+   * moves the race rather than removing it — hydration can replace the node
+   * between the two calls. Under eight workers this lost about one run in
+   * ten and reported "no box", which reads as a missing control rather than
+   * as a measurement taken too early.
+   */
+  let box: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  await expect
+    .poll(
+      async () => {
+        box = await locator.boundingBox();
+        return box ? Math.min(box.width, box.height) : -1;
+      },
+      { message: `${name} never got a box`, timeout: 10_000 },
+    )
+    .toBeGreaterThan(0);
   expect(Math.round(box!.width), `${name} width`).toBeGreaterThanOrEqual(TARGET - 1);
   expect(Math.round(box!.height), `${name} height`).toBeGreaterThanOrEqual(TARGET - 1);
 }
