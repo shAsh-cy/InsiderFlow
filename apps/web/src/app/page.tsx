@@ -2,6 +2,7 @@ import { ArrowRight, Braces, Filter, Globe2, Zap } from "lucide-react";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { SectionHeader } from "@/components/domain/section-header";
 import { StatCard } from "@/components/domain/stat-card";
 import { SyntheticDataNotice } from "@/components/domain/synthetic-data-notice";
 import { FlowSparkline } from "@/components/landing/flow-sparkline";
@@ -149,50 +150,75 @@ export default async function Home() {
 
           {/* ── Signature panel: real figures from the live database. ──────── */}
           <section aria-label={t("signatureLabel")} className="border-t border-border py-14">
-            <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
-              <h2 className="text-xl font-semibold tracking-tight text-ink">
-                {t("signatureLabel")}
-              </h2>
-              <p className="text-2xs text-ink-faint">
-                {t("stats.hint")}
-                {/* The window these figures cover is 24 hours, so a zero is
+            {/* The same header pattern as every panel in the product —
+                label left, provenance right — at the page tone. */}
+            <SectionHeader
+              tone="page"
+              label={t("signatureLabel")}
+              className="mb-6"
+              meta={
+                <p>
+                  {t("stats.hint")}
+                  {/* The window these figures cover is 24 hours, so a zero is
                 ambiguous on its own: it could be a quiet day or a dead
                 pipeline. This says which. It is max(created_at), not the
                 request time — if the last row landed three days ago, the
                 page says three days ago. */}
-                {stats.latestIngestAt ? (
-                  <>
-                    {" · "}
-                    <span className="num" title={new Date(stats.latestIngestAt).toUTCString()}>
-                      {t("stats.asOf", { time: utcClock(stats.latestIngestAt) })}
-                    </span>
-                  </>
-                ) : (
-                  <> · {t("stats.neverIngested")}</>
-                )}
-              </p>
-            </div>
+                  {stats.latestIngestAt ? (
+                    <>
+                      {" · "}
+                      <span className="num" title={new Date(stats.latestIngestAt).toUTCString()}>
+                        {t("stats.asOf", { time: utcClock(stats.latestIngestAt) })}
+                      </span>
+                    </>
+                  ) : (
+                    <> · {t("stats.neverIngested")}</>
+                  )}
+                </p>
+              }
+            />
 
             <div className="mb-4">
               <SyntheticDataNotice />
             </div>
 
-            <Reveal className="grid gap-3 sm:grid-cols-3">
+            {/* `auto-rows-fr`: the three figures differ in length, and without it
+                the card with the shortest label sat visibly shorter than its
+                neighbours — a row of instruments that is not a row. */}
+            <Reveal className="grid auto-rows-fr gap-3 sm:grid-cols-3">
+              {/* Each card says what window it covers. A bare "0" under
+                  "Filings today" is ambiguous between a quiet day and a dead
+                  pipeline, and the honest answer belongs ON the card rather
+                  than only in the section's provenance line: when nothing
+                  has ever been ingested the hint says so outright, so the
+                  zero reads as a stated fact instead of a broken panel. */}
               <StatCard
                 label={t("stats.filings")}
                 value={stats.filingsToday}
                 preset="count"
+                hint={stats.latestIngestAt === null ? t("stats.quiet") : t("stats.window")}
                 accent
               />
-              <StatCard label={t("stats.notional")} value={stats.notionalUsd} preset="usd" />
-              <StatCard label={t("stats.clusters")} value={stats.clusterSignals} preset="count" />
+              <StatCard
+                label={t("stats.notional")}
+                value={stats.notionalUsd}
+                preset="usd"
+                hint={t("stats.window")}
+              />
+              <StatCard
+                label={t("stats.clusters")}
+                value={stats.clusterSignals}
+                preset="count"
+                hint={t("stats.clusterWindow")}
+              />
             </Reveal>
 
             {sparks.length > 0 ? (
               <div className="mt-10">
-                <h3 className="mb-2 border-b border-border pb-2 text-2xs font-semibold text-ink-faint">
-                  {t("sparklinesLabel")}
-                </h3>
+                <SectionHeader
+                  label={t("sparklinesLabel")}
+                  className="mb-2 border-b border-border pb-2"
+                />
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                   {sparks.map((spark) => (
                     <FlowSparkline key={spark.ticker} spark={spark} />

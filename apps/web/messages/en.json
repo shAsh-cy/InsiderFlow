@@ -56,7 +56,10 @@
       "clusters": "Cluster signals",
       "hint": "Recomputed from the live database on every rebuild.",
       "asOf": "as of {time}",
-      "neverIngested": "no filings ingested yet"
+      "neverIngested": "no filings ingested yet",
+      "window": "last 24 hours",
+      "clusterWindow": "open cluster windows",
+      "quiet": "nothing ingested yet"
     },
     "features": {
       "realtime": {

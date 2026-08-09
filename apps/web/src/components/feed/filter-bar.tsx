@@ -14,7 +14,7 @@
  * heading, banner and preset list, spend about 545px of a 640px screen
  * before the first result.
  */
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
@@ -31,14 +31,68 @@ import {
 import { FilterSheet } from "./filter-sheet";
 
 /**
- * Selects are inputs, so they take the 8px input radius — not the pill.
+ * ONE control family.
+ *
+ * The bar used to mix 32px pill chips with raw native `<select>`s, which
+ * are a different height, a different radius, carry the platform's own
+ * dropdown arrow and get the platform's focus treatment rather than the
+ * product's. Side by side they read as two toolbars that happened to land
+ * on one line.
+ *
+ * The select stays a real `<select>` — a native picker on a phone is worth
+ * more than a matching arrow — but loses its platform chrome to
+ * `appearance-none` and gets the house one back from `FilterSelect`. Same
+ * height, same radius, same hover, same focus ring as the chips.
  *
  * `min-w-0 max-w-full`: a <select> is a replaced element whose automatic
  * minimum size is its widest option, so without these it refuses to shrink
  * inside a flex line and takes the page sideways with it.
  */
 const SELECT_CLASS =
-  "h-8 min-w-0 max-w-full cursor-pointer rounded-md border border-border bg-surface px-2 text-xs text-ink-muted transition-colors hover:bg-fill focus:text-ink [&>option]:bg-surface";
+  "h-11 min-w-0 max-w-full cursor-pointer appearance-none rounded-full border border-border bg-surface ps-3.5 pe-8 text-xs text-ink-muted transition-colors hover:bg-fill focus:text-ink md:h-8 md:ps-3 md:pe-7 [&>option]:bg-surface [&>option]:text-ink";
+
+/**
+ * A select wearing the chip's shape. The chevron is `pointer-events-none`
+ * so the whole control still opens the native menu, and `aria-hidden`
+ * because the select already announces itself as one.
+ */
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+}) {
+  return (
+    <span className="relative inline-flex shrink-0 items-center">
+      <label className="sr-only" htmlFor={id}>
+        {label}
+      </label>
+      <select
+        id={id}
+        className={SELECT_CLASS}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute end-3 size-3 text-ink-faint md:end-2.5"
+      />
+    </span>
+  );
+}
 
 /**
  * A filter chip. Pill-shaped because it is interactive — the rectangular
@@ -106,7 +160,7 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
 
   return (
     <div
-      className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-2"
+      className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-x-2 md:gap-y-2"
       role="group"
       aria-label="Trade filters"
     >
@@ -152,71 +206,39 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
           </Chip>
         ))}
 
-        <label className="sr-only" htmlFor="filter-code">
-          Transaction code
-        </label>
-        <select
+        <FilterSelect
           id="filter-code"
-          className={SELECT_CLASS}
+          label="Transaction code"
           value={get("code")}
-          onChange={(e) => setParam({ code: e.target.value || null })}
-        >
-          {CODE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setParam({ code: value || null })}
+          options={CODE_OPTIONS}
+        />
 
-        <label className="sr-only" htmlFor="filter-source">
-          Source
-        </label>
-        <select
+        <FilterSelect
           id="filter-source"
-          className={SELECT_CLASS}
+          label="Source"
           value={get("source")}
-          onChange={(e) => setParam({ source: e.target.value || null })}
-        >
-          {SOURCE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setParam({ source: value || null })}
+          options={SOURCE_OPTIONS}
+        />
 
-        <label className="sr-only" htmlFor="filter-min-value">
-          Minimum USD value
-        </label>
-        <select
+        <FilterSelect
           id="filter-min-value"
-          className={SELECT_CLASS}
+          label="Minimum USD value"
           value={get("min_value_usd")}
-          onChange={(e) => setParam({ min_value_usd: e.target.value || null })}
-        >
-          {MIN_VALUES.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setParam({ min_value_usd: value || null })}
+          options={MIN_VALUES}
+        />
 
         {advanced ? (
           <>
-            <label className="sr-only" htmlFor="filter-role">
-              Insider role
-            </label>
-            <select
+            <FilterSelect
               id="filter-role"
-              className={SELECT_CLASS}
+              label="Insider role"
               value={get("role")}
-              onChange={(e) => setParam({ role: e.target.value || null })}
-            >
-              {ROLE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setParam({ role: value || null })}
+              options={ROLE_OPTIONS}
+            />
             <input
               type="search"
               placeholder="Sector…"
@@ -225,7 +247,7 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") setParam({ sector: e.currentTarget.value || null });
               }}
-              className="h-8 w-28 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-ink placeholder:text-ink-faint"
+              className="h-11 w-32 min-w-0 shrink-0 rounded-full border border-border bg-surface px-3.5 text-xs text-ink transition-colors placeholder:text-ink-faint md:h-8 md:w-28 md:px-3"
             />
           </>
         ) : null}
@@ -238,7 +260,7 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
           <button
             type="button"
             onClick={() => router.push(pathname, { scroll: false })}
-            className="inline-flex h-11 cursor-pointer items-center gap-1 rounded-full px-2 text-2xs text-ink-faint transition-colors hover:text-ink md:h-8"
+            className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-transparent px-3 text-2xs text-ink-faint transition-colors hover:border-border hover:bg-fill hover:text-ink md:h-8"
           >
             <X className="size-3" aria-hidden /> Clear
           </button>

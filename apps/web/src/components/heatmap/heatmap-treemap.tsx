@@ -451,6 +451,28 @@ function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/**
+ * `ParentSize` reports 0 for a frame whenever its box is re-measured from
+ * scratch — a tab becoming visible, a print or full-page capture that
+ * momentarily resizes the viewport, a container that is briefly display:
+ * none. `TreemapCanvas` refuses to draw below 10px, so a single zero
+ * blanks the whole chart until the next observation lands.
+ *
+ * Keeping the last usable width means the canvas holds its picture through
+ * that frame instead of flashing empty. It is not a substitute for the
+ * definite height on the wrapper — that is what makes the measurement
+ * happen at all — it is what makes a momentary bad measurement harmless.
+ */
+function SteadyCanvas(props: HeatmapTreemapProps & { width: number; height: number }) {
+  const lastGood = useRef({ width: 0, height: 0 });
+  if (props.width >= 10 && props.height >= 10) {
+    lastGood.current = { width: props.width, height: props.height };
+  }
+  const { width, height } = props.width >= 10 ? props : lastGood.current;
+  if (width < 10) return null;
+  return <TreemapCanvas {...props} width={width} height={height} />;
+}
+
 export function HeatmapTreemap(props: HeatmapTreemapProps) {
   if (props.cells.length === 0) {
     return (
@@ -481,7 +503,7 @@ export function HeatmapTreemap(props: HeatmapTreemapProps) {
         style={props.height === undefined ? undefined : { height: props.height }}
       >
         <ParentSize>
-          {({ width, height }) => <TreemapCanvas {...props} width={width} height={height} />}
+          {({ width, height }) => <SteadyCanvas {...props} width={width} height={height} />}
         </ParentSize>
       </div>
       <TreemapLegend />

@@ -14,6 +14,7 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 
 import { LiveDot } from "@/components/domain/live-dot";
+import { SectionHeader } from "@/components/domain/section-header";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { TapeList } from "@/components/feed/tape-list";
 import { useTradeStream } from "@/hooks/use-trade-stream";
@@ -71,28 +72,32 @@ export function LiveFeedStrip({
 
   return (
     <section aria-label="Live insider trades" className="w-full">
-      <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-border pb-2">
-        {/* h2, not h3: on the landing this strip is a top-level section
-            sitting directly under the h1, and jumping to h3 would skip a
-            level for anyone navigating by headings. */}
-        <h2 className="text-2xs font-semibold text-ink-faint">{label}</h2>
-        <span className="flex items-baseline gap-2">
-          {/* The newest row's own arrival time — the real latest ingest,
-              not the render time. A live dot says the connection is up,
-              which is not the same claim as "there is recent data", and a
-              tape that has been silent for a day should say so. */}
-          {latestIngestAt ? (
-            <span
-              className="num text-2xs text-ink-faint"
-              title={new Date(latestIngestAt).toUTCString()}
-              data-testid="tape-as-of"
-            >
-              as of {utcClock(latestIngestAt)}
-            </span>
-          ) : null}
-          <LiveDot status={status} />
-        </span>
-      </div>
+      {/* h2, not h3: on the landing this strip is a top-level section
+          sitting directly under the h1, and jumping to h3 would skip a
+          level for anyone navigating by headings. */}
+      <SectionHeader
+        label={label}
+        className="mb-2 border-b border-border pb-2"
+        meta={
+          <>
+            {/* The newest row's own arrival time — the real latest
+                ingest, not the render time. A live dot says the
+                connection is up, which is not the same claim as "there
+                is recent data", and a tape that has been silent for a
+                day should say so. */}
+            {latestIngestAt ? (
+              <span
+                className="num"
+                title={new Date(latestIngestAt).toUTCString()}
+                data-testid="tape-as-of"
+              >
+                as of {utcClock(latestIngestAt)}
+              </span>
+            ) : null}
+            <LiveDot status={status} />
+          </>
+        }
+      />
       {rows.length === 0 ? (
         <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           {emptyMessage}

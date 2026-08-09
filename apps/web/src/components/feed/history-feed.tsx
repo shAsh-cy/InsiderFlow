@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SearchX } from "lucide-react";
 
 import { EmptyState } from "@/components/domain/empty-state";
+import { SectionHeader } from "@/components/domain/section-header";
 import { RowSkeleton } from "@/components/domain/row-skeleton";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { TapeList } from "@/components/feed/tape-list";
@@ -85,7 +86,21 @@ export function HistoryFeed({
 
   return (
     <section aria-label="Trade history" data-testid="history-feed">
-      <h2 className="mb-3 text-sm font-semibold text-ink-muted">History</h2>
+      {/* The same header pattern as the live fold above it. It used to be
+          a different size, a different colour and a different spacing
+          system, which made one page read as two. */}
+      <SectionHeader
+        label="History"
+        className="mb-2 border-b border-border pb-2"
+        meta={
+          rows.length > 0 ? (
+            <span className="num" data-testid="history-count">
+              {rows.length.toLocaleString("en-US")}
+              {meta.hasMore ? "+" : ""} rows
+            </span>
+          ) : null
+        }
+      />
       {rows.length === 0 ? (
         <EmptyState
           icon={SearchX}

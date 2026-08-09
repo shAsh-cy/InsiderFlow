@@ -12,7 +12,7 @@
  * fixed header forces the compositor to re-sample everything beneath it
  * on every scroll frame, and paper does not blur anyway.
  */
-import { Menu, Search, Settings2 } from "lucide-react";
+import { ChevronDown, Menu, Search, Settings2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -225,9 +225,22 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
                 href="/settings"
                 aria-label={`${t("account")} — ${session.email ?? ""}`}
                 title={session.email ?? undefined}
-                className="num inline-flex size-11 shrink-0 items-center justify-center rounded-md text-2xs font-semibold text-ink-muted uppercase transition-colors hover:bg-fill hover:text-ink md:size-8 md:border md:border-border md:bg-surface"
+                data-testid="account-chip"
+                className="group inline-flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-transparent pe-1 ps-1 text-ink-muted transition-colors hover:border-border hover:bg-fill hover:text-ink md:h-8 md:pe-2"
               >
-                <span aria-hidden>{(session.email ?? "?").slice(0, 1)}</span>
+                {/* A drawn avatar, not a floating letter. The initial sat
+                    on the bar with no boundary of its own, so a signed-in
+                    reader saw a stray character where every other control
+                    had a shape. The disc is `--fill` with a hairline so it
+                    reads as an object at 20px, and the chevron says the
+                    chip leads somewhere rather than doing something. */}
+                <span
+                  aria-hidden
+                  className="num grid size-8 shrink-0 place-items-center rounded-full border border-border bg-fill text-2xs font-semibold uppercase md:size-6"
+                >
+                  {(session.email ?? "?").slice(0, 1)}
+                </span>
+                <ChevronDown aria-hidden className="size-3 shrink-0 opacity-70" />
               </Link>
             ) : (
               // The primary affordance in the masthead, and styled like

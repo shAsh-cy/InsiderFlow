@@ -25,11 +25,19 @@ test.describe("today on the tape", () => {
     const card = page.locator("div.surface").filter({ hasText: "Filings today" }).last();
     await card.scrollIntoViewIfNeeded();
 
+    // Read the FIGURE, by its own hook — not "the last number in the card's
+    // text". That regex broke the moment the card gained a context line
+    // ending in "last 24 hours", and it broke by reporting zero, which is
+    // exactly the failure this test exists to catch. A test that can be
+    // made to cry wolf by an unrelated string is not watching the thing it
+    // claims to watch.
+    const figure = card.locator("[data-stat-value]");
+
     await expect
       .poll(
         async () => {
-          const text = (await card.textContent()) ?? "";
-          return Number((text.match(/([\d,]+)\s*$/)?.[1] ?? "0").replace(/,/g, ""));
+          const text = (await figure.textContent()) ?? "";
+          return Number(text.replace(/[^\d]/g, "") || "0");
         },
         {
           message:

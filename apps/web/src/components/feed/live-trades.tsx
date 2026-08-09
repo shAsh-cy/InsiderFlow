@@ -9,6 +9,7 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 
 import { LiveDot } from "@/components/domain/live-dot";
+import { SectionHeader } from "@/components/domain/section-header";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { ShortcutSheet } from "@/components/feed/shortcut-sheet";
 import { TapeList } from "@/components/feed/tape-list";
@@ -47,13 +48,16 @@ export function LiveTrades({
 
   return (
     <section aria-label="Live trades" data-testid="live-fold">
-      <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-border pb-2">
-        <h2 className="text-2xs font-semibold text-ink-faint">Live</h2>
-        <span className="flex items-center gap-2">
-          <ShortcutSheet />
-          <LiveDot status={status} />
-        </span>
-      </div>
+      <SectionHeader
+        label="Live"
+        className="mb-2 border-b border-border pb-2"
+        meta={
+          <>
+            <ShortcutSheet />
+            <LiveDot status={status} />
+          </>
+        }
+      />
       {rows.length === 0 ? (
         <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           Nothing matches these filters yet — new trades stream in the moment they are ingested.

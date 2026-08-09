@@ -99,23 +99,30 @@ export function StatCard({
     <div
       ref={ref}
       className={cn(
-        "surface rounded-lg p-4",
+        // `h-full flex-col`: in a row of three the card fills its grid
+        // track, so three figures of different lengths sit in three boxes
+        // of one height instead of a stepped row that reads as an
+        // accident. The hint is pushed to the bottom rather than trailing
+        // the figure, which keeps the FIGURES on one baseline whether or
+        // not a card carries one.
+        "surface flex h-full flex-col rounded-lg p-4",
         // The accent card is the one figure on the page that matters
         // most; it earns a 2px oxblood rule down its left edge.
         accent && "rail",
         className,
       )}
     >
-      <p className="text-2xs font-medium text-ink-muted">{label}</p>
+      <p className="min-h-4 text-2xs font-medium text-ink-muted">{label}</p>
       <p
+        data-stat-value
         className={cn(
-          "mt-2 text-xl font-semibold tracking-tight",
+          "mt-2 text-xl font-semibold tracking-tight tabular-nums",
           accent ? "text-accent-ink" : "text-ink",
         )}
       >
         <CountUp value={value} format={formatFn} inView={inView} />
       </p>
-      {hint ? <p className="mt-1 text-2xs text-ink-faint">{hint}</p> : null}
+      {hint ? <p className="mt-auto pt-2 text-2xs text-ink-faint">{hint}</p> : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CountryFlag } from "@/components/domain/country-flag";
+import { SectionHeader } from "@/components/domain/section-header";
 import { StatCard } from "@/components/domain/stat-card";
 import { PoliticianTradeTable } from "@/components/politicians/politician-trade-table";
 import { ChartsPanel } from "@/components/stock/charts-panel";
@@ -253,18 +254,22 @@ export default async function StockPage({
       >
         {/* Filing history */}
         <section aria-label="Insider trade history" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-ink-muted">Insider trades</h2>
-            {/* A control, so it takes the pill shape — its state is carried by
-              the label flipping, which is why it needs no active styling. */}
-            <Link
-              href={showAmendments ? `/stock/${ticker}` : `/stock/${ticker}?amendments=1`}
-              data-testid="amendments-toggle"
-              className="text-2xs inline-flex h-8 cursor-pointer items-center rounded-full border border-border bg-surface px-3 text-ink-muted transition-colors hover:bg-fill hover:text-ink"
-            >
-              {showAmendments ? "Hide amendments" : "Show amendments"}
-            </Link>
-          </div>
+          <SectionHeader
+            tone="card"
+            label="Insider trades"
+            meta={
+              /* A control, so it takes the same pill shape as every other
+                 control in the product — its state is carried by the label
+                 flipping, which is why it needs no active styling. */
+              <Link
+                href={showAmendments ? `/stock/${ticker}` : `/stock/${ticker}?amendments=1`}
+                data-testid="amendments-toggle"
+                className="text-2xs inline-flex h-11 cursor-pointer items-center rounded-full border border-border bg-surface px-3.5 text-ink-muted transition-colors hover:bg-fill hover:text-ink md:h-8 md:px-3"
+              >
+                {showAmendments ? "Hide amendments" : "Show amendments"}
+              </Link>
+            }
+          />
           {trades.data.length === 0 ? (
             <p className="surface rounded-lg px-4 py-8 text-center text-sm text-ink-muted">
               No insider transactions on record for {ticker}
@@ -289,17 +294,19 @@ export default async function StockPage({
             className="flex flex-col gap-3"
             data-testid="politician-overlay"
           >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 id="congress-heading" className="text-sm font-semibold text-ink-muted">
-                Congressional disclosures
-              </h2>
-              <Link
-                href={`/politicians?ticker=${ticker}`}
-                className="text-2xs cursor-pointer text-ink-muted underline underline-offset-2 hover:text-ink"
-              >
-                All <span className="num">{ticker}</span> disclosures
-              </Link>
-            </div>
+            <SectionHeader
+              tone="card"
+              id="congress-heading"
+              label="Congressional disclosures"
+              meta={
+                <Link
+                  href={`/politicians?ticker=${ticker}`}
+                  className="cursor-pointer underline underline-offset-2 hover:text-ink"
+                >
+                  All <span className="num">{ticker}</span> disclosures
+                </Link>
+              }
+            />
             <p className="text-2xs text-ink-faint">
               STOCK Act filings by members of Congress. Amounts are disclosed brackets, never exact
               figures, and a PTR may be filed up to 45 days after the trade.

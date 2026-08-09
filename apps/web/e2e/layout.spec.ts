@@ -296,33 +296,50 @@ test.describe("the standalone shell is fluid and even", () => {
 });
 
 test.describe("composition inside the region", () => {
+  // Two of these walk all fourteen routes and poll each one until it is at
+  // rest. Under three concurrent projects that is a real amount of work,
+  // and the default 30s budget is not generous for it.
+  test.setTimeout(90_000);
   test("every top-level block shares one left edge", async ({ page }) => {
     for (const route of ALL_ROUTES) {
+      // NOT `networkidle`: this product holds an open SSE connection on
+      // several routes, so "no network for 500ms" can simply never arrive
+      // and the wait becomes a timeout. The poll below is what settles the
+      // measurement, and it is the instrument that belongs here anyway.
       await page.goto(route);
 
       // Measured on the MARGIN box, so an element that deliberately hangs
       // into the gutter (the rail) is judged by where it was placed, not by
       // how far its own rule reaches back. Nested content is exempt on
       // purpose: a table inside a padded card is inset by that card.
-      const strays = await page.evaluate(() => {
-        const region = document.querySelector("[data-content-region]")!;
-        const edge = region.getBoundingClientRect().x;
-        const out: Array<{ tag: string; cls: string; at: number }> = [];
-        for (const child of Array.from(region.children)) {
-          const box = child.getBoundingClientRect();
-          if (box.width === 0 && box.height === 0) continue;
-          const placed = box.x - parseFloat(getComputedStyle(child).marginLeft);
-          if (Math.abs(placed - edge) > 4) {
-            out.push({
-              tag: child.tagName,
-              cls: typeof child.className === "string" ? child.className.slice(0, 60) : "",
-              at: Math.round(placed - edge),
-            });
+      //
+      // POLLED, because the claim is about the page AT REST. Several of
+      // these routes open with an entrance animation, and a block measured
+      // mid-transform is at a position it is passing through rather than
+      // one it was placed at — the same mistake r3 made reading
+      // `getComputedStyle` during a 120ms fade. Under the full three-project
+      // load this lost the race about one run in five.
+      const measure = () =>
+        page.evaluate(() => {
+          const region = document.querySelector("[data-content-region]")!;
+          const edge = region.getBoundingClientRect().x;
+          const out: Array<{ tag: string; cls: string; at: number }> = [];
+          for (const child of Array.from(region.children)) {
+            const box = child.getBoundingClientRect();
+            if (box.width === 0 && box.height === 0) continue;
+            const placed = box.x - parseFloat(getComputedStyle(child).marginLeft);
+            if (Math.abs(placed - edge) > 4) {
+              out.push({
+                tag: child.tagName,
+                cls: typeof child.className === "string" ? child.className.slice(0, 60) : "",
+                at: Math.round(placed - edge),
+              });
+            }
           }
-        }
-        return out;
-      });
-      expect(strays, `${route}: blocks off the left edge`).toEqual([]);
+          return out;
+        });
+      await expect.poll(async () => (await measure()).length, { timeout: 8000 }).toBe(0);
+      expect(await measure(), `${route}: blocks off the left edge`).toEqual([]);
 
       // `:visible`, not `.first()`: /design opens with a `sr-only` heading
       // above the showcase, and an off-screen box has no x to compare.
@@ -346,32 +363,37 @@ test.describe("composition inside the region", () => {
     await page.setViewportSize({ width: 1920, height: 900 });
     for (const route of ALL_ROUTES) {
       await page.goto(route);
-      const centred = await page.evaluate(() => {
-        const region = document.querySelector("[data-content-region]");
-        if (!region) return ["missing region"];
-        const out: string[] = [];
-        const walk = (node: Element, depth: number) => {
-          if (depth > 3) return;
-          for (const child of Array.from(node.children)) {
-            const el = child as HTMLElement;
-            // True empty and error states are allowed to centre — one
-            // object on the page and no column to scan. So are overlays.
-            if (el.closest("[data-empty-state],[role='dialog'],[role='status']")) continue;
-            const s = getComputedStyle(el);
-            const left = parseFloat(s.marginLeft);
-            const right = parseFloat(s.marginRight);
-            if (left > 1 && Math.abs(left - right) < 1) {
-              out.push(
-                `${el.tagName}.${String(el.className).slice(0, 50)} (${Math.round(left)}px each side)`,
-              );
+      // Polled for the same reason as the left-edge check above: the claim
+      // is about the page at rest, and an entrance animation can put an
+      // element momentarily where it was never placed.
+      const centred = () =>
+        page.evaluate(() => {
+          const region = document.querySelector("[data-content-region]");
+          if (!region) return ["missing region"];
+          const out: string[] = [];
+          const walk = (node: Element, depth: number) => {
+            if (depth > 3) return;
+            for (const child of Array.from(node.children)) {
+              const el = child as HTMLElement;
+              // True empty and error states are allowed to centre — one
+              // object on the page and no column to scan. So are overlays.
+              if (el.closest("[data-empty-state],[role='dialog'],[role='status']")) continue;
+              const s = getComputedStyle(el);
+              const left = parseFloat(s.marginLeft);
+              const right = parseFloat(s.marginRight);
+              if (left > 1 && Math.abs(left - right) < 1) {
+                out.push(
+                  `${el.tagName}.${String(el.className).slice(0, 50)} (${Math.round(left)}px each side)`,
+                );
+              }
+              walk(child, depth + 1);
             }
-            walk(child, depth + 1);
-          }
-        };
-        walk(region, 1);
-        return out;
-      });
-      expect(centred, `${route}: content re-centred inside the region`).toEqual([]);
+          };
+          walk(region, 1);
+          return out;
+        });
+      await expect.poll(async () => (await centred()).length, { timeout: 8000 }).toBe(0);
+      expect(await centred(), `${route}: content re-centred inside the region`).toEqual([]);
     }
   });
 
