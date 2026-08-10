@@ -22,17 +22,19 @@ interface FooterLink {
  * different job: the landing page saying what the project IS, under whose
  * licence, and where the source lives.
  *
- * r7 rebuilt it as a four-column index. r6 put every link in a single
- * narrow left-hand column, which at 1920 left the right two thirds of the
- * band empty — a footer that had stopped using the page it sits on. The
- * shape here is the ordinary one because it is ordinary for good reasons:
- * a grid of short labelled groups is scannable without reading, and it
- * gives the destinations a hierarchy that a flat row of six cannot.
+ * r6 put every link in a single narrow left-hand column, which at 1920
+ * left the right two thirds of the band empty — a footer that had stopped
+ * using the page it sits on. r7 made it an index; r8 took the brand column
+ * back out of that index, because a mark, a wordmark and a tagline in the
+ * first cell was a third repetition of an identity the masthead already
+ * holds. The shape here is the ordinary one because it is ordinary for
+ * good reasons: a grid of short labelled groups is scannable without being
+ * read, and grouping gives the destinations a hierarchy a flat row cannot.
  *
- * Three bands, separated by hairlines: the index, the fine print, the
- * build. Each is a different kind of statement and each gets its own
- * measure — the fine print is capped at 66ch because it is the only part
- * anyone reads as prose.
+ * Three bands, separated by hairlines, each a different kind of statement
+ * and each with its own measure: the index (three equal columns), the fine
+ * print (two columns at a multi-column measure — see below), and the meta
+ * row (the mark at icon scale beside the build).
  *
  * The source link is not decoration. AGPL-3.0 §13 requires that users
  * interacting with the software over a network are offered the
@@ -79,22 +81,20 @@ export async function LandingFooter() {
   return (
     <footer className="border-t border-border pt-10 pb-14">
       {/* ── The index ──────────────────────────────────────────────────
-          4 → 2 → 1. The brand is a column of the grid rather than a banner
-          above it, so the groups start on the same baseline as the mark and
-          the band reads as one object. */}
-      <div className="grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex flex-col gap-3">
-          {/* Deliberately NOT a link and NOT `data-brand`. The masthead
-              already carries the one navigational brand on this page; a
-              second link home two screens below it is a second answer to a
-              question nobody asked twice. */}
-          <p className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-ink">
-            <BrandMark />
-            InsiderFlow
-          </p>
-          <p className="max-w-[28ch] text-xs leading-relaxed text-ink-muted">{t("tagline")}</p>
-        </div>
+          Three groups, evenly across the shell, 3 → 2 → 1.
 
+          r7 gave the first column to the mark, the wordmark and a tagline.
+          That was a third repetition of an identity the masthead is already
+          holding two screens above, and the tagline was a paraphrase of the
+          hero's own subhead one screen above that. What it bought was a
+          quarter of the index spent on saying the product's name again;
+          what it cost was the three groups being squeezed into the
+          remaining three quarters. The mark is still in the footer — it is
+          in the meta row, at icon scale, where a compact mark belongs. */}
+      <div
+        style={{ columnGap: "var(--band-gap)" }}
+        className="grid gap-y-10 sm:grid-cols-2 md:grid-cols-3"
+      >
         {groups.map((group) => (
           <nav key={group.label} aria-label={group.label} className="flex flex-col gap-3">
             {/* Uppercase in the SANS face, not mono: mono here is reserved
@@ -180,6 +180,19 @@ export async function LandingFooter() {
           figures from the `num` class. It prints a commit only when the
           build actually knew one — see lib/build-info. */}
       <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-4">
+        {/* The mark at icon scale, not the masthead's box. Deliberately NOT
+            a link and NOT `data-brand`: the masthead carries the one
+            navigational brand on this page, and a second link home at the
+            bottom is a second answer to a question nobody asked twice.
+            Here it is a signature on the build line — the thing a compact
+            mark is for. */}
+        <p
+          data-testid="footer-mark"
+          className="flex shrink-0 items-center gap-2 text-xs font-semibold tracking-tight text-ink"
+        >
+          <BrandMark className="size-4" />
+          InsiderFlow
+        </p>
         <p data-testid="build-string" className="num text-2xs text-ink-faint">
           {buildString()}
           {" · AGPL-3.0"}

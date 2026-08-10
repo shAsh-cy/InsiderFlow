@@ -115,41 +115,96 @@ test.describe("the landing footer", () => {
     await expect(footer).toContainText(/SEC EDGAR/i);
   });
 
-  test("the index is four groups and uses the whole shell width", async ({ page }) => {
-    // r6 put every link in one narrow left-hand column, which at 1920 left
-    // the right two thirds of the band empty — a footer that had stopped
-    // using the page it sits on.
+  // AMENDED in r8 — see the lineage at the top of this file.
+  for (const width of [1280, 1440, 1920]) {
+    test(`the index is three groups spread across the shell at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const footer = page.locator("[data-content-region] footer");
+
+      for (const group of ["Product", "Project", "Reference"]) {
+        await expect(
+          footer.getByRole("navigation", { name: group }),
+          `the ${group} group`,
+        ).toBeVisible();
+      }
+
+      const spread = await page.evaluate(() => {
+        const foot = document.querySelector("[data-content-region] footer")!;
+        const grid = foot.firstElementChild!;
+        const cols = Array.from(grid.children).map((c) => c.getBoundingClientRect());
+        const box = grid.getBoundingClientRect();
+        const widths = cols.map((c) => c.width);
+        return {
+          columns: cols.length,
+          rows: new Set(cols.map((c) => Math.round(c.y))).size,
+          reach: (Math.max(...cols.map((c) => c.right)) - box.x) / box.width,
+          // Equal tracks, within a pixel of rounding.
+          spread: Math.max(...widths) - Math.min(...widths),
+        };
+      });
+      expect(spread.columns, "three groups, no brand column").toBe(3);
+      expect(spread.rows, `on one row at ${width}`).toBe(1);
+      expect(spread.reach, "the grid must not stop half way").toBeGreaterThan(0.95);
+      expect(spread.spread, "the three columns are equal").toBeLessThanOrEqual(1);
+    });
+  }
+
+  test("the brand column is gone from the index, and its tagline with it", async ({ page }) => {
+    // The r8 complaint, asserted directly. A mark, a wordmark and a tagline
+    // in the index's first cell was a third repetition of an identity the
+    // masthead is already holding two screens above — and the tagline
+    // paraphrased the hero's own subhead one screen above that.
     await page.setViewportSize({ width: 1920, height: 1000 });
     await page.goto("/");
     const footer = page.locator("[data-content-region] footer");
+    await expect(footer.getByText("The real-time insider-trading tape")).toHaveCount(0);
+    // …and it is not orphaned as a standalone line anywhere else.
+    //
+    // `exact`, and this is the point rather than a detail: the hero's
+    // subhead OPENS with "The real-time insider-trading tape." verbatim and
+    // then keeps going. The footer's tagline was not a paraphrase of it, it
+    // was its first sentence, repeated one screen below — which is the
+    // clearest possible argument for the column being gone. A substring
+    // match here would find the hero and read as a failure.
+    await expect(page.getByText("The real-time insider-trading tape", { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.locator("[data-content-region] section").first(),
+      "the hero still says it, once, as its own sentence",
+    ).toContainText("The real-time insider-trading tape");
 
-    for (const group of ["Product", "Project", "Reference"]) {
-      await expect(
-        footer.getByRole("navigation", { name: group }),
-        `the ${group} group`,
-      ).toBeVisible();
-    }
-    // The brand column is a column of the grid, not a banner above it.
-    await expect(footer.getByText("The real-time insider-trading tape")).toBeVisible();
-
-    const spread = await page.evaluate(() => {
-      const foot = document.querySelector("[data-content-region] footer")!;
-      const grid = foot.firstElementChild!;
-      const cols = Array.from(grid.children).map((c) => c.getBoundingClientRect());
-      const box = grid.getBoundingClientRect();
+    // The mark survives, at icon scale, in the meta row beside the version.
+    const mark = page.getByTestId("footer-mark");
+    await expect(mark).toBeVisible();
+    await expect(mark).toContainText("InsiderFlow");
+    const geometry = await page.evaluate(() => {
+      const m = document.querySelector("[data-testid='footer-mark']")!;
+      const glyph = m.querySelector("span")!;
+      const version = document.querySelector("[data-testid='build-string']")!;
+      const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
+      const mb = m.getBoundingClientRect();
+      const vb = version.getBoundingClientRect();
       return {
-        columns: cols.length,
-        rows: new Set(cols.map((c) => Math.round(c.y))).size,
-        // How far the rightmost column reaches across the band.
-        reach: (Math.max(...cols.map((c) => c.right)) - box.x) / box.width,
+        glyph: glyph.getBoundingClientRect().width,
+        markLeft: mb.x,
+        markRight: mb.right,
+        versionLeft: vb.x,
+        gridLeft: grid.getBoundingClientRect().x,
+        // A footer mark is a signature, not a second way home.
+        isLink: Boolean(m.closest("a")) || Boolean(m.querySelector("a")),
+        isBrand: m.hasAttribute("data-brand") || Boolean(m.querySelector("[data-brand]")),
       };
     });
-    expect(spread.columns, "four columns").toBe(4);
-    expect(spread.rows, "on one row at 1920").toBe(1);
-    expect(spread.reach, "the grid must not stop half way").toBeGreaterThan(0.95);
+    expect(geometry.glyph, "icon scale, not the masthead's 20px box").toBeLessThanOrEqual(16);
+    expect(geometry.markLeft, "the mark leads the meta row").toBeCloseTo(geometry.gridLeft, 0);
+    expect(geometry.versionLeft, "the version sits beside it").toBeGreaterThan(geometry.markRight);
+    expect(geometry.isLink, "not a second link home").toBe(false);
+    expect(geometry.isBrand, "not a second navigational brand").toBe(false);
   });
 
-  test("the index collapses 4 to 2 to 1", async ({ page }) => {
+  test("the index collapses 3 to 2 to 1", async ({ page }) => {
     await page.goto("/");
     const rowsAt = async (width: number) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -159,9 +214,9 @@ test.describe("the landing footer", () => {
         return new Set(tops).size;
       });
     };
-    expect(await rowsAt(1440), "four across on a desktop").toBe(1);
-    expect(await rowsAt(800), "two by two on a tablet").toBe(2);
-    expect(await rowsAt(390), "one column on a phone").toBe(4);
+    expect(await rowsAt(1440), "three across on a desktop").toBe(1);
+    expect(await rowsAt(700), "two up on a tablet").toBe(2);
+    expect(await rowsAt(390), "one column on a phone").toBe(3);
   });
 
   // AMENDED in r8 — see the lineage at the top of this file.
