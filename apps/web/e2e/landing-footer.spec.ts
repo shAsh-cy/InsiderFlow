@@ -301,15 +301,28 @@ test.describe("the landing footer", () => {
         markLeft: mb.x,
         markRight: mb.right,
         versionLeft: vb.x,
+        versionRight: vb.right,
         gridLeft: grid.getBoundingClientRect().x,
+        gridRight: grid.getBoundingClientRect().right,
         // A footer mark is a signature, not a second way home.
         isLink: Boolean(m.closest("a")) || Boolean(m.querySelector("a")),
         isBrand: m.hasAttribute("data-brand") || Boolean(m.querySelector("[data-brand]")),
       };
     });
     expect(geometry.glyph, "icon scale, not the masthead's 20px box").toBeLessThanOrEqual(16);
-    expect(geometry.markLeft, "the mark leads the meta row").toBeCloseTo(geometry.gridLeft, 0);
+    // AMENDED in r9.2: the mark used to lead the meta row from the shell's
+    // left edge. The pair is centred now — see the exception argued at the
+    // meta-row assertions above — so what is asserted is that the mark
+    // still LEADS the version, and that the two of them sit on the shell's
+    // axis rather than on either of its edges.
     expect(geometry.versionLeft, "the version sits beside it").toBeGreaterThan(geometry.markRight);
+    expect(
+      Math.abs(
+        (geometry.markLeft + geometry.versionRight) / 2 -
+          (geometry.gridLeft + geometry.gridRight) / 2,
+      ),
+      "the signature sits on the shell's centre line",
+    ).toBeLessThanOrEqual(2);
     expect(geometry.isLink, "not a second link home").toBe(false);
     expect(geometry.isBrand, "not a second navigational brand").toBe(false);
   });
@@ -360,6 +373,9 @@ test.describe("the landing footer", () => {
             rowLeft: metaRow.getBoundingClientRect().x,
             rowRight: metaRow.getBoundingClientRect().right,
             markLeft: mark.getBoundingClientRect().x,
+            versionRight: document
+              .querySelector("[data-testid='build-string']")!
+              .getBoundingClientRect().right,
           },
         };
       }, INK);
@@ -417,26 +433,38 @@ test.describe("the landing footer", () => {
         `the sources note closes at ${Math.round(m.paras[1]!.blockRight)}, shell at ${Math.round(m.shell.right)}`,
       ).toBeLessThanOrEqual(1);
 
-      // 3. The meta row: left-aligned, spanning the shell, with the mark on
-      //    the same left edge as Product and the disclaimer above it.
-      expect(m.meta.align, "the meta row is left-aligned").toMatch(/^(start|left)$/);
-      expect(m.meta.justify, "and its flex run is not centred").toMatch(
-        /^(normal|flex-start|start)$/,
-      );
+      // 3. The meta row — AMENDED in r9.2, and the one deliberate exception
+      //    to everything above. r9.1 asserted the mark on the shell's left
+      //    edge; it is now centred, because a closing signature belongs on
+      //    the axis of the thing it closes and flush left it read as the
+      //    opening of a fourth band that never arrived.
+      //
+      //    What is centred is the PAIR, by `justify-content`. The row's own
+      //    `text-align` is untouched and still asserted — this is a flex
+      //    run being placed, not text being set, and the difference is the
+      //    whole subject of this file.
+      expect(m.meta.align, "the meta row's text alignment is untouched").toMatch(/^(start|left)$/);
+      expect(m.meta.justify, "and the flex run is centred").toBe("center");
+      const pair = { left: m.meta.markLeft, right: m.meta.versionRight };
       expect(
-        Math.abs(m.meta.markLeft - m.shell.left),
-        `the mark starts at ${Math.round(m.meta.markLeft)}, shell at ${Math.round(m.shell.left)}`,
-      ).toBeLessThanOrEqual(1);
+        Math.abs((pair.left + pair.right) / 2 - (m.shell.left + m.shell.right) / 2),
+        `the mark and the version centre on ${Math.round((pair.left + pair.right) / 2)}, the shell on ${Math.round((m.shell.left + m.shell.right) / 2)}`,
+      ).toBeLessThanOrEqual(2);
+      // Centred INSIDE a row that still spans the shell — the band is
+      // full width, its contents are not.
       expect(Math.abs(m.meta.rowLeft - m.shell.left)).toBeLessThanOrEqual(1);
       expect(Math.abs(m.meta.rowRight - m.shell.right)).toBeLessThanOrEqual(1);
+      expect(m.meta.markLeft, "and it is genuinely inset from that edge").toBeGreaterThan(
+        m.shell.left + 100,
+      );
 
-      // One left edge for all three bands, stated as the single equality
-      // this correction is about.
+      // One left edge for the two bands that are made of columns, stated as
+      // the single equality this correction is about. The meta row is not
+      // in it, by design and by the brief: it is one short line, not a
+      // column of anything.
       expect(
-        new Set(
-          [m.groups[0]!.headingInk, m.paras[0]!.ink, m.meta.markLeft, m.shell.left].map(Math.round),
-        ).size,
-        "Product, the disclaimer, the mark and the shell share one left edge",
+        new Set([m.groups[0]!.headingInk, m.paras[0]!.ink, m.shell.left].map(Math.round)).size,
+        "Product, the disclaimer and the shell share one left edge",
       ).toBe(1);
     });
   }
@@ -457,11 +485,19 @@ test.describe("the landing footer", () => {
           meta: getComputedStyle(
             document.querySelector("[data-testid='build-string']")!.parentElement!,
           ).textAlign,
+          metaJustify: getComputedStyle(
+            document.querySelector("[data-testid='build-string']")!.parentElement!,
+          ).justifyContent,
         };
       });
       for (const a of [...aligns.groups, ...aligns.paras, aligns.meta]) {
         expect(a, `everything is start-aligned at ${width}`).toMatch(/^(start|left)$/);
       }
+      // The meta row's PAIR is centred here too — the exception travels
+      // down with it, because the reason for it does. `text-align` above
+      // covers the text inside each block and is start at every width;
+      // this covers where the pair sits, and is centre at every width.
+      expect(aligns.metaJustify, `the signature is centred at ${width}`).toBe("center");
     }
   });
 
