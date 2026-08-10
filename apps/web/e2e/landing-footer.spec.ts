@@ -41,23 +41,60 @@ import { test, expect } from "@playwright/test";
  *        by the shell and both used `--band-gap`, so they LOOKED like one
  *        system and were not. Measured at 1920, the index drew lines at
  *        64 / 677 / 1291 while the second paragraph began at 984 — a line
- *        nothing else in the footer used — so the band read as a second,
- *        misaligned object stacked under the first. There is now one
- *        `.footer-grid` template: the index puts one group per track, the
- *        fine print puts its first paragraph across the left two and its
- *        second in the right one, and the meta row spans the lot. Both
- *        paragraphs now begin on a line the index begins on.
+ *        nothing else in the footer used. There is now one `.footer-grid`
+ *        template that every band rides.
+ *   r10 — INK AT BOTH EDGES. r9's TRACKS reached both gutters; its INK did
+ *        not. Every list was aligned to the start of its own track, so at
+ *        1920 Product's ink began at the shell's left edge while
+ *        Reference's ended at 1408 against a shell edge at 1856 — 448px of
+ *        the band's right side carrying nothing. 311px at 1440, 267px at
+ *        1280. Equal tracks distribute space; they do not put marks at the
+ *        edges of it. So the outer groups align their ink outward and the
+ *        middle one centres, the trailing fine-print BLOCK is pushed to the
+ *        far side of its track, and the meta row's signature centres on the
+ *        shell's axis.
  *
- * What changed in r9 is which LINES the band is drawn on, not the measure
- * or the size. Text stays left-aligned in every cell throughout: the
- * distribution of COLUMNS is what makes the middle group read as centred,
- * and centring the text inside them is what makes a link list look broken.
+ * Two r9/r8 assertions are superseded, both deliberately: that BOTH
+ * paragraphs begin on an index line — the trailing one now ends on the
+ * shell's right edge instead, which is the edge it shares with Reference
+ * above it — and that the mark leads the meta row, which is now centred.
+ *
+ * What does NOT change, in r10 or ever: the text INSIDE a paragraph stays
+ * left-aligned. Moving a block is layout; setting body copy ragged-left is
+ * a defect. Both paragraphs' computed `text-align` is asserted below, and
+ * below 768 — where a stacked column has no edge to key to — every group
+ * reverts to start-aligned too.
  *
  * What has not changed, and is still asserted below: the disclaimer is in
  * the footer and not the hero, every link resolves, the source and licence
  * are offered, and the build string never invents a commit it does not
  * have.
  */
+
+/**
+ * The union of the DRAWN text rectangles inside a node — the ink, not the
+ * box. r10 exists because a box can reach an edge while everything painted
+ * inside it stops well short of one, so the box is the wrong thing to
+ * measure. Passed as a string and rebuilt in the page, because it has to
+ * run where the text is.
+ */
+const INK = `((root) => {
+  const range = document.createRange();
+  let left = Infinity, right = -Infinity;
+  const walk = (node) => {
+    if (node.nodeType === 3 && node.textContent.trim()) {
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects()) {
+        if (r.width === 0) continue;
+        left = Math.min(left, r.left);
+        right = Math.max(right, r.right);
+      }
+    }
+    for (const c of node.childNodes) walk(c);
+  };
+  walk(root);
+  return { left, right };
+})`;
 
 test.describe("the landing footer", () => {
   test("offers the source and the licence, as AGPL-3.0 §13 requires", async ({ page }) => {
@@ -213,11 +250,114 @@ test.describe("the landing footer", () => {
       };
     });
     expect(geometry.glyph, "icon scale, not the masthead's 20px box").toBeLessThanOrEqual(16);
-    expect(geometry.markLeft, "the mark leads the meta row").toBeCloseTo(geometry.gridLeft, 0);
+    // AMENDED in r10: the mark no longer leads the row, it centres in it
+    // alongside the version. The centring is asserted at four widths
+    // further down; what matters here is that the mark is still first of
+    // the pair and the version still sits beside it.
+    expect(geometry.markLeft, "the mark comes before the version").toBeLessThan(
+      geometry.versionLeft,
+    );
     expect(geometry.versionLeft, "the version sits beside it").toBeGreaterThan(geometry.markRight);
     expect(geometry.isLink, "not a second link home").toBe(false);
     expect(geometry.isBrand, "not a second navigational brand").toBe(false);
   });
+
+  // ── r10 coverage: the INK, not the tracks ──────────────────────────
+  for (const width of [1280, 1440, 1920]) {
+    test(`the index's ink reaches both shell edges at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const m = await page.evaluate((inkSrc) => {
+        const ink = eval(inkSrc) as (root: Element) => { left: number; right: number };
+        const footer = document.querySelector("[data-content-region] footer")!;
+        const f = footer.getBoundingClientRect();
+        const groups = Array.from(footer.firstElementChild!.children).map((c) => {
+          const box = c.getBoundingClientRect();
+          return {
+            label: c.querySelector("p")!.textContent!.trim(),
+            trackCentre: box.x + box.width / 2,
+            align: getComputedStyle(c).textAlign,
+            ink: ink(c),
+          };
+        });
+        return { shell: { left: f.x, right: f.right }, groups };
+      }, INK);
+
+      const [product, project, reference] = m.groups;
+
+      // The r10 claim, from both ends. r9 measured 267 / 311 / 448px of
+      // dead ink on the right at these three widths.
+      expect(
+        Math.abs(product!.ink.left - m.shell.left),
+        `Product ink starts at ${Math.round(product!.ink.left)}, shell at ${Math.round(m.shell.left)}`,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(reference!.ink.right - m.shell.right),
+        `Reference ink ends at ${Math.round(reference!.ink.right)}, shell at ${Math.round(m.shell.right)}`,
+      ).toBeLessThanOrEqual(1);
+
+      // The middle group is centred in its OWN track, which is what makes
+      // it read as centred in the band without anything being centred on
+      // the band itself.
+      const projectCentre = (project!.ink.left + project!.ink.right) / 2;
+      expect(
+        Math.abs(projectCentre - project!.trackCentre),
+        `Project ink centre ${Math.round(projectCentre)}, track centre ${Math.round(project!.trackCentre)}`,
+      ).toBeLessThanOrEqual(2);
+
+      expect(product!.align, "Product keys to the left edge").toMatch(/^(start|left)$/);
+      expect(project!.align, "Project centres").toBe("center");
+      expect(reference!.align, "Reference keys to the right edge").toMatch(/^(end|right)$/);
+    });
+  }
+
+  test("the stacked index reverts to left-aligned below 768", async ({ page }) => {
+    // A centred or right-aligned list in a narrow single column has no edge
+    // to key to and simply reads as ragged.
+    for (const width of [390, 767]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const aligns = await page.evaluate(() =>
+        Array.from(
+          document.querySelector("[data-content-region] footer")!.firstElementChild!.children,
+        ).map((c) => getComputedStyle(c).textAlign),
+      );
+      for (const align of aligns) {
+        expect(align, `every group is start-aligned at ${width}`).toMatch(/^(start|left)$/);
+      }
+    }
+  });
+
+  for (const width of [1280, 1440, 1920, 390]) {
+    test(`the meta row's signature centres on the shell's axis at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const m = await page.evaluate(() => {
+        const f = document.querySelector("[data-content-region] footer")!.getBoundingClientRect();
+        const mark = document.querySelector("[data-testid='footer-mark']")!.getBoundingClientRect();
+        const version = document
+          .querySelector("[data-testid='build-string']")!
+          .getBoundingClientRect();
+        return {
+          shellCentre: f.x + f.width / 2,
+          groupCentre: (Math.min(mark.x, version.x) + Math.max(mark.right, version.right)) / 2,
+          markMid: mark.y + mark.height / 2,
+          versionMid: version.y + version.height / 2,
+        };
+      });
+      expect(
+        Math.abs(m.groupCentre - m.shellCentre),
+        `signature centre ${Math.round(m.groupCentre)}, shell centre ${Math.round(m.shellCentre)}`,
+      ).toBeLessThanOrEqual(2);
+      // One line at every width, including a phone. Compared on vertical
+      // CENTRES, because a 12px mark and an 11px version on the same line
+      // legitimately have different box tops.
+      expect(
+        Math.abs(m.markMid - m.versionMid),
+        `mark and version must share a line at ${width}`,
+      ).toBeLessThan(2);
+    });
+  }
 
   test("the index collapses 3 to 2 to 1", async ({ page }) => {
     await page.goto("/");
@@ -314,32 +454,22 @@ test.describe("the landing footer", () => {
         `second column starts at ${Math.round(measured.paras[1]!.x)}, midpoint is ${Math.round(midpoint)}`,
       ).toBeGreaterThanOrEqual(midpoint - 1);
 
-      // THE r9 CLAIM. Both paragraphs begin on a line the INDEX above them
-      // also begins on. r8 put the second at the band's own midpoint —
-      // 984 at 1920, against index lines at 64 / 677 / 1291 — which is
-      // what made the footer read as two grids rather than one.
-      const lines = await page.evaluate(() => {
-        const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
-        return Array.from(grid.children).map((c) => c.getBoundingClientRect().x);
+      // THE r10 CLAIM, superseding r9's. r9 asserted that both paragraphs
+      // BEGIN on an index line, which put the trailing block at the start
+      // of the right track and left it 39px short of the shell's right edge
+      // at 1440 and 175px short at 1920. The edge it shares with Reference
+      // above it is the RIGHT one, so that is the edge asserted.
+      const shell = await page.evaluate(() => {
+        const f = document.querySelector("[data-content-region] footer")!.getBoundingClientRect();
+        return { left: f.x, right: f.right };
       });
-      for (const [i, p] of measured.paras.entries()) {
-        const shared = lines.some((line) => Math.abs(line - p.x) <= 1);
-        expect(
-          shared,
-          `paragraph ${i + 1} starts at ${Math.round(p.x)}; index lines are ${lines
-            .map((l) => Math.round(l))
-            .join(", ")}`,
-        ).toBe(true);
-      }
-      // Specifically: the first under the first column, the last under the
-      // last, so the band spans the same run of the shell the index does.
       expect(
-        Math.abs(measured.paras[0]!.x - lines[0]!),
-        "first paragraph under column 1",
+        Math.abs(measured.paras[0]!.x - shell.left),
+        `paragraph 1 starts at ${Math.round(measured.paras[0]!.x)}, shell at ${Math.round(shell.left)}`,
       ).toBeLessThanOrEqual(1);
       expect(
-        Math.abs(measured.paras[1]!.x - lines[lines.length - 1]!),
-        "second paragraph under the last column",
+        Math.abs(measured.paras[1]!.right - shell.right),
+        `paragraph 2 ends at ${Math.round(measured.paras[1]!.right)}, shell at ${Math.round(shell.right)}`,
       ).toBeLessThanOrEqual(1);
 
       // Left-aligned, every one of them. Distributing columns is the whole
