@@ -17,7 +17,7 @@
   "dependencies": {
     "@insiderflow/core": "workspace:*",
     "@insiderflow/db": "workspace:*",
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.0",

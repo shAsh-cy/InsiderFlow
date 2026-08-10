@@ -23,9 +23,8 @@
     "@insiderflow/alerts": "workspace:*",
     "@insiderflow/analytics": "workspace:*",
     "@insiderflow/core": "workspace:*",
-    "@insiderflow/core": "workspace:*",
     "@insiderflow/db": "workspace:*",
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260730.1",
