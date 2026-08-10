@@ -57,6 +57,26 @@ AGPL-3.0` — is centred, on the shell's centre line to within 0px at
 is the pair, by `justify-content`; neither block's own `text-align` is
 touched, and the spec still asserts `start` on it.
 
+### Abandoned: r10
+
+`feat/ui-ledger-r10` was the branch that reached both shell edges by
+centring and right-aligning the text inside the columns. It was rejected
+in r9.1 and superseded in r9.2, and it is deleted rather than left
+sitting in the branch list looking mergeable.
+
+It was **not** an empty branch: it carried four commits of its own,
+merged nowhere — `a47df1e`, `3cc27e2`, `6d0d06f`, `ba41583`. Deleting a
+branch with unique work is a decision rather than a tidy-up, so the tip
+is kept as the annotated tag **`abandoned/ui-ledger-r10`**, whose message
+records why. Nothing is lost; nothing looks shippable. It was never
+pushed — `origin` has only `main` — so there was no remote branch to
+delete.
+
+One finding from it is worth keeping in view: r10's two acceptance
+measurements were right, and r9.2 reaches the same two edges by moving
+boxes instead of text. What r10 got wrong was the mechanism, not the
+target.
+
 ### Verification
 
 - 300 unit/integration; 257 Playwright e2e, unchanged from r9.1 — the new
