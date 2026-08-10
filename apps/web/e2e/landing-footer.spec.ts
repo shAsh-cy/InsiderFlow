@@ -48,10 +48,27 @@ import { test, expect } from "@playwright/test";
  *        second in the right one, and the meta row spans the lot. Both
  *        paragraphs now begin on a line the index begins on.
  *
+ *   r9.1 — DISTRIBUTION IS NOT TEXT ALIGNMENT. The correction, and the
+ *        assertions that make it stick. Distributing three equal COLUMNS
+ *        across the shell is a layout decision; aligning the text INSIDE
+ *        them is a separate one, and the two had been allowed to travel
+ *        together. Reaching a shell edge by centring a heading or setting
+ *        a link list ragged-left buys an edge and spends the inner one:
+ *        Stripe, Vercel and GitHub all distribute footer columns evenly
+ *        and left-align every word inside them, and they are right. Every
+ *        group heading, every link, both fine-print paragraphs and the
+ *        meta row start at their own column's left edge, at every width.
+ *
  * What changed in r9 is which LINES the band is drawn on, not the measure
  * or the size. Text stays left-aligned in every cell throughout: the
  * distribution of COLUMNS is what makes the middle group read as centred,
  * and centring the text inside them is what makes a link list look broken.
+ *
+ * That sentence was true and unasserted, which is the whole reason r9.1
+ * exists. Nothing in this file measured `text-align`, so the alignment
+ * could be — and was — changed without a single test noticing. It is
+ * measured now, on the groups, the paragraphs and the meta row, above and
+ * below the stacking breakpoint.
  *
  * What has not changed, and is still asserted below: the disclaimer is in
  * the footer and not the hero, every link resolves, the source and licence
@@ -217,6 +234,170 @@ test.describe("the landing footer", () => {
     expect(geometry.versionLeft, "the version sits beside it").toBeGreaterThan(geometry.markRight);
     expect(geometry.isLink, "not a second link home").toBe(false);
     expect(geometry.isBrand, "not a second navigational brand").toBe(false);
+  });
+
+  // ── r9.1: distribution is not text alignment ───────────────────────
+  //
+  // The INK is measured, not the boxes. A column can sit in the right
+  // third of the shell while everything painted inside it is centred or
+  // ragged-left, and the box tells you nothing about that.
+  const INK = `((root) => {
+    const range = document.createRange();
+    let left = Infinity, right = -Infinity;
+    const walk = (node) => {
+      if (node.nodeType === 3 && node.textContent.trim()) {
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.width === 0) continue;
+          left = Math.min(left, r.left);
+          right = Math.max(right, r.right);
+        }
+      }
+      for (const c of node.childNodes) walk(c);
+    };
+    walk(root);
+    return { left, right };
+  })`;
+
+  for (const width of [1280, 1440, 1920]) {
+    test(`every footer column is left-aligned inside itself at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const m = await page.evaluate((inkSrc) => {
+        const ink = eval(inkSrc) as (root: Element) => { left: number; right: number };
+        const footer = document.querySelector("[data-content-region] footer")!;
+        const shell = footer.getBoundingClientRect();
+        const grid = footer.firstElementChild!;
+
+        const groups = Array.from(grid.children).map((col) => {
+          const box = col.getBoundingClientRect();
+          const heading = col.querySelector("p")!;
+          return {
+            name: heading.textContent!.trim(),
+            align: getComputedStyle(col).textAlign,
+            trackLeft: box.x,
+            trackRight: box.right,
+            headingInk: ink(heading).left,
+            linkInk: Array.from(col.querySelectorAll("a")).map((a) => ink(a).left),
+          };
+        });
+
+        const paras = Array.from(
+          document.querySelectorAll("[data-testid='footer-disclaimer'] p"),
+        ).map((p) => ({
+          lead: (p.textContent ?? "").trim().slice(0, 13),
+          align: getComputedStyle(p).textAlign,
+          blockLeft: p.getBoundingClientRect().x,
+          ink: ink(p).left,
+        }));
+
+        const metaRow = document.querySelector("[data-testid='build-string']")!.parentElement!;
+        const mark = document.querySelector("[data-testid='footer-mark']")!;
+        return {
+          shell: { left: shell.x, right: shell.right },
+          groups,
+          paras,
+          meta: {
+            align: getComputedStyle(metaRow).textAlign,
+            justify: getComputedStyle(metaRow).justifyContent,
+            rowLeft: metaRow.getBoundingClientRect().x,
+            rowRight: metaRow.getBoundingClientRect().right,
+            markLeft: mark.getBoundingClientRect().x,
+          },
+        };
+      }, INK);
+
+      // 1. Every group: left-aligned, and its heading AND every one of its
+      //    links flush to its own track's left edge.
+      for (const g of m.groups) {
+        expect(g.align, `${g.name} is left-aligned`).toMatch(/^(start|left)$/);
+        expect(
+          Math.abs(g.headingInk - g.trackLeft),
+          `${g.name} heading ink at ${Math.round(g.headingInk)}, track at ${Math.round(g.trackLeft)}`,
+        ).toBeLessThanOrEqual(1);
+        for (const [i, x] of g.linkInk.entries()) {
+          expect(
+            Math.abs(x - g.trackLeft),
+            `${g.name} link ${i + 1} ink at ${Math.round(x)}, track at ${Math.round(g.trackLeft)}`,
+          ).toBeLessThanOrEqual(1);
+        }
+      }
+
+      // …and the distribution r9 established is untouched: first group on
+      // the shell's left edge, last group's TRACK on its right edge.
+      expect(
+        Math.abs(m.groups[0]!.trackLeft - m.shell.left),
+        "Product starts at the shell's left edge",
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(m.groups[m.groups.length - 1]!.trackRight - m.shell.right),
+        "Reference's track ends at the shell's right edge",
+      ).toBeLessThanOrEqual(1);
+
+      // 2. Both fine-print paragraphs: left-aligned, ink on the block's own
+      //    left edge. Right-ragged body copy is a defect, not a style.
+      for (const p of m.paras) {
+        expect(p.align, `"${p.lead}" is left-aligned`).toMatch(/^(start|left)$/);
+        expect(
+          Math.abs(p.ink - p.blockLeft),
+          `"${p.lead}" ink at ${Math.round(p.ink)}, block at ${Math.round(p.blockLeft)}`,
+        ).toBeLessThanOrEqual(1);
+      }
+      expect(
+        Math.abs(m.paras[0]!.blockLeft - m.shell.left),
+        "the disclaimer keys to the shell's left edge",
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(m.paras[1]!.blockLeft - m.groups[m.groups.length - 1]!.trackLeft),
+        "the sources note keys to the right-hand track's left edge",
+      ).toBeLessThanOrEqual(1);
+
+      // 3. The meta row: left-aligned, spanning the shell, with the mark on
+      //    the same left edge as Product and the disclaimer above it.
+      expect(m.meta.align, "the meta row is left-aligned").toMatch(/^(start|left)$/);
+      expect(m.meta.justify, "and its flex run is not centred").toMatch(
+        /^(normal|flex-start|start)$/,
+      );
+      expect(
+        Math.abs(m.meta.markLeft - m.shell.left),
+        `the mark starts at ${Math.round(m.meta.markLeft)}, shell at ${Math.round(m.shell.left)}`,
+      ).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.meta.rowLeft - m.shell.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.meta.rowRight - m.shell.right)).toBeLessThanOrEqual(1);
+
+      // One left edge for all three bands, stated as the single equality
+      // this correction is about.
+      expect(
+        new Set(
+          [m.groups[0]!.headingInk, m.paras[0]!.ink, m.meta.markLeft, m.shell.left].map(Math.round),
+        ).size,
+        "Product, the disclaimer, the mark and the shell share one left edge",
+      ).toBe(1);
+    });
+  }
+
+  test("the stacked footer stays left-aligned below 768", async ({ page }) => {
+    for (const width of [390, 767]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const aligns = await page.evaluate(() => {
+        const footer = document.querySelector("[data-content-region] footer")!;
+        return {
+          groups: Array.from(footer.firstElementChild!.children).map(
+            (c) => getComputedStyle(c).textAlign,
+          ),
+          paras: Array.from(document.querySelectorAll("[data-testid='footer-disclaimer'] p")).map(
+            (p) => getComputedStyle(p).textAlign,
+          ),
+          meta: getComputedStyle(
+            document.querySelector("[data-testid='build-string']")!.parentElement!,
+          ).textAlign,
+        };
+      });
+      for (const a of [...aligns.groups, ...aligns.paras, aligns.meta]) {
+        expect(a, `everything is start-aligned at ${width}`).toMatch(/^(start|left)$/);
+      }
+    }
   });
 
   test("the index collapses 3 to 2 to 1", async ({ page }) => {
