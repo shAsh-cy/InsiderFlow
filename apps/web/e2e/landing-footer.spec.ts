@@ -15,11 +15,11 @@ import { test, expect } from "@playwright/test";
  *   software over a network are offered the Corresponding Source through
  *   the interface itself.
  *
- * ── r8 AMENDMENT: THE BAND FILLS THE SHELL ─────────────────────────────
+ * ── AMENDMENT: THE BAND FILLS THE SHELL ────────────────────────────────
  *
  * The layout assertions here are amended rather than extended, because the
  * contract they encode changed. The lineage, kept with the tests that
- * enforce it so a ninth revision does not have to guess:
+ * enforce it so a tenth revision does not have to guess:
  *
  *   r4 — LEFT-HUG. Everything pinned to the viewport's left edge.
  *        Rejected: "tons of space on the right".
@@ -59,10 +59,27 @@ import { test, expect } from "@playwright/test";
  *        group heading, every link, both fine-print paragraphs and the
  *        meta row start at their own column's left edge, at every width.
  *
- * What changed in r9 is which LINES the band is drawn on, not the measure
- * or the size. Text stays left-aligned in every cell throughout: the
- * distribution of COLUMNS is what makes the middle group read as centred,
- * and centring the text inside them is what makes a link list look broken.
+ *   r9.2 — SPACE-BETWEEN, AND THE TEXT STAYS PUT. r10 got distribution
+ *        right by centering text (wrong); r9.1 got text right by
+ *        reverting distribution (also wrong); r9.2 is space-between with
+ *        left-aligned text — both at once. Equal thirds put the TRACKS on
+ *        both gutters and left the INK 448px short of the right one at
+ *        1920 (311px at 1440, 267px at 1280), because equal tracks
+ *        distribute space and do not put marks at the ends of it. So the
+ *        boxes move and the text does not: three shrink-to-fit groups
+ *        under `justify-content: space-between`, first item's ink on the
+ *        shell's left edge, last item's ink on its right edge, each still
+ *        `text-align: start` inside. The fine print rides the same
+ *        mechanism, so the two bands share their outer edges as well as
+ *        their template. The meta row is the one deliberate exception —
+ *        centred, because a closing signature is a single short line on
+ *        the axis of the thing it closes, not a column of links.
+ *
+ * What changed in r9 is which LINES the band is drawn on, and in r9.2
+ * whether there are lines at all rather than edges — never the measure or
+ * the size. Text stays left-aligned in every cell throughout: distributing
+ * the BOXES is what makes the middle group read as centred, and centring
+ * the text inside them is what makes a link list look broken.
  *
  * That sentence was true and unasserted, which is the whole reason r9.1
  * exists. Nothing in this file measured `text-align`, so the alignment
@@ -77,6 +94,35 @@ import { test, expect } from "@playwright/test";
  */
 
 test.describe("the landing footer", () => {
+  // The INK is measured, not the boxes — the one instrument this file's
+  // layout assertions are built on, and the reason they can tell r9's
+  // problem from r10's. A group can sit in the right third of the shell
+  // while everything painted inside it is centred or ragged-left, and a
+  // group's box can end on the shell's right edge while its last character
+  // is 448px short of it. `getBoundingClientRect` reports neither. This
+  // walks the text nodes and unions the drawn rectangles.
+  //
+  // It is a string, and the tests `eval` it, because `page.evaluate` runs
+  // in the browser and cannot close over anything in this file. The source
+  // is this literal and nothing else — no input reaches it.
+  const INK = `((root) => {
+    const range = document.createRange();
+    let left = Infinity, right = -Infinity;
+    const walk = (node) => {
+      if (node.nodeType === 3 && node.textContent.trim()) {
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.width === 0) continue;
+          left = Math.min(left, r.left);
+          right = Math.max(right, r.right);
+        }
+      }
+      for (const c of node.childNodes) walk(c);
+    };
+    walk(root);
+    return { left, right };
+  })`;
+
   test("offers the source and the licence, as AGPL-3.0 §13 requires", async ({ page }) => {
     await page.goto("/");
     const footer = page.locator("[data-content-region] footer");
@@ -147,9 +193,13 @@ test.describe("the landing footer", () => {
     await expect(footer).toContainText(/SEC EDGAR/i);
   });
 
-  // AMENDED in r8 — see the lineage at the top of this file.
+  // AMENDED in r8, and again in r9.2 — see the lineage at the top of this
+  // file. r8's claim was that the three TRACKS reach both gutters, which
+  // they did while the ink stopped 448px short of the right one at 1920.
+  // The claim is now made on the ink, which is the thing anybody actually
+  // sees.
   for (const width of [1280, 1440, 1920]) {
-    test(`the index is three groups spread across the shell at ${width}`, async ({ page }) => {
+    test(`the index spreads three groups from edge to edge at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/");
       const footer = page.locator("[data-content-region] footer");
@@ -161,24 +211,52 @@ test.describe("the landing footer", () => {
         ).toBeVisible();
       }
 
-      const spread = await page.evaluate(() => {
+      const m = await page.evaluate((inkSrc) => {
+        const ink = eval(inkSrc) as (root: Element) => { left: number; right: number };
         const foot = document.querySelector("[data-content-region] footer")!;
-        const grid = foot.firstElementChild!;
-        const cols = Array.from(grid.children).map((c) => c.getBoundingClientRect());
-        const box = grid.getBoundingClientRect();
-        const widths = cols.map((c) => c.width);
+        const band = foot.firstElementChild!;
+        const box = band.getBoundingClientRect();
         return {
-          columns: cols.length,
-          rows: new Set(cols.map((c) => Math.round(c.y))).size,
-          reach: (Math.max(...cols.map((c) => c.right)) - box.x) / box.width,
-          // Equal tracks, within a pixel of rounding.
-          spread: Math.max(...widths) - Math.min(...widths),
+          band: { left: box.x, right: box.right },
+          rows: new Set(
+            Array.from(band.children).map((c) => Math.round(c.getBoundingClientRect().y)),
+          ).size,
+          groups: Array.from(band.children).map((c) => ({
+            name: c.querySelector("p")!.textContent!.trim(),
+            ...ink(c),
+          })),
         };
-      });
-      expect(spread.columns, "three groups, no brand column").toBe(3);
-      expect(spread.rows, `on one row at ${width}`).toBe(1);
-      expect(spread.reach, "the grid must not stop half way").toBeGreaterThan(0.95);
-      expect(spread.spread, "the three columns are equal").toBeLessThanOrEqual(1);
+      }, INK);
+
+      expect(m.groups.length, "three groups, no brand column").toBe(3);
+      expect(m.rows, `on one row at ${width}`).toBe(1);
+
+      const [product, project, reference] = m.groups;
+      expect(
+        Math.abs(product!.left - m.band.left),
+        `Product's ink opens at ${Math.round(product!.left)}, the band at ${Math.round(m.band.left)}`,
+      ).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs(reference!.right - m.band.right),
+        `Reference's ink closes at ${Math.round(reference!.right)}, the band at ${Math.round(m.band.right)}`,
+      ).toBeLessThanOrEqual(2);
+
+      // Between them, and not touching. "Distributed" and "collided" both
+      // reach the two edges; only one of them is a footer.
+      expect(project!.left, "Project opens after Product closes").toBeGreaterThan(product!.right);
+      expect(project!.right, "Project closes before Reference opens").toBeLessThan(reference!.left);
+
+      // And spread by `space-between` specifically, which is what makes the
+      // middle group READ as centred without any text being centred: the
+      // two gaps are one number. r10 reached the same two edges by setting
+      // the outer groups' text to `end` and `center`, and that is the thing
+      // this file exists to keep out.
+      const gaps = [project!.left - product!.right, reference!.left - project!.right];
+      expect(
+        Math.abs(gaps[0]! - gaps[1]!),
+        `both gaps get the same share: ${Math.round(gaps[0]!)} vs ${Math.round(gaps[1]!)}`,
+      ).toBeLessThanOrEqual(1);
+      expect(gaps[0], "and they are real gaps, not rounding").toBeGreaterThan(48);
     });
   }
 
@@ -237,28 +315,6 @@ test.describe("the landing footer", () => {
   });
 
   // ── r9.1: distribution is not text alignment ───────────────────────
-  //
-  // The INK is measured, not the boxes. A column can sit in the right
-  // third of the shell while everything painted inside it is centred or
-  // ragged-left, and the box tells you nothing about that.
-  const INK = `((root) => {
-    const range = document.createRange();
-    let left = Infinity, right = -Infinity;
-    const walk = (node) => {
-      if (node.nodeType === 3 && node.textContent.trim()) {
-        range.selectNodeContents(node);
-        for (const r of range.getClientRects()) {
-          if (r.width === 0) continue;
-          left = Math.min(left, r.left);
-          right = Math.max(right, r.right);
-        }
-      }
-      for (const c of node.childNodes) walk(c);
-    };
-    walk(root);
-    return { left, right };
-  })`;
-
   for (const width of [1280, 1440, 1920]) {
     test(`every footer column is left-aligned inside itself at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -288,6 +344,7 @@ test.describe("the landing footer", () => {
           lead: (p.textContent ?? "").trim().slice(0, 13),
           align: getComputedStyle(p).textAlign,
           blockLeft: p.getBoundingClientRect().x,
+          blockRight: p.getBoundingClientRect().right,
           ink: ink(p).left,
         }));
 
@@ -323,15 +380,18 @@ test.describe("the landing footer", () => {
         }
       }
 
-      // …and the distribution r9 established is untouched: first group on
-      // the shell's left edge, last group's TRACK on its right edge.
+      // …and the distribution is untouched: first group's box on the
+      // shell's left edge, last group's box on its right edge. Under
+      // `space-between` these boxes ARE the ink — the groups are
+      // shrink-to-fit — which is why the two claims can be made together
+      // here without one of them being vacuous.
       expect(
         Math.abs(m.groups[0]!.trackLeft - m.shell.left),
         "Product starts at the shell's left edge",
       ).toBeLessThanOrEqual(1);
       expect(
         Math.abs(m.groups[m.groups.length - 1]!.trackRight - m.shell.right),
-        "Reference's track ends at the shell's right edge",
+        "Reference ends at the shell's right edge",
       ).toBeLessThanOrEqual(1);
 
       // 2. Both fine-print paragraphs: left-aligned, ink on the block's own
@@ -347,9 +407,14 @@ test.describe("the landing footer", () => {
         Math.abs(m.paras[0]!.blockLeft - m.shell.left),
         "the disclaimer keys to the shell's left edge",
       ).toBeLessThanOrEqual(1);
+      // AMENDED in r9.2. r9 keyed this to the third track's LEFT edge,
+      // which was a line the index also began on — until the index stopped
+      // having tracks. It keys to the edge instead: the block closes where
+      // Reference closes, and the text runs left from there, asserted
+      // above along with every other paragraph in this footer.
       expect(
-        Math.abs(m.paras[1]!.blockLeft - m.groups[m.groups.length - 1]!.trackLeft),
-        "the sources note keys to the right-hand track's left edge",
+        Math.abs(m.paras[1]!.blockRight - m.shell.right),
+        `the sources note closes at ${Math.round(m.paras[1]!.blockRight)}, shell at ${Math.round(m.shell.right)}`,
       ).toBeLessThanOrEqual(1);
 
       // 3. The meta row: left-aligned, spanning the shell, with the mark on
@@ -415,9 +480,16 @@ test.describe("the landing footer", () => {
     expect(await rowsAt(390), "one column on a phone").toBe(3);
   });
 
-  // AMENDED in r8 — see the lineage at the top of this file.
+  // AMENDED in r8, r9 and again in r9.2 — see the lineage at the top of
+  // this file. The claim each time is the same one: the fine print and the
+  // index are ONE object, not two stacked ones. What changes is what that
+  // means. r8: both bounded by the shell. r9: both on one grid template,
+  // so both paragraphs opened on a line the index opened on. r9.2: both on
+  // one `space-between` row, so both bands open and close on the same two
+  // edges — which is the only version of the claim that survives the index
+  // having edges instead of tracks.
   for (const width of [1280, 1440, 1920]) {
-    test(`the fine print rides the index's own column lines at ${width}`, async ({ page }) => {
+    test(`the fine print rides the index's own edges at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/");
       const measured = await page.evaluate(() => {
@@ -437,7 +509,6 @@ test.describe("the landing footer", () => {
         });
         return {
           band: { x: band.x, right: band.right, width: band.width },
-          tracks: s.gridTemplateColumns.split(" ").filter(Boolean).length,
           gap: parseFloat(s.columnGap),
           rule: parseFloat(s.borderTopWidth),
           ruleColour: s.borderTopColor,
@@ -445,43 +516,48 @@ test.describe("the landing footer", () => {
         };
       });
 
-      // AMENDED in r9: the band no longer has a track count of its own. It
-      // is laid out by the SAME template as the index — asserted by string
-      // equality on the resolved template, which is the only way to catch
-      // two grids that agree today and drift tomorrow. r8 had three tracks
+      // AMENDED in r9.2: the band has no template of its own, and neither
+      // does the index — they have a mechanism, and it is the same one.
+      // Compared on the resolved values, which is the only way to catch two
+      // layouts that agree today and drift tomorrow. r8 had three tracks
       // above and two below, both bounded by the shell and both using
       // `--band-gap`, which is precisely how they looked like one system
       // while not being one.
-      const template = await page.evaluate(() => {
-        const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
-        const band = document.querySelector("[data-testid='footer-disclaimer']")!;
+      const mechanism = await page.evaluate(() => {
+        const read = (el: Element) => {
+          const s = getComputedStyle(el);
+          return {
+            display: s.display,
+            justify: s.justifyContent,
+            gap: s.columnGap,
+            template: s.gridTemplateColumns,
+          };
+        };
         return {
-          index: getComputedStyle(grid).gridTemplateColumns,
-          band: getComputedStyle(band).gridTemplateColumns,
-          indexGap: getComputedStyle(grid).columnGap,
-          bandGap: getComputedStyle(band).columnGap,
+          index: read(document.querySelector("[data-content-region] footer")!.firstElementChild!),
+          band: read(document.querySelector("[data-testid='footer-disclaimer']")!),
         };
       });
-      const tracks = (value: string) => value.split(" ").map(parseFloat);
-      const bandTracks = tracks(template.band);
-      const indexTracks = tracks(template.index);
-      expect(bandTracks.length, `band ${template.band} vs index ${template.index}`).toBe(
-        indexTracks.length,
+      expect(mechanism.band.display, "one display mode for both bands").toBe(
+        mechanism.index.display,
       );
-      // Compared numerically within a pixel, not by string. Chrome hands the
-      // leftover sub-pixel to a different track when a grid has two spanning
-      // children instead of three plain ones — 428.531 against 428.547 at
-      // 1440 — and that is float distribution, not a second template.
-      for (const [i, t] of bandTracks.entries()) {
-        expect(
-          Math.abs(t - indexTracks[i]!),
-          `track ${i + 1}: band ${t}, index ${indexTracks[i]}`,
-        ).toBeLessThanOrEqual(1);
-      }
-      expect(template.bandGap, "one gap token for both bands").toBe(template.indexGap);
-      expect(measured.tracks, "three tracks, shared with the index").toBe(3);
+      expect(mechanism.band.display, "and it is the flex row, above 768").toBe("flex");
+      expect(mechanism.band.justify, "one distribution for both bands").toBe(
+        mechanism.index.justify,
+      );
+      expect(mechanism.band.justify, "and it is space-between").toBe("space-between");
+      expect(mechanism.band.gap, "one gap token for both bands").toBe(mechanism.index.gap);
+      // Both still carry the stacking template they fall back to below
+      // 768 — inert here, since a flex box does not lay out on it — and it
+      // is the SAME one. r8's two bands drifted apart by having two
+      // templates that happened to agree; this is the assertion that says
+      // they are one declaration.
+      expect(mechanism.band.template, "one stacking fallback for both bands").toBe(
+        mechanism.index.template,
+      );
+
       expect(measured.paras.length).toBe(2);
-      expect(measured.paras[0]!.x, "first column starts at the band's edge").toBeCloseTo(
+      expect(measured.paras[0]!.x, "the first paragraph opens on the band's edge").toBeCloseTo(
         measured.band.x,
         0,
       );
@@ -495,37 +571,38 @@ test.describe("the landing footer", () => {
         `second column starts at ${Math.round(measured.paras[1]!.x)}, midpoint is ${Math.round(midpoint)}`,
       ).toBeGreaterThanOrEqual(midpoint - 1);
 
-      // THE r9 CLAIM. Both paragraphs begin on a line the INDEX above them
-      // also begins on. r8 put the second at the band's own midpoint —
-      // 984 at 1920, against index lines at 64 / 677 / 1291 — which is
-      // what made the footer read as two grids rather than one.
-      const lines = await page.evaluate(() => {
-        const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
-        return Array.from(grid.children).map((c) => c.getBoundingClientRect().x);
-      });
-      for (const [i, p] of measured.paras.entries()) {
-        const shared = lines.some((line) => Math.abs(line - p.x) <= 1);
-        expect(
-          shared,
-          `paragraph ${i + 1} starts at ${Math.round(p.x)}; index lines are ${lines
-            .map((l) => Math.round(l))
-            .join(", ")}`,
-        ).toBe(true);
-      }
-      // Specifically: the first under the first column, the last under the
-      // last, so the band spans the same run of the shell the index does.
+      // THE r9.2 CLAIM, which replaces r9's. r9 asserted that both
+      // paragraphs began on a line the INDEX also began on — the fix for
+      // r8, which had put the second at the band's own midpoint, 984 at
+      // 1920 against index lines at 64 / 677 / 1291. Under `space-between`
+      // the index has no interior lines to share, so the two bands share
+      // what they now both have: the outer edges. The first paragraph opens
+      // where the first group opens; the last closes where the last group
+      // closes.
+      const edges = await page.evaluate((inkSrc) => {
+        const ink = eval(inkSrc) as (root: Element) => { left: number; right: number };
+        const groups = Array.from(
+          document.querySelector("[data-content-region] footer")!.firstElementChild!.children,
+        );
+        return {
+          open: ink(groups[0]!).left,
+          close: ink(groups[groups.length - 1]!).right,
+        };
+      }, INK);
       expect(
-        Math.abs(measured.paras[0]!.x - lines[0]!),
-        "first paragraph under column 1",
+        Math.abs(measured.paras[0]!.x - edges.open),
+        `the disclaimer opens at ${Math.round(measured.paras[0]!.x)}, Product at ${Math.round(edges.open)}`,
       ).toBeLessThanOrEqual(1);
       expect(
-        Math.abs(measured.paras[1]!.x - lines[lines.length - 1]!),
-        "second paragraph under the last column",
+        Math.abs(measured.paras[1]!.right - edges.close),
+        `the sources note closes at ${Math.round(measured.paras[1]!.right)}, Reference at ${Math.round(edges.close)}`,
       ).toBeLessThanOrEqual(1);
 
-      // Left-aligned, every one of them. Distributing columns is the whole
-      // mechanism; centring or right-aligning the text is what would make
-      // this read as broken.
+      // Left-aligned, every one of them. Distributing the BOXES is the
+      // whole mechanism; centring or right-aligning the text inside them
+      // is what would make this read as broken. The second block closes on
+      // the right edge and its text still runs left from its own left
+      // edge — a right-ragged paragraph is a defect, not a style.
       for (const p of measured.paras) {
         expect(p.align, "fine print is left-aligned").toMatch(/^(start|left)$/);
       }

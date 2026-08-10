@@ -32,9 +32,9 @@ interface FooterLink {
  * read, and grouping gives the destinations a hierarchy a flat row cannot.
  *
  * Three bands, separated by hairlines, each a different kind of statement
- * and each with its own measure: the index (three equal columns), the fine
- * print (two columns at a multi-column measure — see below), and the meta
- * row (the mark at icon scale beside the build).
+ * and each with its own measure: the index (three groups spread across the
+ * shell), the fine print (two paragraphs at a multi-column measure — see
+ * below), and the meta row (the mark at icon scale beside the build).
  *
  * The source link is not decoration. AGPL-3.0 §13 requires that users
  * interacting with the software over a network are offered the
@@ -81,8 +81,18 @@ export async function LandingFooter() {
   return (
     <footer className="border-t border-border pt-10 pb-14">
       {/* ── The index ──────────────────────────────────────────────────
-          Three groups, evenly across the shell, 3 → 2 → 1, on the shared
-          `.footer-grid` template every band in this footer rides.
+          Three groups, spread across the shell, 3 → 2 → 1, on the shared
+          `.footer-row` template every band in this footer rides.
+
+          r9 spread the TRACKS and left the ink hugging the left of each
+          one, which at 1920 put Reference's last character 448px short of
+          the shell's right edge. r9.2 spreads the groups themselves —
+          `space-between` on shrink-to-fit items — so the first group's ink
+          opens on the left edge and the last group's ink closes on the
+          right. What does NOT change is the text inside them: every
+          heading and every link is left-aligned against its own group,
+          because reaching an outer edge by right-aligning a link list buys
+          that edge and spends the inner one.
 
           r7 gave the first column to the mark, the wordmark and a tagline.
           That was a third repetition of an identity the masthead is already
@@ -92,7 +102,7 @@ export async function LandingFooter() {
           what it cost was the three groups being squeezed into the
           remaining three quarters. The mark is still in the footer — it is
           in the meta row, at icon scale, where a compact mark belongs. */}
-      <div className="footer-grid gap-y-10">
+      <div className="footer-row gap-y-10">
         {groups.map((group) => (
           <nav key={group.label} aria-label={group.label} className="flex flex-col gap-3">
             {/* Uppercase in the SANS face, not mono: mono here is reserved
@@ -137,16 +147,15 @@ export async function LandingFooter() {
       </div>
 
       {/* ── The fine print ─────────────────────────────────────────────
-          TWO columns, one paragraph each, filling the shell.
+          TWO paragraphs, one on each shell edge.
 
           r7 capped these at 66ch and left them stacked, which put the whole
           band in a single column against the left gutter with the right
           half of a 1792px band empty. 66ch was the right principle read off
           the wrong line of Bringhurst: it is his figure for a SINGLE
           column, and for multi-column setting he gives 40–50. So the
-          measure moves with the layout — two 1fr tracks that reach both
-          gutters, each paragraph set to a multi-column measure inside its
-          own track.
+          measure moves with the layout — two blocks at a multi-column
+          measure, one keyed to each gutter.
 
           `text-xs` (12px) and not `text-2xs` (11px): reduced, but not below
           the size Lighthouse's legible-font-size audit — and the reason
@@ -159,19 +168,23 @@ export async function LandingFooter() {
           substance rather than one wording. */}
       <div
         data-testid="footer-disclaimer"
-        className="footer-grid footer-band gap-y-3 text-xs leading-normal text-ink-faint"
+        className="footer-row footer-band gap-y-3 text-xs leading-normal text-ink-faint"
       >
-        {/* Left two tracks, so this paragraph opens on the same line as
-            Product above it. */}
+        {/* First item, so it opens on the shell's left edge — the same
+            edge Product opens on above it. */}
         <p className="footer-span-lead max-w-[50ch]">
           <strong className="font-semibold text-ink-muted">{t("disclaimerLead")}</strong>{" "}
           {t("disclaimerBody")}
         </p>
-        {/* Right track, so this one opens on the same line as Reference.
-            r8 put it at the band's midpoint, which is a line no column in
-            the index uses — the whole of what made the footer read as two
-            objects. Its track reaches the far gutter; the 50ch cap is what
-            stops the text from following it there. */}
+        {/* Last item, so it closes on the shell's right edge — the same
+            edge Reference closes on above it. r8 put this at the band's
+            own midpoint, a line nothing else in the footer used, which is
+            the whole of what made the footer read as two objects; r9 moved
+            it onto the index's third track, which stopped being a line the
+            index used the moment the index stopped having tracks. The BOX
+            is what moves. The text inside it stays left-aligned: a
+            multi-line paragraph set ragged-left is a defect, not a
+            style. */}
         <p className="footer-span-trail max-w-[50ch]">
           <strong className="font-semibold text-ink-muted">{t("sourcesLead")}</strong>{" "}
           {t("sourcesBody")}

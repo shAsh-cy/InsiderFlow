@@ -603,38 +603,64 @@ aside.sticky > [data-sidebar-brand] {
   padding-inline: var(--shell-gutter);
 }
 
-/* ── The footer's ONE column system (r9) ───────────────────────────────
+/* ── The footer's ONE row system (r9, rebuilt in r9.2) ─────────────────
    r8 gave the footer two grids: three equal tracks for the link index and
    two for the fine print. Both were bounded by the shell and both used
    `--band-gap`, so they looked like one system and were not — at 1920 the
    index drew lines at 64 / 677 / 1291 while the second paragraph began at
    984, which is a line nothing else in the footer uses. The band read as a
-   second, misaligned object stacked under the first.
+   second, misaligned object stacked under the first. r9's answer was one
+   template, declared once, with every band riding it. That rule stands.
+   What r9.2 changes is WHAT the one template is.
 
-   So there is one template, declared once, and every band rides it. The
-   index puts one group in each track; the fine print puts its first
-   paragraph across the left two tracks and its second in the right one,
-   so BOTH paragraphs begin on a line the index also begins on. The meta
-   row spans the lot.
+   Equal thirds could not do the job the footer needs doing. Measured on
+   the r9 build, the TRACKS reached both gutters and the INK did not:
+   Product's ink opened on the shell's left edge, and Reference's stopped
+   at 1408 against a shell edge at 1856 — 448px of the band's right side
+   carrying nothing (311px at 1440, 267px at 1280). Equal tracks
+   distribute SPACE. They do not put marks at the ends of it.
 
-   Text inside every cell stays left-aligned. Distributing COLUMNS is what
-   makes the middle group look centred; centring the text inside them is
-   what makes a link list look broken. */
-.footer-grid {
+   r10 closed that gap by setting the outer groups' text to `end` and the
+   middle one to `center`. That buys two outer edges and spends every
+   inner one, which is the worse trade: a link list with a ragged left
+   edge reads as broken, and Stripe, Vercel and GitHub all left-align
+   every word in a footer column for that reason.
+
+   So the BOXES move and the text does not. `space-between` across
+   shrink-to-fit items: the first item's ink opens on the shell's left
+   edge because it is first, the last item's ink closes on the right edge
+   because it is last, and whatever is between them sits in the space
+   between them. Both bands ride it, so the index and the fine print now
+   share their outer edges as well as their mechanism. Nothing is centred,
+   nothing is right-aligned, and `text-align: start` is never overridden.
+
+   Below 768 it goes back to a stacking grid, and that is not a detail:
+   the three groups are only ~280px of ink in total, so shrink-to-fit
+   items WOULD still fit on one line at 390 — three thin columns spread
+   across a phone, which is not a footer. The breakpoint is what stops
+   `space-between` from being applied where there is no width to
+   distribute. */
+.footer-row {
   display: grid;
   column-gap: var(--band-gap);
   grid-template-columns: minmax(0, 1fr);
 }
 
 @media (min-width: 640px) {
-  .footer-grid {
+  .footer-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 768px) {
-  .footer-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .footer-row {
+    display: flex;
+    /* Items keep the default `flex: 0 1 auto`, so each one is as wide as
+       its own longest line and no wider — `space-between` distributes the
+       true ink rather than three padded boxes. Nothing in the footer may
+       take `flex-1`. */
+    flex-wrap: wrap;
+    justify-content: space-between;
   }
 }
 
@@ -650,21 +676,18 @@ aside.sticky > [data-sidebar-brand] {
   padding-top: 1.5rem;
 }
 
-/* Below the three-track breakpoint both paragraphs take the full row, so
-   the band stacks while the index is still folding 3 → 2. */
+/* Below the three-across breakpoint both paragraphs take the full row, so
+   the band stacks while the index is still folding 3 → 2.
+
+   Above it there is nothing for these to say. r9 gave the lead paragraph
+   the left two tracks and the trailing one the right track, so that both
+   opened on a line the index also opened on. Under `space-between` the
+   index has no tracks to open on — it has two edges — and the paragraphs
+   key to those instead: first item on the left edge, last item on the
+   right, each at its own measure. */
 .footer-span-lead,
 .footer-span-trail {
   grid-column: 1 / -1;
-}
-
-@media (min-width: 768px) {
-  .footer-span-lead {
-    grid-column: 1 / span 2;
-  }
-
-  .footer-span-trail {
-    grid-column: 3 / span 1;
-  }
 }
 
 /* A band that sits outside the sidebar row — the footer — and still
