@@ -3,11 +3,33 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * E2E tests. Install browsers once: pnpm exec playwright install chromium
  *
- * By default Playwright boots its own dev server. To run against an
- * already-running instance (e.g. a production build on :3100), set
- * PLAYWRIGHT_BASE_URL and the managed webServer is skipped.
+ * ── THE DEFAULT IS A PRODUCTION BUILD ON :3100 (r12) ──────────────────
+ *
+ * It used to be `pnpm dev` on :3000, and that default could corrupt its
+ * own subject. `next dev` and `next start` write to and read from the SAME
+ * `.next` directory: start a dev server while a production server is
+ * running and the dev compiler rewrites the build under it. Observed
+ * during the r11 sweep — the landing page came back with no stylesheet at
+ * all and fifteen tests failed reporting that a version string was set in
+ * "Times New Roman". Every one of those failures was false, and the real
+ * cause was the harness, not the product. A test harness that can do that
+ * is a correctness hazard for every phase after it.
+ *
+ * So: `pnpm test:e2e` starts `next build && next start -p 3100` itself and
+ * points at that. Three consequences, all wanted — the suite measures the
+ * artefact that ships rather than a dev bundle with different chunking,
+ * CSP and caching; nothing writes to `.next` while it runs; and the port
+ * differs from the dev default, so a developer's own `pnpm dev` on :3000
+ * is untouched by a test run.
+ *
+ * `PLAYWRIGHT_BASE_URL` still overrides everything and skips the managed
+ * server, which is how CI points at a deployed preview and how a local run
+ * reuses a server that is already up.
  */
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+
+/** The port the managed production server binds. Not 3000: see above. */
+const MANAGED_PORT = 3100;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,7 +37,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: externalBaseUrl ?? "http://localhost:3000",
+    baseURL: externalBaseUrl ?? `http://localhost:${MANAGED_PORT}`,
     trace: "on-first-retry",
   },
   /**
@@ -102,10 +124,23 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: "pnpm dev",
-          url: "http://localhost:3000",
+          // `build` then `start`, never `dev` — see the note at the top of
+          // this file. The build is what makes this slow to start and what
+          // makes the run mean something.
+          command: `pnpm exec next build && pnpm exec next start -p ${MANAGED_PORT}`,
+          url: `http://localhost:${MANAGED_PORT}`,
+          // Reusing a server that is already up is what makes an iterative
+          // local run bearable; in CI there is never one to reuse and a
+          // stale one would be a silent lie.
           reuseExistingServer: !process.env.CI,
-          timeout: 120_000,
+          // A cold production build is minutes, not seconds.
+          timeout: 600_000,
+          // The suite needs the synthetic ZZ* fixtures visible, and the
+          // managed server has to be told so explicitly — a developer's
+          // shell usually has this set and CI's does not, which is exactly
+          // the kind of difference that produces a green laptop and a red
+          // pipeline.
+          env: { INSIDERFLOW_SHOW_SYNTHETIC: "true" },
         },
       }),
 });
