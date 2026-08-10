@@ -692,8 +692,14 @@ aside.sticky > [data-sidebar-brand] {
     grid-column: 1 / span 2;
   }
 
+  /* Right track, and pushed to the far side of it — r10. The 50ch measure
+     is narrower than the track at 1440 and 1920, so left in place the
+     block stopped 39px and 175px short of the shell's right edge. This is
+     the BLOCK moving; the text inside it stays left-aligned, because
+     right-ragged body copy is a defect and not a style. */
   .footer-span-trail {
     grid-column: 3 / span 1;
+    justify-self: end;
   }
 }
 
