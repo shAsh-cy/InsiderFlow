@@ -638,6 +638,18 @@ aside.sticky > [data-sidebar-brand] {
   }
 }
 
+/* One rhythm for the rules that separate the footer's bands, stated once
+   rather than typed per band. r8 gave the first divider 40px above and 24
+   below and the second 24 above and 16 below, so a footer whose bands were
+   supposed to read as one system had two different vertical spacings
+   between them. The footer's OWN opening rule keeps its larger gap: that
+   one separates the footer from the page, not one band from another. */
+.footer-band {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
 /* Below the three-track breakpoint both paragraphs take the full row, so
    the band stacks while the index is still folding 3 → 2. */
 .footer-span-lead,

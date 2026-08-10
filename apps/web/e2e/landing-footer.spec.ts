@@ -382,34 +382,65 @@ test.describe("the landing footer", () => {
     expect(rows, "two paragraphs, two rows").toBe(2);
   });
 
-  test("the meta row spans the shell and is ruled off", async ({ page }) => {
-    await page.setViewportSize({ width: 1920, height: 1000 });
-    await page.goto("/");
-    const meta = await page.evaluate(() => {
-      const version = document.querySelector("[data-testid='build-string']")!;
-      const row = version.parentElement!;
-      const footer = document.querySelector("[data-content-region] footer")!;
-      const r = row.getBoundingClientRect();
-      const f = footer.getBoundingClientRect();
-      return {
-        rule: parseFloat(getComputedStyle(row).borderTopWidth),
-        left: r.x,
-        right: r.right,
-        footerLeft: f.x,
-        footerRight: f.right,
-      };
+  // AMENDED and expanded in r9: the three bands are asserted as ONE system
+  // at three widths, rather than the meta row being checked on its own.
+  for (const width of [1280, 1440, 1920]) {
+    test(`the three bands share the shell's edges and one rhythm at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/");
+      const bands = await page.evaluate(() => {
+        const footer = document.querySelector("[data-content-region] footer")!;
+        const f = footer.getBoundingClientRect();
+        const read = (el: Element, name: string) => {
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return {
+            name,
+            left: r.x,
+            right: r.right,
+            marginTop: parseFloat(s.marginTop),
+            paddingTop: parseFloat(s.paddingTop),
+            rule: s.borderTopStyle === "none" ? 0 : parseFloat(s.borderTopWidth),
+            ruleColour: s.borderTopColor,
+          };
+        };
+        return {
+          shell: { left: f.x, right: f.right },
+          list: [
+            read(footer.firstElementChild!, "index"),
+            read(document.querySelector("[data-testid='footer-disclaimer']")!, "fine print"),
+            read(document.querySelector("[data-testid='build-string']")!.parentElement!, "meta"),
+          ],
+        };
+      });
+
+      // Every band, gutter to gutter. A band that stops short reads as a
+      // caption under one column rather than as part of the footer.
+      for (const band of bands.list) {
+        expect(
+          Math.abs(band.left - bands.shell.left),
+          `${band.name} starts at ${Math.round(band.left)}, shell at ${Math.round(bands.shell.left)}`,
+        ).toBeLessThanOrEqual(1);
+        expect(
+          Math.abs(band.right - bands.shell.right),
+          `${band.name} ends at ${Math.round(band.right)}, shell at ${Math.round(bands.shell.right)}`,
+        ).toBeLessThanOrEqual(1);
+      }
+
+      // The two internal dividers carry the SAME rhythm. r8 gave the first
+      // 40px above and 24 below and the second 24 above and 16 below, so a
+      // footer whose bands were meant to read as one system had two
+      // different vertical spacings between them.
+      const finePrint = bands.list[1]!;
+      const meta = bands.list[2]!;
+      expect(finePrint.rule, "the fine print is ruled off").toBeGreaterThan(0);
+      expect(meta.rule, "the meta row is ruled off").toBeGreaterThan(0);
+      expect(finePrint.ruleColour).not.toBe("rgba(0, 0, 0, 0)");
+      expect(meta.ruleColour, "both rules are drawn from one token").toBe(finePrint.ruleColour);
+      expect(meta.marginTop, "same space above both rules").toBe(finePrint.marginTop);
+      expect(meta.paddingTop, "same space below both rules").toBe(finePrint.paddingTop);
     });
-    expect(meta.rule, "the build row is ruled off too").toBeGreaterThan(0);
-    // Full shell width: the row is a band, not a caption under one column.
-    expect(
-      Math.abs(meta.left - meta.footerLeft),
-      "meta row starts at the shell edge",
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(meta.right - meta.footerRight),
-      "meta row reaches the far gutter",
-    ).toBeLessThanOrEqual(1);
-  });
+  }
 
   test("app routes keep their own footer and do not get this one", async ({ page }) => {
     for (const route of ["/trades", "/leaderboard"]) {

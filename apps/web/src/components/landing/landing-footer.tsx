@@ -159,7 +159,7 @@ export async function LandingFooter() {
           substance rather than one wording. */}
       <div
         data-testid="footer-disclaimer"
-        className="footer-grid mt-10 gap-y-3 border-t border-border pt-6 text-xs leading-normal text-ink-faint"
+        className="footer-grid footer-band gap-y-3 text-xs leading-normal text-ink-faint"
       >
         {/* Left two tracks, so this paragraph opens on the same line as
             Product above it. */}
@@ -183,7 +183,9 @@ export async function LandingFooter() {
           string and that is the one thing mono is for here, with tabular
           figures from the `num` class. It prints a commit only when the
           build actually knew one — see lib/build-info. */}
-      <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-4">
+      {/* Same rhythm as the band above it — `.footer-band` carries the rule
+          and the spacing on both, so the two dividers cannot drift apart. */}
+      <div className="footer-band flex flex-wrap items-center gap-x-4 gap-y-2">
         {/* The mark at icon scale, not the masthead's box. Deliberately NOT
             a link and NOT `data-brand`: the masthead carries the one
             navigational brand on this page, and a second link home at the
