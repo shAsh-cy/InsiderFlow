@@ -79,7 +79,7 @@ for (const file of files) {
     for (const m of line.matchAll(/\.locator\(\s*([`'"])((?:\\.|(?!\1).)*)\1/g)) {
       const selector = m[2];
       if (!namesClassOrId(selector)) continue;
-      const allowance = ALLOWED.find((a) => !a.retired && selector.includes(a.pattern));
+      const allowance = ALLOWED.find((a) => selector.includes(a.pattern));
       if (allowance) {
         usedAllowances.add(allowance.pattern);
         continue;

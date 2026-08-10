@@ -11,6 +11,22 @@ const eslintConfig = [
   },
   {
     rules: {
+      // `_name` means "deliberately discarded", and this codebase already
+      // uses it: `const { limit: _limit, offset: _offset, ...filters }` is
+      // how a request's paging keys are dropped before the rest becomes an
+      // alert's filter set. Without the pattern, six such bindings were the
+      // ENTIRE output of `pnpm lint` — which is how a team learns that lint
+      // warnings are noise and stops reading them. Nothing is weakened: an
+      // unused binding that is not opted out BY NAME is still reported.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          varsIgnorePattern: "^_",
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+        },
+      ],
       "no-restricted-syntax": [
         "error",
         {
