@@ -146,7 +146,12 @@ export async function LandingFooter() {
           the substance rather than one wording. */}
       <div
         data-testid="footer-disclaimer"
-        className="mt-10 flex flex-col gap-3 border-t border-border pt-6 text-2xs leading-relaxed text-ink-faint"
+        // `text-xs` (12px) and not `text-2xs` (11px). Reduced, but not
+        // below the size Lighthouse's mobile legible-font-size audit — and
+        // the reason behind it — treat as readable: this band is several
+        // paragraphs long, so at 11px it was enough of the page's text to
+        // take the landing's best-practices score from 100 to 96.
+        className="mt-10 flex flex-col gap-3 border-t border-border pt-6 text-xs leading-relaxed text-ink-faint"
       >
         <p className="max-w-[66ch]">
           <strong className="font-semibold text-ink-muted">{t("disclaimerLead")}</strong>{" "}

@@ -15,7 +15,7 @@
  * owns product identity now, and this is an action bar that shares the
  * content's margins: see the r6 amendment at the top of globals.css.
  */
-import { ChevronDown, Menu, Search, Settings2 } from "lucide-react";
+import { Menu, Search, Settings2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -23,28 +23,49 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 
 import { useScrolled } from "@/hooks/use-scrolled";
+import { accountState } from "@/lib/auth/account-state";
 import { cn } from "@/lib/utils";
 
 import { BrandLink } from "./brand";
 import { Breadcrumbs } from "./breadcrumb";
 import { LocaleSwitcher } from "./locale-switcher";
 import type { SessionInfo } from "./session-provider";
-import { ShellMenu } from "./shell-menu";
 import { ShortcutHint } from "./shortcut-hint";
 import { ThemeToggle } from "./theme-toggle";
 
 const CommandPalette = dynamic(() => import("./command-palette"), { ssr: false });
 const NavDrawer = dynamic(() => import("./nav-drawer"), { ssr: false });
+/**
+ * NOT code-split, and the attempt is worth recording so it is not made
+ * again. Deferring an overlay whose TRIGGER lives inside it means swapping
+ * the trigger element on first press — and a browser only dispatches
+ * `click` when pointerdown and pointerup share a target, so the press that
+ * loads the menu is the press the menu never receives. Radix then mounts
+ * open with focus on `<body>` and dismisses itself. It cost a first tap on
+ * the one control that reaches language and theme on a phone, which is the
+ * exact fault r3 was rebuilt to fix.
+ *
+ * It also bought nothing: the tape's row menu already puts this primitive
+ * in the landing's graph, so both of these ride a chunk that is downloaded
+ * either way. The 187 kB that mattered was the auth SDK, and that is
+ * deferred inside `lib/auth/supabase-browser` where there is no trigger to
+ * lose.
+ */
+import AccountMenu from "./account-menu";
+import { ShellMenu } from "./shell-menu";
 
 export function ShellChrome({ session }: { session?: SessionInfo }) {
   const t = useTranslations("nav");
   const pathname = usePathname();
   const settingsActive = pathname === "/settings";
+  // Server-resolved: the bar never asks the browser who is signed in.
+  const account = accountState(session);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   /** Stays true after first open so the chunk isn't re-requested. */
   const [paletteLoaded, setPaletteLoaded] = useState(false);
   const [menuLoaded, setMenuLoaded] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   /** Handed to the drawer so Escape returns focus here — see NavDrawer. */
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const { scrolled, sentinelRef } = useScrolled();
@@ -201,58 +222,45 @@ export function ShellChrome({ session }: { session?: SessionInfo }) {
             </>
           ) : null}
 
-          {/* Language, theme and Settings fold in here below md. */}
+          {/* Language, theme and Settings fold in here below md. Code-split
+              on the same rule as everything else in this bar: it is an
+              overlay, it only exists below `md`, and it opens on a press —
+              so its primitive is fetched on hover or on that press, not on
+              every first paint of every route. */}
           <ShellMenu
             className="md:hidden"
             showSettings={Boolean(session?.authConfigured)}
             settingsActive={settingsActive}
           />
 
-          {session?.authConfigured ? (
-            session.userId ? (
-              // Signed in: who you are, not another copy of "settings".
-              // The initial is decorative; the accessible name is the
-              // address, because "S" read aloud tells nobody anything.
-              <Link
-                href="/settings"
-                aria-label={`${t("account")} — ${session.email ?? ""}`}
-                title={session.email ?? undefined}
-                data-testid="account-chip"
-                className="group inline-flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-transparent pe-1 ps-1 text-ink-muted transition-colors hover:border-border hover:bg-fill hover:text-ink md:h-8 md:pe-2"
-              >
-                {/* A drawn avatar, not a floating letter. The initial sat
-                    on the bar with no boundary of its own, so a signed-in
-                    reader saw a stray character where every other control
-                    had a shape. The disc is `--fill` with a hairline so it
-                    reads as an object at 20px, and the chevron says the
-                    chip leads somewhere rather than doing something. */}
-                <span
-                  aria-hidden
-                  className="num grid size-8 shrink-0 place-items-center rounded-full border border-border bg-fill text-2xs font-semibold uppercase md:size-6"
-                >
-                  {(session.email ?? "?").slice(0, 1)}
-                </span>
-                <ChevronDown aria-hidden className="size-3 shrink-0 opacity-70" />
-              </Link>
-            ) : (
-              // The primary affordance in the masthead, and styled like
-              // it. On dark the accent is only 3.6:1 as a fill, so this
-              // is a bordered accent button with `--accent-bright` type
-              // (6.3:1); on light the accent is legible behind white, so
-              // it fills. Same weight in both, reached two different ways
-              // because the two grounds are not symmetric.
-              //
-              // `h-11` below md: this is the one thing in the bar a reader
-              // is most likely to be reaching for, and at 32px it was the
-              // smallest target on the screen.
-              <Link
-                href="/login"
-                data-magnetic
-                className="inline-flex h-11 shrink-0 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 md:h-8 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
-              >
-                {t("signIn")}
-              </Link>
-            )
+          {account === "account" ? (
+            // Signed in: who you are, not another copy of "settings". The
+            // chip is rendered from the SERVER-resolved session and carries
+            // no client auth code; its menu — and the overlay primitive
+            // behind it — arrives on the first hover, focus or press.
+            <AccountMenu
+              email={session?.email ?? null}
+              open={accountOpen}
+              onOpenChange={setAccountOpen}
+            />
+          ) : account === "sign-in" ? (
+            // The primary affordance in the masthead, and styled like
+            // it. On dark the accent is only 3.6:1 as a fill, so this
+            // is a bordered accent button with `--accent-bright` type
+            // (6.3:1); on light the accent is legible behind white, so
+            // it fills. Same weight in both, reached two different ways
+            // because the two grounds are not symmetric.
+            //
+            // `h-11` below md: this is the one thing in the bar a reader
+            // is most likely to be reaching for, and at 32px it was the
+            // smallest target on the screen.
+            <Link
+              href="/login"
+              data-magnetic
+              className="inline-flex h-11 shrink-0 items-center rounded-md border border-accent-bright px-3 text-xs font-semibold text-accent-bright transition-colors hover:bg-accent-bright/10 md:h-8 light:border-transparent light:bg-accent light:text-accent-contrast light:hover:bg-accent-bright"
+            >
+              {t("signIn")}
+            </Link>
           ) : null}
         </div>
       </header>

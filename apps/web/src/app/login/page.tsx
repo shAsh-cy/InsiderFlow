@@ -30,7 +30,7 @@ export default function LoginPage() {
 
   const sendMagicLink = async (event: React.FormEvent) => {
     event.preventDefault();
-    const supabase = getSupabaseBrowserClient();
+    const supabase = await getSupabaseBrowserClient();
     if (!supabase) return;
     setStatus("sending");
     const { error } = await supabase.auth.signInWithOtp({
@@ -47,7 +47,7 @@ export default function LoginPage() {
   };
 
   const signInWithGithub = async () => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = await getSupabaseBrowserClient();
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: "github",

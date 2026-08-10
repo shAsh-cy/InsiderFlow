@@ -75,7 +75,7 @@ export function SignInPopover({
   };
 
   const withGithub = async () => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = await getSupabaseBrowserClient();
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: "github",
@@ -87,7 +87,7 @@ export function SignInPopover({
 
   const withEmail = async (event: React.FormEvent) => {
     event.preventDefault();
-    const supabase = getSupabaseBrowserClient();
+    const supabase = await getSupabaseBrowserClient();
     if (!supabase || !email.trim()) return;
     setSending(true);
     setError(null);
