@@ -39,7 +39,7 @@ test("the public site works either way, and advertises sign-in only when it work
   // first. The banner is client-rendered, so a retrying count assertion
   // passed if it sampled before hydration and failed after — it had been
   // passing on timing rather than on the fact it claims to check.
-  const bar = page.locator("header");
+  const bar = page.getByRole("banner");
   await expect(bar.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(
     configured ? 1 : 0,
   );

@@ -288,7 +288,7 @@ test.describe("the screener's filters on a phone @mobile", () => {
 
     // Draft state: choosing does nothing until Apply. The bar writes to the
     // URL on every change, which would leave one history entry per control.
-    await sheet.locator("#sheet-min-value").selectOption("1000000");
+    await sheet.getByLabel("Minimum USD value").selectOption("1000000");
     expect(page.url()).not.toContain("min_value_usd");
 
     await page.getByTestId("filter-sheet-apply").tap();
@@ -310,10 +310,10 @@ test.describe("the screener's filters on a phone @mobile", () => {
     await page.goto("/screener?min_value_usd=1000000");
     await page.getByTestId("filter-sheet-trigger").tap();
     const sheet = page.getByTestId("filter-sheet");
-    await expect(sheet.locator("#sheet-min-value")).toHaveValue("1000000");
+    await expect(sheet.getByLabel("Minimum USD value")).toHaveValue("1000000");
     await page.getByTestId("filter-sheet-clear").tap();
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator("#sheet-min-value")).toHaveValue("");
+    await expect(sheet.getByLabel("Minimum USD value")).toHaveValue("");
   });
 });
 

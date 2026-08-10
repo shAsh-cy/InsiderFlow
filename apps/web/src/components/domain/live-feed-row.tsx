@@ -37,7 +37,11 @@ export function LiveFeedRow({
       transition={springs.feedRow}
       // `tape-arrival` is what distinguishes a row that just streamed in
       // from one that was there already: only this component renders for
-      // an SSE arrival, so the flash needs no extra state to know.
+      // an SSE arrival, so the flash needs no extra state to know. The
+      // attribute says the same thing for the stream spec, which needs to
+      // FIND the arrived row and should not have to know the name of the
+      // class that paints it.
+      data-tape-arrival
       className={cn(FEED_ROW_CLASS, "tape-arrival", className)}
     >
       <FeedRowContent trade={trade} now={now} />

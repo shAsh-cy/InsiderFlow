@@ -138,10 +138,12 @@ test.describe("tape keyboard", () => {
     // The command palette is the text field that is always present, and
     // it is exactly where a stolen "?" would be most annoying.
     await page.keyboard.press("ControlOrMeta+k");
-    // `[cmdk-input]` specifically: getByRole("combobox") also matches the
-    // filter bar's <select>, and pressing a key on a select is not the
-    // thing under test.
-    const field = page.locator("[cmdk-input]").first();
+    // Scoped to the dialog, not `[cmdk-input]`. A bare
+    // getByRole("combobox") also matches the filter bar's <select>, and
+    // pressing a key on a select is not the thing under test — but the
+    // fix for that is to say WHICH combobox, not to reach for a
+    // third-party library's private attribute.
+    const field = page.getByRole("dialog").getByRole("combobox").first();
     await expect(field).toBeVisible();
     await field.press("?");
     await expect(page.getByTestId("shortcut-sheet")).toBeHidden();
@@ -214,7 +216,7 @@ test.describe("arrival flash", () => {
     // repeat insert is a no-op that never reaches the stream.
     const shares = 700_000 + Math.floor(Math.random() * 99_999);
     const dedup = insertSyntheticTrade(target, { shares, tag: `flash-${shares}` });
-    const arrived = page.locator(".tape-arrival").first();
+    const arrived = page.locator("[data-tape-arrival]").first();
     await expect(arrived).toBeVisible({ timeout: 60_000 });
 
     const flash = await arrived.evaluate((row) => {

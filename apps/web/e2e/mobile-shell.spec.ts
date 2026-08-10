@@ -64,7 +64,7 @@ test.describe("the navigation drawer @mobile", () => {
     await page.goto("/trades");
     await expectTarget(page.getByTestId("nav-drawer-trigger"), "drawer trigger");
     // The sidebar's own <aside> must not be occupying width below lg.
-    await expect(page.locator("aside.sticky")).toBeHidden();
+    await expect(page.getByTestId("sidebar")).toBeHidden();
   });
 
   test("it opens, traps focus, and reaches every destination", async ({ page }) => {
@@ -141,7 +141,7 @@ test.describe("the condensed masthead @mobile", () => {
     await expectTarget(page.getByTestId("nav-drawer-trigger"), "menu");
     await expectTarget(page.getByTestId("open-palette"), "search");
     await expectTarget(page.getByTestId("shell-overflow"), "overflow menu");
-    const signIn = page.locator("header a[href='/login']");
+    const signIn = page.getByRole("banner").getByRole("link", { name: "Sign in", exact: true });
     if ((await signIn.count()) > 0) {
       const box = await signIn.boundingBox();
       expect(Math.round(box!.height), "sign in height").toBeGreaterThanOrEqual(TARGET - 1);
@@ -156,13 +156,13 @@ test.describe("the condensed masthead @mobile", () => {
     //
     // `sr-only`, not `hidden`: a link to the home page with no accessible
     // name is what `hidden` would have produced on every phone.
-    const masthead = page.locator("header [data-brand]");
+    const masthead = page.getByRole("banner").locator("[data-brand]");
     await expect(masthead).toBeVisible();
     await expect(masthead).toHaveAccessibleName(/InsiderFlow/);
     // The off-canvas copy must not be reachable while it is off-canvas —
     // two links to the home page in the tab order, one of them invisible,
     // is a keyboard trap for a screen-reader user rather than a redundancy.
-    await expect(page.locator("aside [data-brand]")).toBeHidden();
+    await expect(page.getByTestId("sidebar").locator("[data-brand]")).toBeHidden();
   });
 
   test("language and theme are reachable — the r3 build hid both below 640", async ({ page }) => {

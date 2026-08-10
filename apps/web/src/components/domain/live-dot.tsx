@@ -18,6 +18,13 @@ export function LiveDot({
     <span className={cn("inline-flex items-center gap-1.5 text-2xs text-ink-muted", className)}>
       <span
         aria-hidden
+        // The dot itself, not the labelled wrapper: the reduced-motion
+        // spec has to read `animationName` off the element the animation
+        // is actually on. `data-live-status` rather than the `live-pulse`
+        // class, so the test names the STATE and the stylesheet keeps the
+        // class to itself.
+        data-testid="live-dot"
+        data-live-status={status}
         className={cn(
           "size-1.5 rounded-full",
           status === "live" && "bg-accent-2 live-pulse",

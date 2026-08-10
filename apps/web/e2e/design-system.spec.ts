@@ -151,7 +151,7 @@ test("reduced motion disables non-essential animation", async ({ page }) => {
   // absent (the dot only pulses once the stream is actually live), so a
   // missing element passes — but a present one must be stopped.
   const pulseAnimation = await page
-    .locator(".live-pulse")
+    .getByTestId("live-dot")
     .first()
     .evaluate((el) => getComputedStyle(el).animationName)
     .catch(() => "none");

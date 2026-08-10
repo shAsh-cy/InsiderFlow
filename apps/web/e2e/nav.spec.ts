@@ -88,7 +88,7 @@ test.describe("navigation state", () => {
 
   test("the top bar no longer duplicates the sidebar's reference section", async ({ page }) => {
     await page.goto("/trades");
-    const header = page.locator("header").first();
+    const header = page.getByRole("banner");
     // Design and API docs live in the sidebar's Reference section, once.
     await expect(header.getByRole("link", { name: /design/i })).toHaveCount(0);
     await expect(header.getByRole("link", { name: /api docs/i })).toHaveCount(0);
@@ -99,10 +99,10 @@ test.describe("navigation state", () => {
 
   test("settings gets a real active state in the top bar", async ({ page }) => {
     await page.goto("/trades");
-    await expect(page.locator("header [aria-current='page']")).toHaveCount(0);
+    await expect(page.getByRole("banner").locator("[aria-current='page']")).toHaveCount(0);
 
     await page.goto("/settings");
-    const settings = page.locator("header [aria-current='page']");
+    const settings = page.getByRole("banner").locator("[aria-current='page']");
     await expect(settings).toHaveCount(1);
     await expect(settings).toHaveAttribute("href", "/settings");
   });
@@ -119,7 +119,7 @@ test.describe("navigation state", () => {
     // 3px (the `medium` initial value) even when the style is `none`, so
     // the width check passes trivially and the STYLE check is the real one.
     await page.goto("/trades", { waitUntil: "networkidle" });
-    const items = page.locator("aside nav a");
+    const items = page.getByTestId("sidebar").getByRole("link");
     const count = await items.count();
     expect(count).toBeGreaterThan(5);
 
@@ -139,7 +139,7 @@ test.describe("navigation state", () => {
 
   test("the current sidebar item is marked by more than colour", async ({ page }) => {
     await page.goto("/screener");
-    const current = page.locator("aside nav [aria-current='page']");
+    const current = page.getByTestId("sidebar").locator("nav [aria-current='page']");
     const marks = await current.evaluate((el) => {
       const s = getComputedStyle(el);
       return {

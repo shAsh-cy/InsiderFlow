@@ -22,7 +22,12 @@ test.describe("today on the tape", () => {
     // The card counts up when it scrolls into view, so it legitimately
     // reads 0 until then. Bring it on screen and let the spring settle
     // rather than photographing the first frame.
-    const card = page.locator("div.surface").filter({ hasText: "Filings today" }).last();
+    // By the card's own hook, filtered by the figure it is the card OF.
+    // `div.surface` was a styling class standing in for "a stat card": it
+    // would have started matching something else, or nothing, the day
+    // `surface` moved — and a locator that silently matches nothing is
+    // how a green suite stops meaning anything.
+    const card = page.getByTestId("stat-card").filter({ hasText: "Filings today" }).last();
     await card.scrollIntoViewIfNeeded();
 
     // Read the FIGURE, by its own hook — not "the last number in the card's

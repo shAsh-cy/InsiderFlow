@@ -14,6 +14,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "lint:changelog": "node scripts/lint-changelog.mjs",
+    "lint:e2e-locators": "node scripts/lint-e2e-locators.mjs",
     "// test": "Sequential: four packages spin up PGlite (Postgres in WASM), and running those WASM heaps concurrently exhausts memory on a 2-core runner (VirtualAlloc/OOM). Serial is slower but deterministic.",
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:e2e": "pnpm --filter @insiderflow/web test:e2e",

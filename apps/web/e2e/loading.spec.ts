@@ -66,7 +66,25 @@ test.describe("loading", () => {
 
     // Rows, not a rotating disc.
     await expect(skeleton.locator("[data-slot='skeleton']").first()).toBeVisible();
-    await expect(page.locator(".animate-spin")).toHaveCount(0);
+    // Asserted on the animation the browser is actually running, not on
+    // the Tailwind class that would have produced it. `.animate-spin` was
+    // one spelling of a spinner out of several — a hand-rolled keyframe,
+    // a borrowed component, an SVG with its own `<animateTransform>` —
+    // and the contract is "nothing on this page is going round", not
+    // "nobody used that particular utility".
+    //
+    // ANIMATIONS only. The first draft of this also rejected a
+    // `transition-property` containing `rotate` and failed on a chevron:
+    // Tailwind v4's `transition` shorthand lists `transform, translate,
+    // scale, rotate`, so every transitioned element on the page matched.
+    // A transition is a response to something; a spinner is a thing that
+    // turns on its own.
+    const spinning = await page.evaluate(() =>
+      [...document.querySelectorAll("*")]
+        .map((el) => getComputedStyle(el).animationName)
+        .filter((name) => /spin|rotat/i.test(name)),
+    );
+    expect(spinning, "a paging tape shows skeleton rows, never a spinner").toEqual([]);
   });
 
   test("the skeleton reserves the height the rows will occupy", async ({ page }) => {

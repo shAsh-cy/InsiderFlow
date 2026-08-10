@@ -28,9 +28,9 @@ test.describe("signed out", () => {
   for (const route of ["/", "/trades"]) {
     test(`${route} offers a plain sign-in link and no menu`, async ({ page }) => {
       await page.goto(route);
-      const header = page.locator("header");
+      const header = page.getByRole("banner");
 
-      const signIn = header.locator("a[href='/login']");
+      const signIn = header.getByRole("link", { name: "Sign in", exact: true });
       await expect(signIn).toBeVisible();
       await expect(signIn).toHaveText(/sign in/i);
 
@@ -102,12 +102,12 @@ test.describe("a cookie that does not resolve to a user", () => {
       );
 
       await page.goto("/trades");
-      const header = page.locator("header");
+      const header = page.getByRole("banner");
       await expect(
         header.getByTestId("account-chip"),
         "an unverifiable cookie must never draw an account",
       ).toHaveCount(0);
-      await expect(header.locator("a[href='/login']")).toBeVisible();
+      await expect(header.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
 
       // …and the page itself still works. Refusing to render because a
       // cookie is stale would be a worse failure than ignoring it.

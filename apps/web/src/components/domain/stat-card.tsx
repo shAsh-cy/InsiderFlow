@@ -98,6 +98,11 @@ export function StatCard({
   return (
     <div
       ref={ref}
+      // A hook for the e2e suite, which used to find this card with
+      // `div.surface` filtered by its label — a Tailwind-era styling class
+      // standing in for "a stat card", which would have gone silently
+      // wrong the day `surface` was renamed or applied to something else.
+      data-testid="stat-card"
       className={cn(
         // `h-full flex-col`: in a row of three the card fills its grid
         // track, so three figures of different lengths sit in three boxes

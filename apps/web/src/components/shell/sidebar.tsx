@@ -35,7 +35,13 @@ export function Sidebar() {
   const itemLabel = (key: string) => (key === "apiDocs" ? t("apiDocs") : t(`items.${key}`));
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col overflow-y-auto border-r border-border lg:flex">
+    <aside
+      // Named, because it is not the only `<aside>` in the product — the
+      // stock page has one too — and `aside.sticky` named it by a
+      // positioning utility that says nothing about which aside it is.
+      data-testid="sidebar"
+      className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col overflow-y-auto border-r border-border lg:flex"
+    >
       {/* `--shell-nav-inset` is the distance from the sidebar's edge to a
           nav item's CONTENT (12px padding + a 2px state rule + 10px), so
           the mark and the eleven glyphs beneath it stand on one line.

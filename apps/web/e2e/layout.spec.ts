@@ -370,11 +370,11 @@ test.describe("app routes: the sidebar owns identity, the bar owns actions", () 
         // navigation column, which is what makes it stop competing with
         // the page's own heading for the left edge.
         await expect(
-          page.locator("aside [data-brand]"),
+          page.getByTestId("sidebar").locator("[data-brand]"),
           `${route} @${width}: the brand lives in the sidebar`,
         ).toBeVisible();
         expect(
-          await page.locator("header [data-brand]:visible").count(),
+          await page.getByRole("banner").locator("[data-brand]:visible").count(),
           `${route} @${width}: nothing in the masthead may claim a brand edge`,
         ).toBe(0);
 
@@ -429,20 +429,23 @@ test.describe("app routes: the sidebar owns identity, the bar owns actions", () 
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/trades");
-    const side = await page.locator("aside.sticky").boundingBox();
+    const side = await page.getByTestId("sidebar").boundingBox();
     expect(side!.y, "the sidebar starts at the top of the viewport").toBeLessThanOrEqual(TOLERANCE);
     expect(side!.height, "the sidebar runs the height of the window").toBeGreaterThan(800);
 
     // The r3 rule survives the move: three signals mean "you are here" and
     // the brand gets none of them, or it reads as a stuck highlight again.
-    const brand = await page.locator("aside [data-brand]").evaluate((el) => {
-      const s = getComputedStyle(el);
-      return {
-        current: el.getAttribute("aria-current"),
-        rule: s.borderLeftStyle === "none" ? 0 : parseFloat(s.borderLeftWidth),
-        ground: s.backgroundColor,
-      };
-    });
+    const brand = await page
+      .getByTestId("sidebar")
+      .locator("[data-brand]")
+      .evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          current: el.getAttribute("aria-current"),
+          rule: s.borderLeftStyle === "none" ? 0 : parseFloat(s.borderLeftWidth),
+          ground: s.backgroundColor,
+        };
+      });
     expect(brand.current, "the brand is never current").toBeNull();
     expect(brand.rule, "the brand carries no accent rule").toBe(0);
     expect(brand.ground, "the brand carries no tinted ground").toBe("rgba(0, 0, 0, 0)");
@@ -453,7 +456,7 @@ test.describe("app routes: the sidebar owns identity, the bar owns actions", () 
   }) => {
     for (const route of ["/trades", "/leaderboard", "/settings"]) {
       await page.goto(route);
-      const current = page.locator("aside nav [aria-current='page']");
+      const current = page.getByTestId("sidebar").locator("nav [aria-current='page']");
       if (route === "/settings") {
         // Settings is reached from the masthead, not the index — nothing in
         // the sidebar owns it, and nothing may pretend to.
@@ -843,7 +846,10 @@ test.describe("composition inside the region", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/trades");
       const g = await readGeometry(page);
-      const rail = page.locator("[data-content-region] .rail-bleed").first();
+      // The page's own opening header — a semantic element, not the
+      // `.rail-bleed` utility that hangs it. Every standalone shell opens
+      // with exactly one, and the rule it hangs is the subject here.
+      const rail = page.locator("[data-content-region] header").first();
       const box = await rail.boundingBox();
 
       expect(box, `no rail at ${width}`).not.toBeNull();
@@ -962,7 +968,9 @@ test.describe("identity survives the drawer @mobile", () => {
     await page.goto("/trades");
     const g = await readGeometry(page);
     expect(g.brandHost, "the brand is drawn in the masthead on a phone").toBe("masthead");
-    await expect(page.locator("header [data-brand]")).toHaveAccessibleName(/InsiderFlow/);
+    await expect(page.getByRole("banner").locator("[data-brand]")).toHaveAccessibleName(
+      /InsiderFlow/,
+    );
 
     // The hamburger's DRAWN icon — not its 44px hit area — starts on the
     // content's left edge, so the bar and the page share one x here too.
