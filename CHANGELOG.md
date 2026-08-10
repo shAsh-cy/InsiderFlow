@@ -2,7 +2,228 @@
 
 All notable changes to InsiderFlow. Newest first.
 
-## r6 — One left edge per shell, a masthead that says where you are, and a footer that says what this is
+Every section is headed `## r<N> (YYYY-MM-DD) — <title>` and declares the
+commits it covers, so the record can be checked against the repository
+rather than believed. `pnpm lint:changelog` enforces it, including that
+no revision between r1 and the newest is missing — r7 through r9.2 were
+written after the fact, from git history, precisely because nothing was
+checking.
+
+## r9.2 (2026-08-10) — space-between, and the text stays put
+
+<!-- commits: 22af673 1fbaab7 -->
+
+### The footer's ink reaches both edges
+
+r9 put the three link groups on equal thirds and left every list flush to
+the left of its own track. The TRACKS reached both gutters; the INK did
+not. Measured at 1920, Product's ink opened on the shell's left edge and
+Reference's closed at 1408 against a shell edge at 1856 — **448px of the
+band's right side carrying nothing, 311px at 1440, 267px at 1280**. Equal
+tracks distribute space. They do not put marks at the ends of it.
+
+The rejected fix is worth recording because it was built and thrown away
+(see the disposition of `r10` below): setting the outer groups'
+`text-align` to `end` and the middle one to `center` reaches both edges
+and destroys every inner one. A link list with a ragged left edge cannot
+be scanned — the eye needs the starts to line up — and Stripe, Vercel and
+GitHub all left-align every word in a footer column for that reason.
+
+So the boxes move and the text does not. The index and the fine print
+both ride one flex row under `justify-content: space-between` across
+shrink-to-fit items: the first item's ink opens on the shell's left edge
+because it is first, the last item's ink closes on the right edge because
+it is last, and the middle sits in the space between — which is what
+makes it READ as centred without a word of it being centred. Both bands
+now share their outer edges as well as their mechanism. Below 768 it is a
+stacking grid again, and that is not a detail: three shrink-to-fit groups
+are only ~280px of ink in total and WOULD still fit on one line at 390.
+
+Measured after, both themes, at 1280/1440/1920: Reference's ink closes at
+**1256 / 1406 / 1856 — the shell's right edge, exactly**; every group,
+both paragraphs and every link `text-align: start` with its ink at +0
+from its own left edge.
+
+`space-between` equalises the gaps, not the centres, so Project's ink
+centre lands **23px left of the shell's axis** at every width — Product's
+ink is 46px narrower than Reference's. That is 1.2% at 1920 and it is a
+consequence of the mechanism, not a defect in it.
+
+### The meta row is the one exception
+
+The closing signature — the mark at icon scale beside `v0.1.0 ·
+AGPL-3.0` — is centred, on the shell's centre line to within 0px at
+1280/1440/1920 and at 390. The row still spans the shell. What is centred
+is the pair, by `justify-content`; neither block's own `text-align` is
+touched, and the spec still asserts `start` on it.
+
+### Verification
+
+- 300 unit/integration; 257 Playwright e2e, unchanged from r9.1 — the new
+  assertions live inside existing tests.
+- Proved by rebuild rather than by argument: against r9.1's footer the new
+  assertions fail 11 times (`Reference's ink closes at 1408, the band at
+1856`); against r10's they fail 9 times, including `Project is
+left-aligned` ×3 and `both gaps get the same share: 770 vs 724` ×3.
+- axe-core contrast: zero failures, 15 routes × both themes.
+- Lighthouse desktop: accessibility **100 on all 15**; performance 99–100
+  except `/design` at 91.
+
+## r9.1 (2026-08-10) — Distribution is not text alignment
+
+<!-- commits: 40846fb -->
+
+The reported symptoms — Project's links centred, Reference's
+right-aligned, the sources note right-aligned, the meta row centred —
+belonged to `r10`, not to r9. Branching off r9 reverted all four by
+construction, and measurement confirmed it: groups at 24/447/871,
+34/506/977, 64/677/1291 with every heading and link at +0, both
+paragraphs `start`, the meta row `justify-content: normal`. **No component
+or CSS change was made.**
+
+What was actually missing was the assertion. Nothing in the footer spec
+measured `text-align`, which is exactly why r10 could change it without a
+single test going red — the file had _claimed_ since r9 that "text stays
+left-aligned in every cell throughout", and a comment is not a contract.
+
+It is measured now, on the groups, both paragraphs and the meta row,
+above and below the stacking breakpoint, and measured on the INK rather
+than the boxes: a column can sit in the right third of the shell while
+everything painted inside it is centred, and `getBoundingClientRect`
+reports none of that. The assertions were proved to have teeth by
+checking r10's footer source onto the branch and rebuilding — three
+failures, `Project is left-aligned`, at 1280/1440/1920.
+
+253 → **257 e2e**; footer spec 17 → 21 tests. 300 unit unchanged.
+
+## r9 (2026-08-10) — One column system for the whole footer
+
+<!-- commits: 50236db 754c3d5 -->
+
+r8 left the footer with two grids: three equal tracks for the link index
+and two for the fine print. Both were bounded by the shell and both used
+`--band-gap`, so they LOOKED like one system and were not. Measured at
+1920, the index drew lines at **64 / 677 / 1291 while the second
+paragraph began at 984** — a line nothing else in the footer used — so
+the band read as a second, misaligned object stacked under the first.
+
+There is now one `.footer-grid` template and every band rides it: the
+index puts one group per track, the fine print puts its first paragraph
+across the left two and its second in the right one, and the meta row
+spans the lot. Both paragraphs begin on a line the index also begins on.
+
+The two internal dividers were given one rhythm, stated once in
+`.footer-band` rather than typed per band. r8 had 40px above and 24 below
+the first and 24 above and 16 below the second — a footer meant to read
+as one system with two different vertical spacings inside it.
+
+The brief's two acceptance bullets were mutually exclusive with three
+equal columns ("share left edges" against "the right-half grid line");
+the shared-line reading was implemented and the conflict reported rather
+than silently resolved.
+
+## r8 (2026-08-10) — The fine print fills the shell, and the masthead aligns to the accent bar
+
+<!-- commits: eed049b f1ef29f f91fb0b -->
+
+**The fine print spreads.** r7 capped it at 66ch and left it stacked
+against the left gutter, which at 1920 left most of a 1792px band empty.
+66ch was the right principle read off the wrong line of Bringhurst: it is
+his figure for a SINGLE column, and he gives 40–50 for multi-column
+setting. Two tracks reaching both gutters, each paragraph at a
+multi-column measure, stacking below 768; the meta row goes full width.
+
+**The brand column leaves the index.** A mark, a wordmark and a tagline
+in the first cell was a third repetition of an identity the masthead is
+already holding two screens above — and the tagline was not a paraphrase
+of the hero's subhead, it was its first sentence, verbatim, one screen
+below. The mark survives in the meta row at icon scale, deliberately not
+a link and not `data-brand`: a signature, not a second way home.
+
+**The masthead logo aligns optically.** The brand now keys to the hero's
+accent bar rather than to the text column, via
+`margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 2px))` from
+1024 up. This is optical margin alignment — the same correction InDesign
+ships under that name — and the audit that came with it checked every
+other accent-bar construct in the product for the same misfit.
+
+## r7 (2026-08-10) — One fluid gutter, a footer that is an index, and the auth SDK off the landing
+
+<!-- commits: cacebc0 7e9ec70 85aa55c ddd92a5 -->
+
+### One gutter, and a masthead that is a bar
+
+r6 gave the two shells one left edge and left them disagreeing about how
+far that edge sits from the viewport. The gutter is now a single token,
+`--shell-gutter: clamp(24px, 6.25vw - 56px, 64px)`, taken by the app
+shell's content well and the landing's own region alike — measured 24 /
+34 / 64 at 1280 / 1440 / 1920, one number feeding both because two
+`clamp()`s that agree today are two `clamp()`s that can stop agreeing.
+
+The masthead stopped being a transparent strip and became a bar with a
+drawn ground and a hairline of its own — `--masthead-bar-bg`
+(`color-mix(in srgb, var(--surface) 82%, transparent)`) and
+`--masthead-hairline` — so that content scrolling under it passes behind
+something rather than through nothing.
+
+### The footer becomes an index
+
+r6's footer put every link in one narrow left-hand column, which at 1920
+left the right two thirds of the band empty: a footer that had stopped
+using the page it sits on. It is now a labelled index — groups of short
+destinations, a fine-print band, and a meta row carrying the build — on
+the grounds that a grid of short labelled groups is scannable without
+being read, and that grouping gives destinations a hierarchy a flat row
+cannot.
+
+The repository link in it is a licence term rather than a courtesy:
+AGPL-3.0 §13 requires that users interacting with the software over a
+network are offered the Corresponding Source through the interface
+itself.
+
+### `/design` stops rendering two different pages
+
+The showcase fixture built its demo row with `Math.random()` and
+`new Date()`, so the server and the client rendered different text and
+React logged a hydration mismatch on every load. The fixture is now
+deterministic — a fixed filing timestamp, a fixed "now", a pure
+`fakeTrade(seq)` and a `useRef` counter — and the spec asserts the
+console is clean rather than merely that the page renders.
+
+**Correcting the r6 entry:** that entry attributed `/design`'s CLS 0.195
+to this hydration mismatch. That attribution was wrong. Fixing the
+mismatch took console errors 1 → 0 and best practices 96 → 100 as
+predicted, and **left CLS unchanged**. Diagnosed with a layout-shift
+observer, the real cause is the page header's 68ch paragraph reflowing
+from 7 lines to 6 when the UI face swaps at ~600ms. Recorded, not chased:
+it is an internal design-system route.
+
+### The landing sheds the Supabase client
+
+`@supabase/ssr` was in the landing's first-load bundle for a page that
+never authenticates anybody. The browser client is now fetched inside the
+interaction that needs it — `await import("@supabase/ssr")` in the click
+that signs someone in — leaving the landing to load the SDK only when
+somebody actually reaches for it.
+
+**First load 352 → 285 kB; TBT 580–630ms → 280ms.** The target for this
+item was a mobile Lighthouse performance score of ≥90 and it was **not
+reached: median 82 across runs, range 79–87**. A throwaway control build
+with the hero's `LineReveal` removed scored a median of 84, which puts
+the honest ceiling for this page — as a live tape hydrating on arrival —
+in the mid-80s on a Moto G Power at 4× CPU. Reported and stopped there
+rather than distorting the product to move a number.
+
+### Verification
+
+- 300 unit/integration; 253 Playwright e2e across four projects.
+- axe-core contrast: zero failures, 15 routes × both themes.
+- Lighthouse desktop: accessibility **100 on every route**; performance
+  99–100 except the 10k-row `/design` showcase.
+
+## r6 (2026-08-10) — One left edge per shell, a masthead that says where you are, and a footer that says what this is
+
+<!-- commits: 8136561 af9a87a 21bec39 afbae46 be7664e ede20b4 -->
 
 ### One left edge per shell
 
@@ -204,7 +425,9 @@ different text. Introduced in `ed1420f`; it costs that route ~8 points of
 performance and 4 of best practices, and it is the internal design-system
 page.
 
-## r5 — Layout v3, dark by default, and width that buys information
+## r5 (2026-08-09) — Layout v3, dark by default, and width that buys information
+
+<!-- commits: 33f514e a358c22 05f8cfc 255c5e8 53a339f fc09779 -->
 
 ### Layout v3 — chrome pins, content is fluid
 
@@ -357,7 +580,9 @@ should not be live on first paint. That is a product decision.
 - axe-core contrast: zero failures, 14 routes × both themes.
 - Layout v3 contract measured at 1280/1440/1920 on every route.
 
-## r4 — a shell that is centred, and a product that fits on a phone
+## r4 (2026-08-09) — a shell that is centred, and a product that fits on a phone
+
+<!-- commits: 3f0e2c8 a5e70fa 45a95c4 dd6c96f 9020a8f d636cfa d5cf500 8ce8f5e 2387994 b161df6 44b2acc -->
 
 ### Layout equilibrium
 
@@ -527,7 +752,9 @@ spec.
 - axe-core contrast: zero failures, 16 routes × both themes.
 - Zero page-level overflow at 360/768/1024/1440/1920 in both themes.
 
-## r3 — one left edge, a nav that tells the truth, and a tape you can work
+## r3 (2026-08-08) — one left edge, a nav that tells the truth, and a tape you can work
+
+<!-- commits: 60ccea2 8bab0f7 dbaf743 a5bdf73 481e09a e05f76a 6b502ee 7c20716 01ad230 260a56d 2382b53 -->
 
 ### Tokens ratified
 
@@ -729,7 +956,9 @@ measures a frame budget.
 - Domain-primitive prop signatures byte-identical; no raw colour values in
   components.
 
-## r2 — “Terminal” re-theme and five corrections
+## r2 (2026-08-07) — “Terminal” re-theme and five corrections
+
+<!-- commits: c65ce36 f213a31 0042e36 cd72463 1c87862 3df8d94 0338c03 b256bae -->
 
 ### Re-theme: Ledger → Terminal
 
@@ -849,7 +1078,9 @@ unchanged.
 
 ---
 
-## r1 — “Ledger” design language
+## r1 (2026-08-06) — “Ledger” design language
+
+<!-- commits: 985aad2 d262583 d9cb385 -->
 
 Rebuilt the interface on an original paper-terminal design language,
 replacing the dark-only black/neon-purple theme. See
