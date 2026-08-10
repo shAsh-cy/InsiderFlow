@@ -638,6 +638,36 @@ aside.sticky > [data-sidebar-brand] {
   }
 }
 
+/* ── r10: ink at both edges, not just tracks at both edges ─────────────
+   r9 put the three groups on equal thirds with every list left-aligned in
+   its track. The TRACKS reached both gutters; the INK did not. Measured at
+   1920: Product's ink started at the shell's left edge, but Reference's
+   ended at 1408 against a shell edge at 1856 — 448px of the band's right
+   side carrying nothing. At 1440 it was 311px, at 1280 267px.
+
+   Equal tracks distribute space. They do not put marks at the edges of it.
+   So the outer groups align their ink outward and the middle one centres:
+   left, centre, right, which is what makes the band read as spanning the
+   shell rather than as three lists that happen to start in the right
+   places.
+
+   Only from 768 up. Below that the three groups stack into one narrow
+   column, where a centred or right-aligned list has no edge to key to and
+   simply reads as ragged. */
+@media (min-width: 768px) {
+  .footer-group-start {
+    text-align: start;
+  }
+
+  .footer-group-centre {
+    text-align: center;
+  }
+
+  .footer-group-end {
+    text-align: end;
+  }
+}
+
 /* One rhythm for the rules that separate the footer's bands, stated once
    rather than typed per band. r8 gave the first divider 40px above and 24
    below and the second 24 above and 16 below, so a footer whose bands were

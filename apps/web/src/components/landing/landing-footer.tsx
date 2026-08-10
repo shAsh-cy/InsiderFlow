@@ -47,9 +47,17 @@ interface FooterLink {
 export async function LandingFooter() {
   const t = await getTranslations("landing.footer");
 
-  const groups: Array<{ label: string; links: FooterLink[] }> = [
+  /**
+   * `align` is which shell edge the group's INK keys to — r10. Equal tracks
+   * put the boxes in the right places and left everything inside them
+   * hugging the left of each box, so the band's right side carried nothing
+   * for 448px at 1920. Left, centre, right: the outer groups reach the
+   * shell's edges and the middle one sits in the middle of its own track.
+   */
+  const groups: Array<{ label: string; links: FooterLink[]; align: string }> = [
     {
       label: t("groups.product"),
+      align: "footer-group-start",
       links: [
         { label: t("links.liveTape"), href: "/trades" },
         { label: t("links.screener"), href: "/screener" },
@@ -59,6 +67,7 @@ export async function LandingFooter() {
     },
     {
       label: t("groups.project"),
+      align: "footer-group-centre",
       links: [
         { label: t("links.source"), href: REPO, external: true },
         { label: t("links.licence"), href: LICENCE, external: true },
@@ -68,6 +77,7 @@ export async function LandingFooter() {
     },
     {
       label: t("groups.reference"),
+      align: "footer-group-end",
       links: [
         // One entry, not two: /docs IS the API reference in this product,
         // and a separate "Docs" pointing at the same page is a second name
@@ -94,7 +104,11 @@ export async function LandingFooter() {
           in the meta row, at icon scale, where a compact mark belongs. */}
       <div className="footer-grid gap-y-10">
         {groups.map((group) => (
-          <nav key={group.label} aria-label={group.label} className="flex flex-col gap-3">
+          <nav
+            key={group.label}
+            aria-label={group.label}
+            className={`flex flex-col gap-3 ${group.align}`}
+          >
             {/* Uppercase in the SANS face, not mono: mono here is reserved
                 for figures, tickers and codes, and uppercase mono is not
                 structural chrome in this system. */}
