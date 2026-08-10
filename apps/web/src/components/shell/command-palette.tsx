@@ -54,9 +54,19 @@ export default function CommandPalette({
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title="Command palette">
+    // Full-screen below sm. A centred 328px-wide sheet floating in the
+    // middle of a phone leaves the results list ~300px tall with the
+    // keyboard up — three visible rows out of twenty. Filling the screen
+    // is not a flourish here, it is the difference between a usable
+    // search and a peephole.
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Command palette"
+      className="max-sm:inset-0 max-sm:top-0 max-sm:left-0 max-sm:h-dvh max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0"
+    >
       <CommandInput placeholder="Jump to a page or run an action…" />
-      <CommandList>
+      <CommandList className="max-sm:max-h-[calc(100dvh-7rem)]">
         <CommandEmpty>No results.</CommandEmpty>
         <CommandGroup heading="Navigate">
           <CommandItem onSelect={() => navigate("/")}>

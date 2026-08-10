@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 
+import { AccessBanner } from "@/components/access/access-banner";
 import { CodeLegend } from "@/components/domain/code-legend";
 import { FilterBar } from "@/components/feed/filter-bar";
 import { HistoryFeed } from "@/components/feed/history-feed";
@@ -7,6 +8,7 @@ import { LiveTrades } from "@/components/feed/live-trades";
 import { queryTrades } from "@/lib/api/queries";
 import { parseTradeSearchParams, toClientParams } from "@/lib/api/search-params";
 import type { NextSearchParams } from "@/lib/api/search-params";
+import { getSessionUser } from "@/lib/auth/supabase-server";
 import { getDb } from "@/lib/db";
 
 export const metadata = { title: "Live feed" };
@@ -28,23 +30,24 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
   const history = { ...query, limit: 30 };
 
   const db = getDb();
-  const [liveSeed, historyPage] = await Promise.all([
+  const [liveSeed, historyPage, user] = await Promise.all([
     queryTrades(db, live).catch(() => ({ data: [], meta: null })),
     queryTrades(db, history).catch(() => null),
+    getSessionUser(),
   ]);
 
   const filters = toClientParams(query);
 
   return (
-    <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Live <span className="text-gradient">feed</span>
-        </h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-6 pb-24">
+      <header className="rail-bleed flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Live feed</h1>
+        <p className="max-w-[68ch] text-sm text-ink-muted">
           Every normalized insider trade, streaming as it is ingested. Not investment advice.
         </p>
       </header>
+
+      <AccessBanner signedIn={Boolean(user)} />
 
       <Suspense>
         <FilterBar />
@@ -61,7 +64,7 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
           filters={{ ...filters, sort: query.sort, order: query.order, limit: 30 }}
         />
       ) : (
-        <p className="glass rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           History is unavailable right now — the live stream above keeps running.
         </p>
       )}

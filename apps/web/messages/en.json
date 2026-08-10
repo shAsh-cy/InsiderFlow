@@ -3,15 +3,21 @@
     "name": "InsiderFlow"
   },
   "nav": {
-    "primary": "Primary",
-    "design": "Design",
     "apiDocs": "API docs",
     "search": "Search…",
     "openPalette": "Open command palette",
     "settings": "Settings",
     "signIn": "Sign in",
+    "signOut": "Sign out",
     "skipToContent": "Skip to content",
     "language": "Language",
+    "themeToggle": "Switch theme",
+    "themeLight": "Switch to light",
+    "themeDark": "Switch to dark",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "menu": "Menu",
+    "breadcrumb": "Breadcrumb",
     "sections": {
       "app": "App",
       "analytics": "Analytics",
@@ -28,16 +34,33 @@
       "politicians": "Politicians",
       "methodology": "Methodology",
       "designSystem": "Design system"
-    }
+    },
+    "account": "Account",
+    "more": "More",
+    "theme": "Theme"
   },
   "landing": {
     "badge": "Open source · AGPL-3.0 · Runs entirely on free tiers",
     "subhead": "The real-time insider-trading tape. When executives trade their own stock, it shows up here — normalized across markets, classified for signal, and free to query.",
     "ctaPrimary": "Watch the live tape",
     "ctaSecondary": "Explore the API",
-    "disclaimerLead": "Not investment advice.",
-    "disclaimerBody": "Public regulatory filings, republished for research and education. Filings can be late, amended, or wrong.",
     "featuresLabel": "Features",
+    "kicker": "SEC EDGAR · NSE / BSE · US Congress",
+    "signatureLabel": "Today on the tape",
+    "tapeLabel": "Live filings",
+    "tapeEmpty": "No filings on the tape yet. New Form 4s appear here within about a minute of reaching EDGAR.",
+    "sparklinesLabel": "Net insider flow, last 30 days",
+    "stats": {
+      "filings": "Filings today",
+      "notional": "Total notional",
+      "clusters": "Cluster signals",
+      "hint": "Recomputed from the live database on every rebuild.",
+      "asOf": "as of {time}",
+      "neverIngested": "no filings ingested yet",
+      "window": "last 24 hours",
+      "clusterWindow": "open cluster windows",
+      "quiet": "nothing ingested yet"
+    },
     "features": {
       "realtime": {
         "title": "Real-time EDGAR tape",
@@ -59,10 +82,68 @@
     "footer": {
       "sourcesLead": "Data sources:",
       "sourcesBody": "US data comes from SEC EDGAR, a US-government service whose filings are in the public domain; access follows the SEC fair-access policy. NSE/BSE (India) data is subject to restrictive exchange terms and is not redistributed by this project.",
-      "licence": "InsiderFlow is free software licensed under AGPL-3.0. Nothing on this site is investment advice or a recommendation to buy or sell any security."
-    }
+      "navLabel": "Project and legal",
+      "links": {
+        "liveTape": "Live tape",
+        "screener": "Screener",
+        "heatmap": "Heatmap",
+        "leaderboard": "Leaderboard",
+        "source": "Source",
+        "licence": "Licence (AGPL-3.0)",
+        "apiDocs": "API docs",
+        "methodology": "Methodology",
+        "status": "Status",
+        "legal": "Legal & data sources"
+      },
+      "disclaimerLead": "Not investment advice.",
+      "disclaimerBody": "InsiderFlow republishes public regulatory filings for research and education. Filings can be late, amended, incomplete, or wrong, and insider activity is not a reliable predictor of returns. Analytics on this site are backward-looking descriptive statistics, not forecasts.",
+      "groups": {
+        "product": "Product",
+        "project": "Project",
+        "reference": "Reference"
+      }
+    },
+    "accessLead": "All insider data is free to read.",
+    "accessBody": "No account, no paywall, no row limits. Sign in only to save watchlists, set alerts, and get an API key."
   },
   "common": {
     "notAdvice": "Not investment advice."
+  },
+  "access": {
+    "bannerText": "Live data is free and public.",
+    "bannerCta": "Sign in to save & get alerts",
+    "bannerDismiss": "Dismiss",
+    "watchlistEmptyTitle": "Nothing tracked yet",
+    "watchlistEmptyBody": "Every trade on this site is already yours to read. A watchlist just keeps the companies and insiders you care about in one place, and tells you when they file.",
+    "alertsEmptyTitle": "No alerts yet",
+    "alertsEmptyBody": "Screens are free to run and free to share as a link. An alert re-runs one for you and sends it to Telegram or email the moment it matches.",
+    "signInToSave": "Sign in to save",
+    "signInPopoverTitle": "Sign in to save this alert",
+    "signInPopoverTitleWatch": "Sign in to track this",
+    "signInPopoverBody": "Reading stays free either way — this only saves it to your account.",
+    "continueGithub": "Continue with GitHub",
+    "continueEmail": "Email me a link",
+    "emailPlaceholder": "you@example.com",
+    "emailSent": "Check your email for the sign-in link.",
+    "emailFailed": "Could not send the link. Try again.",
+    "cancel": "Cancel",
+    "rowWatch": "Track",
+    "rowUnwatch": "Stop tracking",
+    "rowAlert": "Alert me on",
+    "rowWatchSaved": "Tracking {ticker}",
+    "rowAlertSaved": "Alerting on {ticker} — tune delivery in Settings",
+    "rowAlertFailed": "Could not save that alert — try again",
+    "rowActions": "Actions for {ticker}"
+  },
+  "shortcuts": {
+    "open": "Keyboard shortcuts",
+    "title": "Keyboard shortcuts",
+    "body": "The tape takes one tab stop, then the arrow keys walk it.",
+    "rowMove": "Move between rows",
+    "rowEnds": "First row / last row",
+    "rowOpen": "Open the focused row",
+    "rowWatchKey": "Track or stop tracking the focused company",
+    "palette": "Open the command palette",
+    "thisSheet": "Open this sheet"
   }
 }

@@ -26,8 +26,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
+          // Ledger raw tokens, not the Tailwind @theme aliases — those
+          // are emitted as --color-* and would resolve to nothing here.
+          "--normal-bg": "var(--surface)",
+          "--normal-text": "var(--ink)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
         } as React.CSSProperties

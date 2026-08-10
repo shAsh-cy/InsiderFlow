@@ -1,7 +1,14 @@
 import { formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Signed percentage with direction arrow, colored by market semantics. */
+/**
+ * Signed percentage with a direction arrow.
+ *
+ * The arrow is not decoration: colour alone would fail for the ~8% of men
+ * with a colour-vision deficiency, so direction is always carried by the
+ * glyph too. Colours are the Wong pair (vermillion / blue), never
+ * red–green.
+ */
 export function TrendBadge({
   value,
   digits = 1,
@@ -16,12 +23,12 @@ export function TrendBadge({
   return (
     <span
       className={cn(
-        "tnum inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+        "num inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-xs font-medium",
         flat
-          ? "bg-flat-soft text-flat ring-white/10"
+          ? "border-border bg-fill text-ink-muted"
           : value > 0
-            ? "bg-buy-soft text-buy ring-buy/30"
-            : "bg-sell-soft text-sell ring-sell/30",
+            ? "border-buy/40 bg-buy-soft text-buy-ink"
+            : "border-sell/40 bg-sell-soft text-sell-ink",
         className,
       )}
     >

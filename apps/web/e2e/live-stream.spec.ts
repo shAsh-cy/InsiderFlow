@@ -15,10 +15,29 @@ import type { SyntheticCompany } from "./fixtures";
  *   PLAYWRIGHT_BASE_URL=http://localhost:3100 pnpm exec playwright test e2e/live-stream.spec.ts
  */
 
+/**
+ * Contends for a genuinely scarce product resource.
+ *
+ * `/api/stream` caps concurrent SSE connections at four per client identity,
+ * and every Playwright worker shares one loopback address — so a suite running
+ * eight workers can spend the whole allowance before this test opens its own
+ * connection. The cap is correct and is asserted elsewhere; raising it for the
+ * harness is not an option either, because a browser only holds six
+ * connections per origin.
+ *
+ * So: retry rather than weaken. Nothing about what this test proves changes;
+ * it just gets a second attempt once the other workers have handed their slots
+ * back. A failure that survives the retry is a real one.
+ */
+// No retries any more: the contention this used to work around is gone.
+// These tests run in their own serial `stream` project (see
+// playwright.config.ts), so nothing else is holding an SSE slot while
+// they run, and a failure here is now a real one.
+
 // Deliberately long: the test must outlive a full ~25s server window.
 test.setTimeout(120_000);
 
-test("live strip shows a DB insert and survives the SSE window close", async ({ page }) => {
+test("live strip shows a DB insert and survives the SSE window close @stream", async ({ page }) => {
   let target: SyntheticCompany | null = null;
   try {
     await page.goto("/", { waitUntil: "networkidle" });

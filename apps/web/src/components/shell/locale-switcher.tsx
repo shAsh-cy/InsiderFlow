@@ -30,9 +30,12 @@ export function LocaleSwitcher({ className }: { className?: string }) {
     <div
       role="group"
       aria-label={t("language")}
-      className={cn("glass inline-flex h-8 items-center rounded-lg px-1", className)}
+      className={cn(
+        "inline-flex h-8 items-center rounded-md border border-border bg-surface px-1",
+        className,
+      )}
     >
-      <Languages className="mx-1.5 size-3.5 text-subtle-foreground" aria-hidden />
+      <Languages className="mx-1 size-3.5 text-ink-faint" aria-hidden />
       {LOCALES.map((locale) => (
         <button
           key={locale}
@@ -42,10 +45,8 @@ export function LocaleSwitcher({ className }: { className?: string }) {
           disabled={pending}
           aria-pressed={active === locale}
           className={cn(
-            "rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-60",
-            active === locale
-              ? "bg-white/8 font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground",
+            "cursor-pointer rounded-sm px-1.5 py-0.5 text-xs transition-colors disabled:opacity-60",
+            active === locale ? "bg-fill font-semibold text-ink" : "text-ink-muted hover:text-ink",
           )}
         >
           {LOCALE_LABELS[locale]}

@@ -1,294 +1,1099 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* ─────────────────────────────────────────────────────────────────────────
-   InsiderFlow design tokens — dark-only, data-dense, "calm and expensive".
-   Base near-black #0A0B0F; one bold accent gradient: electric teal → violet.
-   ───────────────────────────────────────────────────────────────────────── */
+/* next-themes toggles a class on <html>. Dark is the default here, so the
+   token layer below is written dark-first: `:root` IS the dark theme, and
+   `.light` overrides it. `.dark` repeats the dark values explicitly so the
+   page is correct whichever class next-themes ends up applying. */
+@custom-variant dark (&:where(:root:not(.light), .dark, .dark *));
+/* The counterpart. Needed because a few controls are not symmetric between
+   the themes — the accent is legible as a fill on Graphite but only as a
+   border on Terminal — so those cases have to name the light theme
+   explicitly rather than inverting a dark rule. */
+@custom-variant light (&:where(.light, .light *));
+
+/* ═════════════════════════════════════════════════════════════════════════
+   TERMINAL — the InsiderFlow design language (r2).
+
+   A trading terminal, not a document. Cool near-black ground, hairline
+   rules, racing-green accent, monospaced figures. Dark is the default;
+   light ("Graphite") is a cool paper-free grey, deliberately NOT warm.
+
+   Rules this file exists to enforce:
+     1. No raw colour values in components. Everything below is a token.
+     2. Hairlines and inset highlights, never glows.
+     3. The accent is racing green and means "actionable" — it NEVER
+        encodes buy/sell. Direction is Wong (Nature Methods 2011) orange
+        and blue, and never carries meaning by hue alone: every buy/sell
+        is paired with a ▲/▼ glyph or a written label.
+     4. Mono is for numbers, tickers, SEC codes and microtext only.
+        Headings and body are sentence-case Onest. Uppercase mono is not
+        structural chrome.
+   ═════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Surfaces */
-  --background: #0a0b0f;
-  --surface-1: #101218;
-  --surface-2: #151823;
-  --card: rgba(255, 255, 255, 0.03);
-  --card-foreground: #eef1f8;
-  --popover: #12141c;
-  --popover-foreground: #eef1f8;
+  /* ── Surfaces: cool near-black ─────────────────────────────────────── */
+  --bg: #0c0f0e;
+  --surface: #121614;
+  --surface-raised: #171c1a;
+  --surface-sunken: #0a0d0c;
+  --border: #232a27;
+  --border-strong: #313a36;
 
-  /* Text */
-  --foreground: #eef1f8;
-  --muted: rgba(255, 255, 255, 0.06);
-  --muted-foreground: #96a0b5;
-  --subtle-foreground: #6b7386;
+  /* ── Text ─────────────────────────────────────────────────────────── */
+  --text: #e8edea;
+  --text-secondary: #a7b0ac;
+  /* RATIFIED (r3). The r2 spec value was #6E7873: measured 4.22:1 on
+     --bg, 4.00:1 on --surface and 3.78:1 on --surface-raised, so it
+     failed WCAG AA for the small text it actually carries (the kicker,
+     the tape label, null glyphs, microtext). This is the nearest tone of
+     the same hue that clears 4.5:1 against every dark ground —
+     bg 5.28, surface 5.00, surface-raised 4.73, sunken 5.35. */
+  --text-muted: #808881;
 
-  /* The one gradient accent */
-  --accent-teal: #2de0c8;
-  --accent-violet: #7c5cff;
-  --gradient-accent: linear-gradient(135deg, var(--accent-teal) 0%, var(--accent-violet) 100%);
+  /* ── The accent: racing green. Actionable, never directional. ───────
+     On this ground `--accent` is 3.6:1 — fine as a FILL behind
+     `--accent-contrast`, too low for small text. `--accent-bright` is
+     6.3:1 and is what type and borders use. Two tokens, because one
+     green cannot be both a fill and a legible label. */
+  --accent: #1e7a4d;
+  --accent-bright: #3da574;
+  --accent-contrast: #06120c;
+  --focus-ring: #3da574;
 
-  /* shadcn semantic mapping */
-  --primary: #2de0c8;
-  --primary-foreground: #06231f;
-  --secondary: rgba(255, 255, 255, 0.06);
-  --secondary-foreground: #eef1f8;
-  --accent: rgba(45, 224, 200, 0.12);
-  --accent-foreground: #7ff0df;
-  --destructive: #fb7185;
-  --destructive-foreground: #2a0a10;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: rgba(45, 224, 200, 0.6);
-  --radius: 0.625rem;
+  /* ── Direction — Wong palette, colourblind-safe. Never red/green:
+        roughly 8% of men lose exactly that axis, and it is also the
+        axis the accent already occupies. Both clear 6:1 as text on
+        this ground, so the mark and the label are one colour here. */
+  --buy: #e8722d;
+  --buy-ink: #e8722d;
+  --buy-soft: rgba(232, 114, 45, 0.14);
+  --sell: #3b9bd6;
+  --sell-ink: #3b9bd6;
+  --sell-soft: rgba(59, 155, 214, 0.14);
+  --neutral: #8a938e;
+  --neutral-soft: rgba(138, 147, 142, 0.14);
+  --warning: #e0a100;
+  --danger: #e5484d;
 
-  /* Market semantics */
-  --buy: #34e3b0;
-  --buy-soft: rgba(52, 227, 176, 0.14);
-  --sell: #fb7185;
-  --sell-soft: rgba(251, 113, 133, 0.13);
-  --flat: #96a0b5;
-  --flat-soft: rgba(150, 160, 181, 0.12);
+  /* Extra chart series, for charts that need more than two lines. */
+  --series-3: #3da574;
+  --series-4: #e0a100;
 
-  /* Depth — layered, soft, never muddy */
-  --shadow-card:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.5),
-    0 8px 24px -12px rgba(0, 0, 0, 0.6);
-  --shadow-lift:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 2px 6px rgba(0, 0, 0, 0.45),
-    0 16px 40px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-glow: 0 0 0 1px rgba(45, 224, 200, 0.18), 0 4px 32px -8px rgba(45, 224, 200, 0.25);
+  /* ── Sequential ramp for the heatmap — perceptually uniform, never
+        red–green. Viridis, sampled at six stops. ─────────────────────── */
+  --ramp-0: #440154;
+  --ramp-1: #414487;
+  --ramp-2: #2a788e;
+  --ramp-3: #22a884;
+  --ramp-4: #7ad151;
+  --ramp-5: #fde725;
+
+  /* ── Depth. On dark, depth is a border plus a 1px inset highlight
+        along the top edge — the way a physical panel catches light.
+        Drop shadows do nothing on a near-black ground. */
+  --shadow-card: inset 0 1px 0 0 rgba(255, 255, 255, 0.035), 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+  --shadow-overlay: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+
+  /* Modal scrim. A token rather than a literal so the dialog overlay is
+     not the one component in the tree that names a colour. */
+  --scrim: rgba(4, 6, 5, 0.62);
+
+  --radius: 0.5rem;
+
+  color-scheme: dark;
+}
+
+/* ── GRAPHITE — the light theme. Cool grey, not paper. ─────────────────── */
+.light {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef1f4;
+  --border: #dce2e8;
+  --border-strong: #c3cbd3;
+
+  --text: #10171c;
+  --text-secondary: #45525c;
+  /* RATIFIED (r3). Same correction as dark, same reason. The r2 spec
+     value #6B7885 measured 4.24:1 on --bg and 3.98:1 on --surface-sunken
+     — and the sunken tone is where half of every zebra-striped table's
+     microtext sits, so tuning against the page background alone would
+     have passed the audit and failed every other row.
+     Now: sunken 4.60, bg 4.89, white 5.21. */
+  --text-muted: #626e7a;
+
+  /* Inverted relationship to dark: here the deeper green is the more
+     legible one, so `--accent-bright` is *darker* than `--accent`. Both
+     clear 4.5:1 on --bg; the accent is used as a fill behind white. */
+  --accent: #16794b;
+  --accent-bright: #146c43;
+  --accent-contrast: #ffffff;
+  --focus-ring: #16794b;
+
+  /* Vermillion is only 3.9:1 on white, so the TEXT variant is a darkened
+     tone of the same hue. The mark keeps the canonical Wong value —
+     large areas need 3:1, not 4.5:1, so the palette is never distorted
+     where identification actually happens.
+
+     Both inks are darker again in r3, because the ground that matters is
+     not white. A direction badge sits on `--*-soft`, which is the SAME
+     hue as its ink, so the tint lifts the background toward the
+     foreground and eats the margin — and on a zebra row the tint
+     composites over `--surface-sunken` as well. Measured against that
+     worst case (#ECE2DC buy, #D6E4ED sell) the r2 values were 4.31 and
+     4.01, both short of 4.5, while measuring the same text against plain
+     white said 5.49 and 5.19 and looked fine. Lighthouse caught the sell
+     badge on the stock page; the buy badge was the same bug one row
+     away. Now 4.81 and 4.77 on the worst tint, 6.12 and 6.17 on white. */
+  --buy: #d55e00;
+  --buy-ink: #a44500;
+  --buy-soft: rgba(213, 94, 0, 0.1);
+  --sell: #0072b2;
+  --sell-ink: #00669f;
+  --sell-soft: rgba(0, 114, 178, 0.1);
+  --neutral: #6b7885;
+  --neutral-soft: rgba(107, 120, 133, 0.12);
+  --warning: #b45309;
+  --danger: #c42b2b;
+
+  --series-3: #16794b;
+  --series-4: #b45309;
+
+  /* On light, depth is a hairline plus a genuinely soft shadow. */
+  --shadow-card: 0 1px 2px 0 rgba(16, 23, 28, 0.06);
+  --shadow-overlay: 0 12px 32px -8px rgba(16, 23, 28, 0.18);
+
+  --scrim: rgba(16, 23, 28, 0.42);
+
+  color-scheme: light;
+}
+
+/* Explicit dark class, for when next-themes applies it. Same values as
+   `:root` — repeated rather than aliased so neither can drift. */
+.dark {
+  --bg: #0c0f0e;
+  --surface: #121614;
+  --surface-raised: #171c1a;
+  --surface-sunken: #0a0d0c;
+  --border: #232a27;
+  --border-strong: #313a36;
+
+  --text: #e8edea;
+  --text-secondary: #a7b0ac;
+  /* RATIFIED (r3) — see the `:root` block above for the measurements. */
+  --text-muted: #808881;
+
+  --accent: #1e7a4d;
+  --accent-bright: #3da574;
+  --accent-contrast: #06120c;
+  --focus-ring: #3da574;
+
+  --buy: #e8722d;
+  --buy-ink: #e8722d;
+  --buy-soft: rgba(232, 114, 45, 0.14);
+  --sell: #3b9bd6;
+  --sell-ink: #3b9bd6;
+  --sell-soft: rgba(59, 155, 214, 0.14);
+  --neutral: #8a938e;
+  --neutral-soft: rgba(138, 147, 142, 0.14);
+  --warning: #e0a100;
+  --danger: #e5484d;
+
+  --series-3: #3da574;
+  --series-4: #e0a100;
+
+  --shadow-card: inset 0 1px 0 0 rgba(255, 255, 255, 0.035), 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+  --shadow-overlay: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+
+  --scrim: rgba(4, 6, 5, 0.62);
 
   color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-subtle-foreground: var(--subtle-foreground);
+  /* ── Container-query stop: "there is room for more columns" ───────────
+     Named rather than numbered so the tape's progressive columns read as
+     a decision instead of an arbitrary breakpoint. 70rem of CONTAINER is
+     reached at a ~1440px viewport on a full-width tape (1440 − 224 sidebar
+     − 64 gutters = 1152 region, less the surface's own borders), and never
+     inside the landing page's narrow strip on the same screen — which is
+     exactly the distinction a container query exists to make. */
+  --container-wide: 70rem;
+
+  /* ── Terminal colour names ──────────────────────────────────────────── */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-surface-1: var(--surface-1);
-  --color-surface-2: var(--surface-2);
-  --color-teal: var(--accent-teal);
-  --color-violet: var(--accent-violet);
+  --color-accent-bright: var(--accent-bright);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-neutral: var(--neutral);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  /* Utility aliases kept from r1 so the whole component tree did not have
+     to be rewritten for a palette change. `ink` is the text ramp and
+     `fill` is the sunken ground — the names are historical, the values
+     are the new tokens, and nothing in a component names a colour. */
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-secondary);
+  --color-ink-faint: var(--text-muted);
+  --color-fill: var(--surface-sunken);
+  --color-accent-ink: var(--accent-bright);
+  --color-accent-2: var(--accent-bright);
+
   --color-buy: var(--buy);
+  --color-buy-ink: var(--buy-ink);
   --color-buy-soft: var(--buy-soft);
   --color-sell: var(--sell);
+  --color-sell-ink: var(--sell-ink);
   --color-sell-soft: var(--sell-soft);
-  --color-flat: var(--flat);
-  --color-flat-soft: var(--flat-soft);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-flat: var(--neutral);
+  --color-flat-soft: var(--neutral-soft);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* ── shadcn semantic aliases, mapped onto Terminal ─────────────────── */
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-contrast);
+  --color-secondary: var(--surface-sunken);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--surface-sunken);
+  --color-muted-foreground: var(--text-secondary);
+  --color-subtle-foreground: var(--text-muted);
+  --color-accent-foreground: var(--accent-contrast);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--accent-contrast);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--focus-ring);
+
+  /* ── Type scale — ten steps, nothing between ───────────────────────── */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 0.875rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.25rem;
+  --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.5rem;
+  --text-3xl--line-height: 2.75rem;
+  --text-4xl: 3.5rem;
+  --text-4xl--line-height: 3.625rem;
+  /* Clamped to the top of the scale: a stray text-5xl must not silently
+     reintroduce an off-scale size. */
+  --text-5xl: 3.5rem;
+  --text-5xl--line-height: 3.625rem;
+  --text-6xl: 3.5rem;
+  --text-6xl--line-height: 3.625rem;
+  --text-7xl: 3.5rem;
+  --text-7xl--line-height: 3.625rem;
+
+  /* ── Radii: 4 / 6 / 8 / 12 / full. Terminal corners are tight. ─────── */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.75rem;
 
   --shadow-card: var(--shadow-card);
-  --shadow-lift: var(--shadow-lift);
-  --shadow-glow: var(--shadow-glow);
+  --shadow-overlay: var(--shadow-overlay);
 
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-
-  /* Type scale — quiet body, confident display */
-  --text-2xs: 0.6875rem;
-  --text-2xs--line-height: 1rem;
+  /* ── Fonts — injected by next/font in layout.tsx, self-hosted ─────── */
+  --font-sans: var(--font-onest), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* ── Base ────────────────────────────────────────────────────────────────── */
+/* ═════════════════════════════════════════════════════════════════════════
+   LAYOUT v3 (r5) — the canonical contract. Supersedes r3 and r4.
+
+   Two rounds went past each other. r3 pinned every page to the viewport's
+   left edge and left a dead strip of paper down the right of a wide
+   screen. r4 corrected that by centring the whole frame — and centring
+   the frame meant centring the CHROME with it, so at 1920 the sidebar
+   floated 250px in from the bezel and the application read as an island
+   sitting on a desktop rather than as the window it is.
+
+   Both were one rule applied to two things that want opposite treatment.
+   The rule that ends it separates them:
+
+     CHROME PINS TO THE VIEWPORT. The masthead spans the full width. The
+     sidebar's left edge is the screen's left edge. Neither is ever
+     centred, because chrome is the frame of the window and a window
+     frame that floats is not a frame.
+
+     CONTENT IS FLUID. On sidebar routes the content region runs from
+     (sidebar + gutter) to (viewport − gutter), and there is NO cap on
+     it. A tape, a table, a stat strip and a grid are all things that get
+     better with width; capping them buys nothing and costs the width.
+
+     PROSE IS THE ONE EXCEPTION. A long-form reading block caps at ~72ch,
+     keyed to the content region's LEFT edge. There the right-hand
+     whitespace is the point — a 150-character line is unreadable, and
+     r4's own leaderboard CLS bug came from a paragraph that had no
+     measure at all.
+
+   The no-sidebar routes (landing, auth, legal) have no chrome to pin
+   against, so they take a fluid shell with `clamp(24px, 6vw, 120px)` of
+   padding: it tracks the viewport instead of jumping at a breakpoint,
+   and the 120px ceiling stops the margins running away past ~2000px.
+
+   r3's composition rules stand and are not up for revision: inside any
+   region there is ONE shared left edge, and centring survives only on
+   authentication screens and true empty / error states.
+
+   ── r6 AMENDMENT: ONE LEFT EDGE PER SHELL ──────────────────────────────
+
+   v3 got the two halves right and then let them argue. Pinning the chrome
+   to the viewport put the brand at x≈24 while the content it sits above
+   started at 77px on the landing and at (sidebar + 32) on an app route —
+   two competing left edges on one screen, which is what people actually
+   reported: "the icon is at the extreme left and the content below has
+   gaps". Both edges were defensible; having both was not.
+
+   The fix is not to move the content back out to the bezel — that was r3,
+   and it cost the right-hand gutter. It is to make the CHROME SHARE THE
+   CONTENT'S EDGES, which is what every product with this shape does:
+
+     LANDING. The masthead's inner container is the same shell as the hero
+     — literally the same padding token — so the logo's left edge and the
+     H1's left edge are the same number by construction rather than by two
+     values that happen to agree.
+
+     APP ROUTES. The SIDEBAR owns product identity (shadcn/ui's
+     SidebarHeader: "sticky at the top; use for branding"; Tailwind
+     Catalyst puts the logo there and leaves the navbar for search and
+     actions; GitHub, Linear, Slack and Vercel all do the same), so the
+     brand moves into the sidebar header and the masthead becomes an
+     action bar that starts at the sidebar's right edge and ends on the
+     content's right edge. Nothing in the top bar claims an edge of its
+     own any more, because there is nothing left up there to claim one.
+
+   Chrome still pins: the sidebar's left edge is still x=0 and it now runs
+   the full height of the viewport, so the brand sits in the corner of the
+   window rather than floating in a bar above it.
+
+   Which shell is on screen is read from the page's own layout — the app
+   shell renders `[data-app-shell]` — rather than from a list of pathnames
+   in the masthead that someone has to remember to update. `:has()` costs
+   nothing here: its argument is an attribute that appears exactly once in
+   the document and never on a node the virtualizer churns, so row
+   insertion and removal cannot invalidate it.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── r7: ONE GUTTER, FLUID, SHARED BY EVERY SHELL ───────────────────
+     Content region → viewport edge, sidebar → content, landing → bezel,
+     and the masthead's own inner container. One number for all of them,
+     because they are the same gutter seen from different sides, and the
+     fourth edge correction in this project happened because two of them
+     were allowed to be different numbers that happened to agree.
+
+     `clamp(24px, 6.25vw - 56px, 64px)` resolves to 24px at 1280, 34 at
+     1440 and 64 at 1920 — replacing the landing's old 77/86/115, which
+     read as a page floating inside its own window, and the app shell's
+     32px step, which stopped growing at exactly the widths where there
+     was room to grow. The linear term is deliberately steep and heavily
+     offset: the gutter should be at its floor on a laptop, where width
+     is scarce, and only open up once the screen has surplus. Below 1280
+     the negative offset holds it at the 24px floor; above 1920 the
+     ceiling stops the margins running away. */
+  --shell-gutter: clamp(24px, 6.25vw - 56px, 64px);
+  /* How far the hanging rail reaches back out of the content column.
+     Always leaves air between the rule and the region edge — 4px at the
+     gutter's 24px floor, more as it opens. */
+  --shell-rail-inset: 1rem;
+  /* The reading measure for prose. Left-anchored: it trims the right
+     side only, and only on the blocks that opt in. */
+  --shell-measure: 72ch;
+  /* The sidebar's width, or zero where it is not rendered. Bands that
+     sit outside the sidebar row (the footer) add it back by hand. */
+  --shell-sidebar: 0rem;
+  /* Sidebar edge → sidebar item CONTENT. The nav list is `px-3` and its
+     items carry a 2px state rule plus `pl-2.5`: 12 + 2 + 10 = 24px. The
+     sidebar's brand header borrows it, so the wordmark and the eleven
+     items beneath it stand on one line. Zero where there is no sidebar. */
+  --shell-nav-inset: 0rem;
+
+  /* The gutter BETWEEN columns of a multi-column band, as opposed to
+     `--shell-gutter`, which is the distance from a band to the viewport.
+     Two different jobs, so two different tokens: the outer gutter is
+     pinned to its floor on a laptop, while a column gap wants to open in
+     proportion to the columns it is separating. */
+  --band-gap: clamp(1.5rem, 3vw, 3rem);
+
+  /* ── The masthead's own surface ──────────────────────────────────────
+     Both are derived from themed tokens rather than restated per theme.
+     `.light` and `.dark` are declared on the SAME element as `:root`, so
+     `var(--surface)` and `var(--border)` here resolve to whichever theme
+     is applied — one declaration, two themes, and nothing that can drift
+     out of step with the palette it is made of. */
+
+  /* The bar's own ground: a faint lift off the page, not a slab. At rest
+     it is the difference between a masthead and a logo floating in space;
+     under scroll the alpha is what lets the blur do anything at all. */
+  --masthead-bar-bg: color-mix(in srgb, var(--surface) 82%, transparent);
+  /* The bar's bottom edge, always drawn. r6 left it transparent until
+     something scrolled under it, which was defensible on the landing and
+     wrong on an app route: the sidebar's own header rule was already
+     drawn, so the line across the top of the window stopped dead at the
+     sidebar's right edge. */
+  --masthead-hairline: var(--border);
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --shell-rail-inset: 1.25rem;
+    --shell-sidebar: 14rem;
+    --shell-nav-inset: 1.5rem;
+  }
+}
+
+/* A full-bleed band. Spans the viewport, pins nothing, caps nothing —
+   the masthead's rule, the footer's rule, the page ground. */
+.shell-bleed {
+  width: 100%;
+}
+
+/* The no-sidebar shell: landing, auth, the standalone reference pages.
+   Since r7 it takes the SAME `--shell-gutter` as the app shell's content
+   well and as the masthead — not a matching value, the same one. */
+.shell-fluid {
+  width: 100%;
+  padding-inline: var(--shell-gutter);
+}
+
+/* ── The masthead, r6: chrome that shares the content's edges ──────────
+   The bar is rendered once, in the root layout, above both shells. What
+   it should measure itself against is decided by the shell that is
+   actually on the page, not by a pathname list. */
+
+/* The bar's CONTENTS take the same gutter as the content beneath them —
+   the landing's shell, the app shell's well, and this, all reading one
+   token. That is what makes brand.left − heroH1.left exactly 0 rather
+   than approximately 0, and r7 is the round where the two padding
+   declarations that r6 kept in step by hand became one.
+
+   No max-width, because the shell has none: an identical cap of `none`.
+   A capped, auto-margined box around the application is the r4 failure
+   mode, and the spec still asserts that nothing anywhere imposes one. */
+.masthead-shell {
+  width: 100%;
+  padding-inline: var(--shell-gutter);
+}
+
+/* App shell: the bar's BOX begins where the sidebar ends, so the action
+   cluster's right edge is the content's right edge and its left edge is
+   the content's left edge. Below 1024 `--shell-sidebar` is 0 and this
+   collapses to a full-width bar. */
+body:has([data-app-shell]) [data-masthead] {
+  inset-inline-start: var(--shell-sidebar);
+}
+
+/* …and the brand is not up there at all, because the sidebar is holding
+   it. Kept in the markup below 1024, where the sidebar is off-canvas and
+   the only thing identifying the product would otherwise be a hamburger. */
+@media (min-width: 1024px) {
+  body:has([data-app-shell]) [data-masthead] [data-brand] {
+    display: none;
+  }
+
+  /* ── r8: the mark aligns to the composition's OUTERMOST INK ──────────
+     Every standalone shell opens with a `.rail-bleed` header, whose 2px
+     racing-green border hangs into the gutter and is the leftmost mark on
+     the page. r6 and r7 aligned the masthead brand to the TEXT edge
+     instead, so the accent bar jutted out to the left of the logo and the
+     logo read as indented from a composition it was supposed to lead.
+
+     This is optical margin alignment, the same idea as hanging punctuation
+     and hung bullets — Gutenberg's compositors hung hyphens past the
+     measure, and InDesign ships it as "Optical Margin Alignment". You
+     align to the optically outermost ink, not to the box the text happens
+     to sit in. So the brand hangs by exactly what the rail hangs by:
+     `--shell-rail-inset` plus the rule's own 2px, the same expression
+     `.rail-bleed` uses, read from the same token so the two cannot drift.
+
+     Scoped to ≥1024 because that is where the brand LEADS the bar: below
+     it the drawer trigger comes first and the mark follows, so there is
+     nothing for the mark to be the outermost thing of. App shells are
+     excluded because their brand lives in the sidebar, aligned to the
+     eleven nav items beneath it — a different composition with a different
+     outermost element. */
+  body:not(:has([data-app-shell])) [data-masthead] [data-brand] {
+    margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 2px));
+  }
+}
+
+/* ── The bar's two states ──────────────────────────────────────────────
+   r6 gave the bar NO ground and NO rule until something scrolled under
+   it, on the reasoning that a line about nothing is a line not worth
+   drawing. That was right about the line and wrong about the bar: with
+   neither, the brand at the top of the landing page sat on the page
+   itself, with nothing containing it — the "floating logo" this round
+   exists to fix. On an app route it was worse than floating, because the
+   sidebar's own header rule WAS drawn, so the line across the top of the
+   window stopped dead at x=224.
+
+   So the bar always has a ground and always has an edge. Both are faint
+   and both are tokens: a masthead should read as a distinct surface, not
+   as a slab laid over the page.
+
+   Scroll is now purely ADDITIVE — more opacity and the blur, on top of a
+   bar that was already there. r5 refused the blur outright, because a
+   translucent fixed header makes the compositor re-sample everything
+   under it on every scroll frame. That cost is real and it is why this is
+   8px over a 94%-opaque ground rather than the usual 16-over-60: the
+   layer does almost all of the work and the filter is a finishing pass.
+   The 60fps virtualized-scroll tests are the check on that claim. */
+[data-masthead] {
+  background-color: var(--masthead-bar-bg);
+  border-bottom-color: var(--masthead-hairline);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+[data-masthead][data-scrolled="true"] {
+  background-color: color-mix(in srgb, var(--surface) 94%, transparent);
+  /* Standard property only. Writing the -webkit- alias by hand made
+     Lightning CSS emit the alias and drop the standard one, which works in
+     Blink (it aliases both) and silently would not elsewhere. The build
+     adds whatever prefixes the browserslist targets need. */
+  backdrop-filter: blur(8px);
+}
+
+/* The sidebar's brand header is the left-hand quarter of the same bar, so
+   it takes the same ground. Without this the band across the top of an
+   app route steps tone at the sidebar's right edge. */
+aside.sticky > [data-sidebar-brand] {
+  background-color: var(--masthead-bar-bg);
+  border-bottom-color: var(--masthead-hairline);
+}
+
+/* No dedicated reduced-motion rule here on purpose: the blanket
+   `transition-duration: 0.01ms !important` further down this file already
+   collapses the crossfade, and a `transition: none` beside it would be a
+   declaration that never wins — a rule that looks like the intent while
+   the other one does the work. What the preference must NOT remove is the
+   state itself: a reader who has asked for less motion still needs to be
+   able to tell a bar holding its place from one sitting still. */
+
+/* The content well on a sidebar route: gutter on both sides, no cap. */
+.shell-content {
+  padding-inline: var(--shell-gutter);
+}
+
+/* ── The footer's ONE row system (r9, rebuilt in r9.2) ─────────────────
+   r8 gave the footer two grids: three equal tracks for the link index and
+   two for the fine print. Both were bounded by the shell and both used
+   `--band-gap`, so they looked like one system and were not — at 1920 the
+   index drew lines at 64 / 677 / 1291 while the second paragraph began at
+   984, which is a line nothing else in the footer uses. The band read as a
+   second, misaligned object stacked under the first. r9's answer was one
+   template, declared once, with every band riding it. That rule stands.
+   What r9.2 changes is WHAT the one template is.
+
+   Equal thirds could not do the job the footer needs doing. Measured on
+   the r9 build, the TRACKS reached both gutters and the INK did not:
+   Product's ink opened on the shell's left edge, and Reference's stopped
+   at 1408 against a shell edge at 1856 — 448px of the band's right side
+   carrying nothing (311px at 1440, 267px at 1280). Equal tracks
+   distribute SPACE. They do not put marks at the ends of it.
+
+   r10 closed that gap by setting the outer groups' text to `end` and the
+   middle one to `center`. That buys two outer edges and spends every
+   inner one, which is the worse trade: a link list with a ragged left
+   edge reads as broken, and Stripe, Vercel and GitHub all left-align
+   every word in a footer column for that reason.
+
+   So the BOXES move and the text does not. `space-between` across
+   shrink-to-fit items: the first item's ink opens on the shell's left
+   edge because it is first, the last item's ink closes on the right edge
+   because it is last, and whatever is between them sits in the space
+   between them. Both bands ride it, so the index and the fine print now
+   share their outer edges as well as their mechanism. Nothing is centred,
+   nothing is right-aligned, and `text-align: start` is never overridden.
+
+   Below 768 it goes back to a stacking grid, and that is not a detail:
+   the three groups are only ~280px of ink in total, so shrink-to-fit
+   items WOULD still fit on one line at 390 — three thin columns spread
+   across a phone, which is not a footer. The breakpoint is what stops
+   `space-between` from being applied where there is no width to
+   distribute. */
+.footer-row {
+  display: grid;
+  column-gap: var(--band-gap);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .footer-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .footer-row {
+    display: flex;
+    /* Items keep the default `flex: 0 1 auto`, so each one is as wide as
+       its own longest line and no wider — `space-between` distributes the
+       true ink rather than three padded boxes. Nothing in the footer may
+       take `flex-1`. */
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+}
+
+/* One rhythm for the rules that separate the footer's bands, stated once
+   rather than typed per band. r8 gave the first divider 40px above and 24
+   below and the second 24 above and 16 below, so a footer whose bands were
+   supposed to read as one system had two different vertical spacings
+   between them. The footer's OWN opening rule keeps its larger gap: that
+   one separates the footer from the page, not one band from another. */
+.footer-band {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+/* Below the three-across breakpoint both paragraphs take the full row, so
+   the band stacks while the index is still folding 3 → 2.
+
+   Above it there is nothing for these to say. r9 gave the lead paragraph
+   the left two tracks and the trailing one the right track, so that both
+   opened on a line the index also opened on. Under `space-between` the
+   index has no tracks to open on — it has two edges — and the paragraphs
+   key to those instead: first item on the left edge, last item on the
+   right, each at its own measure. */
+.footer-span-lead,
+.footer-span-trail {
+  grid-column: 1 / -1;
+}
+
+/* A band that sits outside the sidebar row — the footer — and still
+   lands on the content region's left edge. Adds the sidebar back by
+   hand because it has no sidebar of its own to sit beside. */
+.shell-aligned {
+  width: 100%;
+  padding-inline-start: calc(var(--shell-sidebar) + var(--shell-gutter));
+  padding-inline-end: var(--shell-gutter);
+}
+
+/* The measure. Deliberately `margin-inline-end: auto` and nothing on the
+   start side — written out rather than left to the initial value so that
+   the asymmetry is visible in the source, not inferred from its absence.
+   Applied per BLOCK, never by the shell: a table wants the region, a
+   paragraph wants 72ch. */
+.shell-measure {
+  max-width: var(--shell-measure);
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: rgba(45, 224, 200, 0.28);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--accent-bright) 26%, transparent);
+  color: var(--text);
 }
 
-/* Visible, branded focus — keyboard users always know where they are */
 :focus-visible {
-  outline: 2px solid var(--accent-teal);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
-/* Tabular numbers everywhere data lives */
+/* Every figure in this product is tabular — columns of numbers must align
+   on the decimal, and a digit must never change width as it ticks. */
 .tnum {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
-/* ── Glassmorphism ───────────────────────────────────────────────────────── */
+/* The mono face. Numbers, tickers, SEC codes, microtext — nothing else.
+   A heading set in mono reads as a system message, not as a sentence. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
 
-.glass {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.055) 0%,
-    rgba(255, 255, 255, 0.02) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-card);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 
-.glass-strong {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: var(--shadow-lift);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+.surface-sunken {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
 }
 
-/* ── Grain — one subtle SVG noise layer over everything ─────────────────── */
+.surface-raised {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-overlay);
+}
 
-.grain::after {
+/* ── The rail — the signature motif ───────────────────────────────────
+   A vertical accent rule marking the single left edge every heading,
+   figure and table on a page is keyed to. Replaces r1's horizontal
+   accounting rules: this system is a terminal, and a terminal has a
+   gutter, not ledger lines. */
+.rail {
+  border-left: 2px solid var(--accent-bright);
+}
+
+.rail-quiet {
+  border-left: 1px solid var(--border);
+}
+
+/* The hanging rail.
+   `.rail` indents the text it marks by its own padding, which puts a
+   page heading 20px right of the cards beneath it — the rail wins and
+   the left edge loses. This variant hangs the rule out into the shell
+   gutter instead, so the heading it marks starts on exactly the same
+   x as every card, form and table on the page. Use this on app pages;
+   plain `.rail` remains correct inside a column that has no gutter to
+   hang into.
+
+   The negative margin includes the rule's own width, so the CONTENT box
+   of a `.rail-bleed` element starts on exactly the same x as an unrailed
+   sibling — not two pixels right of it. Off-by-the-border is the most
+   common way a "one left edge" system quietly stops having one. */
+.rail-bleed {
+  border-left: 2px solid var(--accent-bright);
+  margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 2px));
+  padding-inline-start: var(--shell-rail-inset);
+}
+
+.rail-bleed-quiet {
+  border-left: 1px solid var(--border);
+  margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 1px));
+  padding-inline-start: var(--shell-rail-inset);
+}
+
+/* ── Screen grain — one very quiet texture layer over the page ─────────
+   Deliberately NOT `mix-blend-mode`. A fixed, full-viewport blended layer
+   cannot be composited on its own: the browser has to re-rasterize
+   everything underneath it on every frame, which is invisible on a static
+   page and costs whole milliseconds per frame while a 10k-row virtualized
+   table is scrolling. Measured in r1: it pushed median frame time past
+   20ms under load. A flat overlay is visually equivalent and free. */
+
+.screen-grain::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 60;
   pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 160px 160px;
 }
 
-/* ── Gradient utilities ──────────────────────────────────────────────────── */
-
-.text-gradient {
-  background: var(--gradient-accent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.light .screen-grain::after {
+  opacity: 0.02;
 }
 
-.bg-gradient-accent {
-  background: var(--gradient-accent);
-}
+/* ── Live pulse — the one thing on the page that breathes ───────────── */
 
-.border-gradient {
-  position: relative;
-}
-.border-gradient::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(45, 224, 200, 0.5), rgba(124, 92, 255, 0.5));
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-/* ── Ambient hero: two slow-drifting gradient fields ─────────────────────── */
-
-@keyframes ambient-drift-a {
-  0% {
-    transform: translate3d(-6%, -4%, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(5%, 6%, 0) scale(1.15);
-  }
-  100% {
-    transform: translate3d(-6%, -4%, 0) scale(1);
-  }
-}
-
-@keyframes ambient-drift-b {
-  0% {
-    transform: translate3d(4%, 6%, 0) scale(1.1);
-  }
-  50% {
-    transform: translate3d(-5%, -5%, 0) scale(0.95);
-  }
-  100% {
-    transform: translate3d(4%, 6%, 0) scale(1.1);
-  }
-}
-
-/*
- * No `filter: blur()` here on purpose: blurring 40rem+ elements creates
- * huge compositor layers and measurably delays first paint. Multi-stop
- * radial gradients give the same soft falloff for free.
- */
-.ambient-a,
-.ambient-b {
-  position: absolute;
-  border-radius: 9999px;
-  will-change: transform;
-  pointer-events: none;
-  contain: paint;
-}
-
-.ambient-a {
-  background: radial-gradient(
-    circle at 35% 35%,
-    rgba(45, 224, 200, 0.3) 0%,
-    rgba(45, 224, 200, 0.16) 28%,
-    rgba(45, 224, 200, 0.05) 52%,
-    transparent 72%
-  );
-  animation: ambient-drift-a 38s ease-in-out infinite;
-}
-
-.ambient-b {
-  background: radial-gradient(
-    circle at 65% 55%,
-    rgba(124, 92, 255, 0.28) 0%,
-    rgba(124, 92, 255, 0.15) 28%,
-    rgba(124, 92, 255, 0.05) 52%,
-    transparent 72%
-  );
-  animation: ambient-drift-b 46s ease-in-out infinite;
-}
-
-/* ── Live pulse ──────────────────────────────────────────────────────────── */
-
-@keyframes live-pulse {
+@keyframes terminal-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 227, 176, 0.55);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-bright) 50%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(52, 227, 176, 0);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-bright) 0%, transparent);
   }
 }
 
 .live-pulse {
-  animation: live-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: terminal-pulse 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* ── Reduced motion: ambience and non-essential animation off ────────────── */
+/* A value that just changed flashes its ground once. Colour only — no
+   transform, so it cannot cost layout inside a virtualized row. */
+/* ── The arrival flash ────────────────────────────────────────────────
+   A row that just streamed in flashes its VALUE cell in the direction's
+   own tint, then fades. Two reasons it is the direction and not the
+   accent: the accent means "actionable" everywhere else in this system
+   and must never read as a side, and the thing a reader wants from a new
+   row is which way the money went — so the flash carries information
+   rather than just drawing the eye.
+
+   12% alpha and 600ms: enough to catch peripheral vision on a tape that
+   updates every few seconds, not enough to leave an afterimage on one
+   that updates every few hundred milliseconds. Background only, so the
+   whole thing composites without touching layout or paint of the text. */
+@keyframes tape-flash-buy {
+  from {
+    background-color: color-mix(in srgb, var(--buy) 12%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes tape-flash-sell {
+  from {
+    background-color: color-mix(in srgb, var(--sell) 12%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.tape-arrival [data-cell="value"] {
+  border-radius: var(--radius-sm);
+}
+
+.tape-arrival [data-cell="value"][data-direction="A"] {
+  animation: tape-flash-buy 600ms ease-out 1;
+}
+
+.tape-arrival [data-cell="value"][data-direction="D"] {
+  animation: tape-flash-sell 600ms ease-out 1;
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   WIDE TABLES ON NARROW SCREENS (r4)
+
+   The screener's column set sums to about 1018px of declared width, and
+   every cell is `whitespace-nowrap`, so the table is wider than the
+   content region at EVERY viewport below roughly 1320px — not just on a
+   phone. It scrolls inside its own well, which is correct, but with no
+   frozen column and no visible edge: scroll right and the row loses the
+   date and the ticker that said which row it was, and there was nothing
+   on screen to suggest the columns existed in the first place.
+
+   Three parts. Column priority drops the secondary columns below their
+   breakpoint (and a toggle in DataTable puts them back, because hiding a
+   filing's source with no way to ask for it makes the phone a lesser
+   view of the truth rather than a smaller one). The first column freezes,
+   so the row keeps its name while the figures move under it. And the
+   scrolled edge is drawn, so the well says which way there is more.
+   ═════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767px) {
+  [data-table-columns="key"] [data-priority="2"],
+  [data-table-columns="key"] [data-priority="3"] {
+    display: none;
+  }
+
+  /* Every column that survives here is load-bearing, so the gutters give
+     way before the content does. Four columns at `p-2` spend 64px of a
+     358px well on padding alone. */
+  .table-scroll :is(th, td) {
+    padding-inline: 0.375rem;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  [data-table-columns="key"] [data-priority="3"] {
+    display: none;
+  }
+}
+
+/* Tier 4 runs the other way: progressive columns that arrive once a fluid
+   row has width to spend on information rather than on a void down its
+   middle. Not gated on `data-table-columns`, because these are not being
+   withheld — there is simply nowhere to put them below 1440. */
+@media (max-width: 1439px) {
+  [data-priority="4"] {
+    display: none;
+  }
+}
+
+/* The frozen index column.
+
+   Deliberately its own ground rather than `inherit`: the zebra tint is a
+   semi-transparent `bg-fill/55` on the ROW, and a sticky cell that
+   inherits it lets the scrolling columns show through from underneath.
+   Painting it `--surface-sunken` with a hairline on its trailing edge
+   makes it read as what it is — a fixed gutter the rest of the table
+   slides past — instead of as a zebra stripe that stopped working. */
+.table-scroll th:first-child,
+.table-scroll td:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: var(--surface-sunken);
+}
+
+.table-scroll thead th:first-child {
+  /* Above the body's frozen cells AND below nothing: this one corner is
+     both stuck across and stuck down. */
+  z-index: 3;
+}
+
+.table-scroll th:first-child::after,
+.table-scroll td:first-child::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+/* Only worth freezing while something is actually moving past it. */
+.table-scroll[data-scroll="none"] th:first-child,
+.table-scroll[data-scroll="none"] td:first-child {
+  position: static;
+  background: transparent;
+}
+
+.table-scroll[data-scroll="none"] th:first-child::after,
+.table-scroll[data-scroll="none"] td:first-child::after {
+  content: none;
+}
+
+/* The affordance. A fade at whichever edge still has table behind it —
+   drawn on a wrapper that does NOT scroll, so it stays put while the
+   columns move under it, and present only when there is somewhere to go,
+   so it never suggests content that is not there. */
+.table-frame {
+  position: relative;
+}
+
+.table-frame::before,
+.table-frame::after {
+  content: "";
+  position: absolute;
+  inset-block: 1px;
+  z-index: 4;
+  /* Narrow on purpose: this marks an edge, it does not obscure a column.
+     At 2rem the last figure in a cut-off value column reads as damaged
+     rather than as continuing. */
+  width: 1.25rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+
+.table-frame::before {
+  inset-inline-start: 1px;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+
+.table-frame::after {
+  inset-inline-end: 1px;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+
+.table-frame:has([data-scroll="start"])::after,
+.table-frame:has([data-scroll="middle"])::after {
+  opacity: 1;
+}
+
+.table-frame:has([data-scroll="middle"])::before,
+.table-frame:has([data-scroll="end"])::before {
+  opacity: 1;
+}
+
+/* ── The tape row's height ────────────────────────────────────────────
+   One number, declared once, read by both the CSS that draws the row and
+   the JS that virtualizes it. The window virtualizer needs a pixel
+   estimate up front — it cannot ask the layout — so if the row's height
+   lived only in a Tailwind class the two would drift and every scroll
+   position past the first screen would be wrong by the difference.
+
+   60px below 640, because the row is two lines there; 44px above it. */
+:root {
+  --tape-row-h: 60px;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --tape-row-h: 44px;
+  }
+}
+
+/* ── Row quick-actions ────────────────────────────────────────────────
+   Revealed on hover, but ONLY where hovering is a thing the input device
+   can do. A hover-revealed control on a touchscreen is a control that
+   appears on the tap that was meant to activate it, so on coarse
+   pointers the actions are simply always present — the same actions,
+   reached without pretending a finger can hover.
+
+   `:focus-within` is in the reveal rule too: a keyboard user tabbing into
+   a row must be able to see what they have landed on. */
+.tape-actions {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tape-actions {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+    /* An invisible control that still takes clicks is worse than a hidden
+       one. Hybrid laptops report `pointer: fine` and also have a
+       touchscreen, so without this a stray tap on an unhovered row hits a
+       button nobody can see. */
+    pointer-events: none;
+  }
+
+  [data-tape-row]:hover .tape-actions,
+  [data-tape-row]:focus .tape-actions,
+  [data-tape-row]:focus-within .tape-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* The focused row in the keyboard-navigable tape. The ring is the global
+   :focus-visible one; this adds the ground so the row reads as selected
+   while the eye is somewhere else on the page. */
+[data-tape-row]:focus-visible {
+  background: var(--surface-sunken);
+}
+
+/* ── Reduced motion: everything decorative stops. ───────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
-  .ambient-a,
-  .ambient-b,
-  .live-pulse {
+  .live-pulse,
+  /* The skeleton shimmer. Named explicitly rather than left to the
+     blanket duration override below: a placeholder that pulses forever is
+     the single most reported reduced-motion complaint about loading UI,
+     and "it happens to end up at 0.01ms" is not a decision. */
+  [data-slot="skeleton"],
+  .tape-arrival [data-cell="value"] {
     animation: none !important;
+  }
+  .tape-actions {
+    transition: none !important;
   }
   *,
   ::before,
@@ -300,20 +1105,20 @@ body {
   }
 }
 
-/* ── Scrollbars that match the surface ───────────────────────────────────── */
+/* ── Scrollbars — hairline, matching the ground ────────────────────────── */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--border-strong);
   border-radius: 8px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-track {

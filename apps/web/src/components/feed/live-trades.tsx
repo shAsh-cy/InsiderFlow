@@ -9,7 +9,10 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 
 import { LiveDot } from "@/components/domain/live-dot";
+import { SectionHeader } from "@/components/domain/section-header";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
+import { ShortcutSheet } from "@/components/feed/shortcut-sheet";
+import { TapeList } from "@/components/feed/tape-list";
 import { useTradeStream } from "@/hooks/use-trade-stream";
 import type { TradeRow } from "@/lib/api/queries";
 import { matchesTradeFilters } from "@/lib/api/trade-filter";
@@ -45,26 +48,34 @@ export function LiveTrades({
 
   return (
     <section aria-label="Live trades" data-testid="live-fold">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          Live
-        </h2>
-        <LiveDot status={status} />
-      </div>
+      <SectionHeader
+        label="Live"
+        className="mb-2 border-b border-border pb-2"
+        meta={
+          <>
+            <ShortcutSheet />
+            <LiveDot status={status} />
+          </>
+        }
+      />
       {rows.length === 0 ? (
-        <p className="glass rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-6 text-center text-sm text-ink-muted">
           Nothing matches these filters yet — new trades stream in the moment they are ingested.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {rows.map(({ trade, streamed }) =>
-            streamed ? (
-              <LiveFeedRow key={trade.id} trade={trade} />
-            ) : (
-              <StaticFeedRow key={trade.id} trade={trade} />
-            ),
-          )}
-        </ul>
+        // One surface around the run of rows: the fold is a continuous
+        // tape, and a border between every filing would break the read.
+        <div className="surface @container overflow-hidden rounded-lg">
+          <TapeList label="Live trades — use the arrow keys to move between rows">
+            {rows.map(({ trade, streamed }) =>
+              streamed ? (
+                <LiveFeedRow key={trade.id} trade={trade} />
+              ) : (
+                <StaticFeedRow key={trade.id} trade={trade} />
+              ),
+            )}
+          </TapeList>
+        </div>
       )}
     </section>
   );

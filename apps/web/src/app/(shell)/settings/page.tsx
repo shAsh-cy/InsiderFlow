@@ -16,14 +16,14 @@ export default async function SettingsPage() {
 
   if (!authConfigured) {
     return (
-      <div className="flex flex-col gap-4 pb-24">
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="glass rounded-xl px-5 py-8 text-sm leading-relaxed text-muted-foreground">
+      <div className="flex flex-col gap-6 pb-24">
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">Settings</h1>
+        <p className="surface max-w-[68ch] rounded-lg px-5 py-8 text-sm leading-relaxed text-ink-muted">
           Accounts and alerts are not configured on this deployment. Set{" "}
-          <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to enable them —
-          see <code className="font-mono text-xs">docs/auth.md</code>. Everything else on
-          InsiderFlow works without an account.
+          <code className="font-mono text-xs text-ink">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+          <code className="font-mono text-xs text-ink">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to
+          enable them — see <code className="font-mono text-xs text-ink">docs/auth.md</code>.
+          Everything else on InsiderFlow works without an account.
         </p>
       </div>
     );
@@ -31,13 +31,14 @@ export default async function SettingsPage() {
 
   if (!user) {
     return (
-      <div className="flex flex-col gap-5 pb-24">
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <div className="glass flex flex-col items-start gap-4 rounded-xl px-5 py-8">
-          <p className="text-sm text-muted-foreground">
+      <div className="flex flex-col gap-6 pb-24">
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">Settings</h1>
+        <div className="surface flex max-w-[68ch] flex-col items-start gap-5 rounded-lg px-5 py-8">
+          <p className="text-sm leading-relaxed text-ink-muted">
             Sign in to sync your watchlist across devices and receive alerts.
           </p>
-          <Button asChild className="bg-gradient-accent border-0 text-[#06231f]">
+          {/* The only thing to do on this screen, so it takes the accent. */}
+          <Button asChild>
             <Link href="/login">Sign in</Link>
           </Button>
         </div>
@@ -72,14 +73,16 @@ export default async function SettingsPage() {
   }));
 
   return (
-    <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col gap-8 pb-24">
+      {/* Masthead: who you are, and the one way out. Ruled off from the form
+          groups below so the page reads as sections on a sheet. */}
+      <header className="rail-bleed flex flex-wrap items-center gap-3 border-b border-border pb-6">
         <div className="min-w-0 flex-1">
-          <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">Settings</h1>
+          <p className="mt-1 truncate font-mono text-sm text-ink-muted">{user.email}</p>
         </div>
         <form action="/auth/signout" method="post">
-          <Button type="submit" variant="outline" size="sm" className="glass border-white/10">
+          <Button type="submit" variant="outline" size="sm">
             Sign out
           </Button>
         </form>

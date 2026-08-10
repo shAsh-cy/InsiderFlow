@@ -10,16 +10,18 @@ const SOURCES: Record<string, { label: string; title: string }> = {
   sedi: { label: "SEDI", title: "Canadian SEDI filings" },
 };
 
+/**
+ * Provenance, as quiet mono microtext — not a chip.
+ *
+ * Which feed a filing arrived on matters when you are auditing a row, and
+ * almost never while you are reading the tape. A bordered badge gave it
+ * the same visual weight as the trade itself; microtext keeps it
+ * available without letting it compete with the figures.
+ */
 export function SourceBadge({ source, className }: { source: string; className?: string }) {
   const entry = SOURCES[source] ?? { label: source.toUpperCase(), title: source };
   return (
-    <span
-      title={entry.title}
-      className={cn(
-        "inline-flex items-center rounded border border-white/10 bg-white/4 px-1.5 py-0.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground",
-        className,
-      )}
-    >
+    <span title={entry.title} className={cn("num text-2xs text-ink-faint", className)}>
       {entry.label}
     </span>
   );

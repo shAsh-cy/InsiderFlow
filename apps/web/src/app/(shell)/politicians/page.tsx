@@ -1,6 +1,8 @@
-import { Rss } from "lucide-react";
+import { Landmark, Rss } from "lucide-react";
 import Link from "next/link";
 
+import { EmptyState } from "@/components/domain/empty-state";
+import { NotDisclosed } from "@/components/domain/not-disclosed";
 import { PoliticianCoverageBanner } from "@/components/politicians/coverage-banner";
 import { PoliticianTradeTable } from "@/components/politicians/politician-trade-table";
 import {
@@ -26,6 +28,22 @@ const CHAMBERS = [
   { key: "house", label: "House" },
   { key: "senate", label: "Senate" },
 ] as const;
+
+/**
+ * Chamber and lateness are URL state, so they stay links — the back button has
+ * to walk through them. Pill-shaped because they are interactive; the selected
+ * one is marked by weight and ground rather than by colour, so the page's one
+ * accent is still available for something that matters more.
+ */
+const PILL_BASE =
+  // 44px of hit area below md and the r3 density above it. A 24px pill
+  // is a WCAG 2.5.5 failure on the one input device that cannot aim.
+  "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3.5 text-xs transition-colors md:min-h-0 md:px-3 md:py-1";
+const PILL_ON = "border-border bg-fill font-semibold text-ink";
+const PILL_OFF = "border-transparent text-ink-muted hover:bg-fill hover:text-ink";
+
+/** Section eyebrows, set the same way across the page. */
+const EYEBROW = "text-xs font-semibold text-ink-muted";
 
 export default async function PoliticiansPage({
   searchParams,
@@ -55,6 +73,20 @@ export default async function PoliticiansPage({
     })),
   ]);
 
+  /*
+   * "Nothing has ever been ingested" is a different state from "your filter
+   * matched nothing", and it gets a different page. Stacking three empty
+   * panels under a note that already said the feed is empty says it four
+   * times; the editorial panel says it once, properly. A filter that happens
+   * to match no rows still renders the full furniture, because there the
+   * empty table IS the answer to the reader's question.
+   *
+   * Every source has to agree before the page collapses. The coverage count
+   * degrades to zero when its query fails, and a failed count must not be
+   * allowed to hide rows we demonstrably have.
+   */
+  const nothingIngested = coverage.disclosures === 0 && trades.length === 0 && filers.length === 0;
+
   const href = (patch: Record<string, string>) => {
     const params = new URLSearchParams();
     if (query.chamber) params.set("chamber", query.chamber);
@@ -72,9 +104,9 @@ export default async function PoliticiansPage({
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Congressional trading</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
+      <header className="rail-bleed flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Congressional trading</h1>
+        <p className="max-w-3xl text-sm text-ink-muted">
           Periodic transaction reports filed under the STOCK Act. Members must disclose any
           transaction over $1,000 within 45 days — so a trade can surface here weeks after it
           happened, and the disclosure date is the news.
@@ -86,142 +118,152 @@ export default async function PoliticiansPage({
       <PoliticianCoverageBanner coverage={coverage} />
 
       {/* Said once, prominently: these are ranges, not figures. */}
-      <p className="glass rounded-xl border border-white/8 p-4 text-sm text-muted-foreground">
-        <strong className="text-foreground">Amounts are ranges.</strong> Filers disclose a bracket
-        (&ldquo;$1,001&ndash;$15,000&rdquo;), never an exact figure. Every amount below is the
-        bracket as filed; InsiderFlow does not synthesise a midpoint or a point value, because the
-        filing does not contain one. Each row links to the original PTR.
+      <p className="surface-sunken rounded-lg p-4 text-sm text-ink-muted">
+        <strong className="font-semibold text-ink">Amounts are ranges.</strong> Filers disclose a
+        bracket (&ldquo;$1,001&ndash;$15,000&rdquo;), never an exact figure. Every amount below is
+        the bracket as filed; InsiderFlow does not synthesise a midpoint or a point value, because
+        the filing does not contain one. Each row links to the original PTR.
       </p>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <fieldset className="flex items-center gap-1.5">
-          <legend className="sr-only">Chamber</legend>
-          <span className="text-2xs uppercase tracking-widest text-subtle-foreground">Chamber</span>
-          {CHAMBERS.map((c) => (
+      {nothingIngested ? null : (
+        <>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <fieldset className="flex items-center gap-1.5">
+              <legend className="sr-only">Chamber</legend>
+              <span className="text-2xs text-ink-faint">Chamber</span>
+              {CHAMBERS.map((c) => (
+                <Link
+                  key={c.key || "all"}
+                  href={href({ chamber: c.key })}
+                  aria-current={(query.chamber ?? "") === c.key ? "true" : undefined}
+                  className={cn(PILL_BASE, (query.chamber ?? "") === c.key ? PILL_ON : PILL_OFF)}
+                >
+                  {c.label}
+                </Link>
+              ))}
+            </fieldset>
+
+            {/* A link, not a toggle button — it navigates, and the filter
+                lives in the URL. `aria-pressed` is only defined for
+                role="button", so on an anchor it is an attribute a screen
+                reader is entitled to ignore or announce wrongly; axe flags
+                it as aria-allowed-attr. `aria-current` is the attribute
+                that means "this is the view you are on", and it is valid
+                here. The word "Showing" carries the same fact visibly, so
+                the state is never colour alone. */}
             <Link
-              key={c.key || "all"}
-              href={href({ chamber: c.key })}
-              aria-current={(query.chamber ?? "") === c.key ? "true" : undefined}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs transition-colors",
-                (query.chamber ?? "") === c.key
-                  ? "bg-white/8 font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-white/4 hover:text-foreground",
-              )}
+              href={href({ late_only: query.late_only ? "" : "true" })}
+              aria-current={query.late_only ? "true" : undefined}
+              className={cn(PILL_BASE, query.late_only ? PILL_ON : PILL_OFF)}
             >
-              {c.label}
+              Late filings only
             </Link>
-          ))}
-        </fieldset>
 
-        <Link
-          href={href({ late_only: query.late_only ? "" : "true" })}
-          aria-pressed={query.late_only ? "true" : "false"}
-          className={cn(
-            "rounded-md px-2.5 py-1 text-xs transition-colors",
-            query.late_only
-              ? "bg-amber-400/12 font-medium text-amber-200"
-              : "text-muted-foreground hover:bg-white/4 hover:text-foreground",
-          )}
-        >
-          Late filings only
-        </Link>
+            <a
+              href={rssHref}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto flex min-h-11 cursor-pointer items-center gap-1.5 text-xs text-ink-muted transition-colors hover:text-ink md:min-h-0"
+            >
+              <Rss className="size-3.5" aria-hidden /> RSS
+            </a>
+          </div>
 
-        <a
-          href={rssHref}
-          target="_blank"
-          rel="noreferrer"
-          className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <Rss className="size-3.5" aria-hidden /> RSS
-        </a>
-      </div>
+          <section aria-labelledby="feed-heading" className="flex flex-col gap-3">
+            <h2 id="feed-heading" className={EYEBROW}>
+              Latest disclosures
+            </h2>
+            <PoliticianTradeTable rows={trades} caption="Recent congressional disclosures" />
+          </section>
 
-      <section aria-labelledby="feed-heading" className="flex flex-col gap-3">
-        <h2
-          id="feed-heading"
-          className="text-sm font-semibold uppercase tracking-widest text-muted-foreground"
-        >
-          Latest disclosures
-        </h2>
-        <PoliticianTradeTable rows={trades} caption="Recent congressional disclosures" />
-      </section>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            {/* `min-w-0`: a grid item's default `min-width` is `auto`, which
+                resolves to its MIN-CONTENT width — so a list of names and
+                figures sets a floor the column cannot go below and the
+                whole page is dragged sideways to accommodate it. At 360px
+                this made the document 408px wide. */}
+            <section aria-labelledby="filers-heading" className="flex min-w-0 flex-col gap-3">
+              <h2 id="filers-heading" className={EYEBROW}>
+                Most active filers
+              </h2>
+              {filers.length === 0 ? (
+                // Copy unchanged: "no filers ingested yet" is a claim
+                // about this deployment's pipeline, not an invitation, and
+                // dressing up an absence of data is how it stops being one.
+                <EmptyState icon={Landmark} tone="sunken" title="No filers ingested yet." />
+              ) : (
+                <ul className="surface flex flex-col rounded-lg">
+                  {filers.map((f) => (
+                    <li key={f.id} className="border-b border-border last:border-0">
+                      <Link
+                        href={`/politicians/${f.id}`}
+                        className="flex min-h-11 cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-fill md:min-h-0"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium text-ink">
+                          {f.name}
+                        </span>
+                        <span className="text-2xs text-ink-faint">
+                          {f.chamber}
+                          {f.party ? `-${f.party}` : ""}
+                        </span>
+                        <span className="num w-16 text-right text-ink-muted">
+                          {f.trades.toLocaleString("en-US")}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section aria-labelledby="filers-heading" className="flex flex-col gap-3">
-          <h2
-            id="filers-heading"
-            className="text-sm font-semibold uppercase tracking-widest text-muted-foreground"
-          >
-            Most active filers
-          </h2>
-          {filers.length === 0 ? (
-            <p className="glass rounded-lg px-4 py-8 text-center text-sm text-muted-foreground">
-              No filers ingested yet.
-            </p>
-          ) : (
-            <ul className="glass flex flex-col rounded-xl">
-              {filers.map((f) => (
-                <li key={f.id} className="border-b border-white/4 last:border-0">
-                  <Link
-                    href={`/politicians/${f.id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/4"
-                  >
-                    <span className="min-w-0 flex-1 truncate font-medium">{f.name}</span>
-                    <span className="text-2xs uppercase text-subtle-foreground">
-                      {f.chamber}
-                      {f.party ? `-${f.party}` : ""}
-                    </span>
-                    <span className="tnum w-16 text-right text-muted-foreground">
-                      {f.trades.toLocaleString("en-US")}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+            <section aria-labelledby="tickers-heading" className="flex min-w-0 flex-col gap-3">
+              <h2 id="tickers-heading" className={EYEBROW}>
+                Top-traded tickers <span className="normal-case tracking-normal">(90 days)</span>
+              </h2>
+              {topTickers.length === 0 ? (
+                <EmptyState
+                  icon={Landmark}
+                  tone="sunken"
+                  title="No ticker activity in this window."
+                />
+              ) : (
+                <ul className="surface flex flex-col rounded-lg">
+                  {topTickers.map((t) => (
+                    <li key={t.ticker} className="border-b border-border last:border-0">
+                      <Link
+                        href={`/stock/${t.ticker}`}
+                        className="flex min-h-11 cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-fill md:min-h-0"
+                      >
+                        <span className="num w-16 font-semibold text-ink">{t.ticker}</span>
+                        <span className="min-w-0 flex-1 truncate text-ink-muted">
+                          {t.companyName ?? (
+                            <NotDisclosed
+                              label="No company name on file for this ticker"
+                              className="cursor-pointer"
+                            />
+                          )}
+                        </span>
+                        {/* Word plus colour, never colour alone. */}
+                        <span className="num text-2xs text-buy-ink">{t.buys} buy</span>
+                        <span className="num text-2xs text-sell-ink">{t.sells} sell</span>
+                        <span className="num w-8 text-right text-ink-faint">{t.politicians}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </>
+      )}
 
-        <section aria-labelledby="tickers-heading" className="flex flex-col gap-3">
-          <h2
-            id="tickers-heading"
-            className="text-sm font-semibold uppercase tracking-widest text-muted-foreground"
-          >
-            Top-traded tickers <span className="normal-case tracking-normal">(90 days)</span>
-          </h2>
-          {topTickers.length === 0 ? (
-            <p className="glass rounded-lg px-4 py-8 text-center text-sm text-muted-foreground">
-              No ticker activity in this window.
-            </p>
-          ) : (
-            <ul className="glass flex flex-col rounded-xl">
-              {topTickers.map((t) => (
-                <li key={t.ticker} className="border-b border-white/4 last:border-0">
-                  <Link
-                    href={`/stock/${t.ticker}`}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/4"
-                  >
-                    <span className="w-16 font-medium">{t.ticker}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                      {t.companyName ?? "—"}
-                    </span>
-                    <span className="tnum text-2xs text-emerald-300">{t.buys} buy</span>
-                    <span className="tnum text-2xs text-violet-300">{t.sells} sell</span>
-                    <span className="tnum w-8 text-right text-subtle-foreground">
-                      {t.politicians}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <p className="text-2xs text-subtle-foreground">
+      <p className="text-2xs text-ink-faint">
         Source: public STOCK Act disclosures, transcribed by the open house/senate-stock-watcher
         datasets, with a link to the original PDF on every row. See{" "}
-        <Link href="/docs/methodology" className="underline underline-offset-2">
+        <Link
+          href="/docs/methodology"
+          className="cursor-pointer underline underline-offset-2 transition-colors hover:text-ink"
+        >
           methodology
         </Link>
         . <strong>Not investment advice.</strong>

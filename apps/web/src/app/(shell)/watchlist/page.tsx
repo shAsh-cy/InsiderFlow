@@ -7,8 +7,10 @@
  */
 import { Plus, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+import { EmptyState } from "@/components/domain/empty-state";
 import { StaticFeedRow } from "@/components/domain/static-feed-row";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,17 +53,17 @@ function AddCompany() {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Add a company — search name or ticker…"
         aria-label="Search companies to watch"
-        className="glass h-10 w-full rounded-lg px-3 text-sm outline-none placeholder:text-subtle-foreground"
+        className="surface h-11 w-full rounded-md px-3 text-sm text-ink outline-none placeholder:text-ink-faint md:h-10"
       />
       {hits.length > 0 ? (
-        <ul className="glass-strong absolute inset-x-0 top-11 z-20 overflow-hidden rounded-lg">
+        <ul className="surface-raised absolute inset-x-0 top-11 z-20 overflow-hidden rounded-md">
           {hits
             .filter((hit) => hit.ticker)
             .map((hit) => (
-              <li key={hit.ticker}>
+              <li key={hit.ticker} className="border-b border-border last:border-b-0">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-white/6"
+                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-fill"
                   onClick={() => {
                     add({
                       kind: "company",
@@ -72,11 +74,11 @@ function AddCompany() {
                     setQuery("");
                   }}
                 >
-                  <Plus className="size-3.5 text-subtle-foreground" aria-hidden />
-                  <span className="font-mono text-xs font-semibold">{hit.ticker}</span>
-                  <span className="truncate text-muted-foreground">{hit.name}</span>
+                  <Plus className="size-3.5 text-ink-faint" aria-hidden />
+                  <span className="num text-xs font-semibold text-ink">{hit.ticker}</span>
+                  <span className="truncate text-ink-muted">{hit.name}</span>
                   {has("company", hit.ticker!) ? (
-                    <Star className="ml-auto size-3 fill-amber-300 text-amber-300" aria-hidden />
+                    <Star className="ml-auto size-3 fill-ink text-ink" aria-hidden />
                   ) : null}
                 </button>
               </li>
@@ -105,14 +107,14 @@ function WatchCard({ item, onRemove }: { item: WatchlistItem; onRemove: () => vo
   );
 
   return (
-    <article className="glass flex flex-col gap-3 rounded-xl p-4">
-      <div className="flex items-center gap-2">
+    <article className="surface flex flex-col gap-3 rounded-lg p-4">
+      <div className="flex items-center gap-2 border-b border-border pb-2">
         <Link
           href={item.kind === "company" ? `/stock/${item.refId}` : `/insider/${item.refId}`}
-          className="min-w-0 flex-1 truncate font-semibold tracking-tight hover:text-teal"
+          className="min-w-0 flex-1 truncate font-semibold tracking-tight text-ink transition-colors hover:text-accent-ink"
         >
-          {item.kind === "company" ? <span className="font-mono">{item.refId}</span> : null}{" "}
-          <span className="text-sm text-muted-foreground">{item.label}</span>
+          {item.kind === "company" ? <span className="num">{item.refId}</span> : null}{" "}
+          <span className="text-sm text-ink-muted">{item.label}</span>
         </Link>
         <Button
           variant="ghost"
@@ -126,18 +128,21 @@ function WatchCard({ item, onRemove }: { item: WatchlistItem; onRemove: () => vo
       </div>
 
       {trades === null ? (
-        <Skeleton className="h-24 w-full rounded-lg bg-white/4" />
+        <Skeleton className="h-24 w-full rounded-md" />
       ) : trades.length === 0 ? (
-        <p className="py-4 text-center text-xs text-subtle-foreground">No recent activity.</p>
+        <p className="py-4 text-center text-xs text-ink-faint">No recent activity.</p>
       ) : (
         <>
-          <p className="text-2xs text-subtle-foreground">
+          {/* Direction is spelled out as well as coloured — "buys"/"sells"
+              and the sign carry it if the hue does not land. */}
+          <p className="num text-2xs text-ink-faint">
             Recent: {buys} buys · {sells} sells · net{" "}
-            <span className={netUsd < 0 ? "text-sell" : "text-buy"}>
-              {netUsd < 0 ? "−" : ""}${formatCompact(Math.abs(netUsd))}
+            <span className={netUsd < 0 ? "text-sell-ink" : "text-buy-ink"}>
+              <span aria-hidden>{netUsd < 0 ? "▼" : "▲"}</span> {netUsd < 0 ? "−" : ""}$
+              {formatCompact(Math.abs(netUsd))}
             </span>
           </p>
-          <ul className="flex flex-col gap-1.5">
+          <ul className="surface-sunken @container overflow-hidden rounded-md">
             {trades.map((trade) => (
               <StaticFeedRow key={trade.id} trade={trade} className="px-2.5 py-1.5 text-xs" />
             ))}
@@ -150,12 +155,13 @@ function WatchCard({ item, onRemove }: { item: WatchlistItem; onRemove: () => vo
 
 export default function WatchlistPage() {
   const { items, remove } = useWatchlist();
+  const t = useTranslations("access");
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Watchlist</h1>
-        <p className="text-sm text-muted-foreground">
+      <header className="rail-bleed flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Watchlist</h1>
+        <p className="max-w-[68ch] text-sm text-ink-muted">
           Stored in this browser for now — accounts sync it across devices in Phase 7.
         </p>
       </header>
@@ -163,18 +169,30 @@ export default function WatchlistPage() {
       <AddCompany />
 
       {items.length === 0 ? (
-        <div className="glass flex flex-col items-center gap-3 rounded-xl px-6 py-14 text-center">
-          <Star className="size-6 text-subtle-foreground" aria-hidden />
-          <p className="text-sm text-muted-foreground">
-            Nothing watched yet. Add a company above, or hit “Watch” on any{" "}
-            <Link href="/companies" className="text-teal underline underline-offset-4">
-              company
-            </Link>{" "}
-            or insider page.
-          </p>
-        </div>
+        // Says what a watchlist is FOR, not just that it is empty — and
+        // says the data was already free either way, because a reader who
+        // thinks tracking is how you get access never adds anything.
+        <EmptyState
+          icon={Star}
+          title={t("watchlistEmptyTitle")}
+          body={
+            <>
+              {t("watchlistEmptyBody")}{" "}
+              <Link
+                href="/companies"
+                className="text-accent-ink underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
+              >
+                Browse companies
+              </Link>
+              .
+            </>
+          }
+        />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2" data-testid="watchlist-items">
+        <div
+          className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+          data-testid="watchlist-items"
+        >
           {items.map((item) => (
             <WatchCard key={item.id} item={item} onRemove={() => remove(item.id)} />
           ))}

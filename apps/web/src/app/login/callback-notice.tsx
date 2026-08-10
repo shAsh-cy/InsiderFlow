@@ -27,11 +27,13 @@ export function CallbackNotice() {
   const reason = useSearchParams().get("error");
   if (!reason) return null;
   const message = REASONS[reason] ?? REASONS.unexpected!;
+  // Stated, not shouted: a recessed well and oxblood type. A red panel would
+  // read as "something broke", when the usual cause is a link opened twice.
   return (
     <p
       role="alert"
       data-testid="login-error"
-      className="mt-6 rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm leading-relaxed text-amber-200/90"
+      className="surface-sunken mt-6 rounded-md px-4 py-3 text-sm leading-relaxed text-accent-ink"
     >
       {message}
     </p>

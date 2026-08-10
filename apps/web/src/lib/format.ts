@@ -78,6 +78,23 @@ export function formatPct(value: number, digits = 1): string {
 }
 
 /** "2m ago" style timestamps for the live feed. */
+/**
+ * An absolute instant, in UTC, for "as of …" microtext.
+ *
+ * UTC rather than the reader's locale, and hand-formatted rather than
+ * `toLocaleTimeString`: this string is rendered on the server and again
+ * on the client, and any format that depends on the machine's timezone
+ * or ICU data produces two different strings and a hydration mismatch.
+ * The suffix is written out so the reader knows it is not their clock.
+ */
+export function utcClock(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const hh = String(at.getUTCHours()).padStart(2, "0");
+  const mm = String(at.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} UTC`;
+}
+
 export function timeAgo(iso: string, now: Date = new Date()): string {
   const seconds = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 1000));
   if (seconds < 5) return "just now";
@@ -87,4 +104,40 @@ export function timeAgo(iso: string, now: Date = new Date()): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+/**
+ * The price per share on a row, and whether the filing actually said it.
+ *
+ * Three states, and the difference between them is the whole point:
+ *
+ *   `filed` — the filing states a price per share. This is a fact.
+ *   `derived` — it does not, but it states both a value and a share count,
+ *     so value ÷ shares is arithmetic on two disclosed figures. That is a
+ *     per-share AVERAGE across whatever the row aggregates, which is not
+ *     the same claim as a filed price, so it is marked and never presented
+ *     as one.
+ *   `null` — neither. The caller renders NotDisclosed. A zero here would
+ *     be a fabricated fact about somebody's trade.
+ *
+ * Deliberately not exported as a formatted string: the caller pairs it with
+ * CurrencyValue so a rupee row still shows its native figure beside USD.
+ */
+export function pricePerShare(trade: {
+  price: number | null;
+  priceUsd: number | null;
+  value: number | null;
+  valueUsd: number | null;
+  shares: number | null;
+}): { price: number; priceUsd: number | null; derived: boolean } | null {
+  if (trade.price !== null && trade.price > 0) {
+    return { price: trade.price, priceUsd: trade.priceUsd, derived: false };
+  }
+  const { value, shares } = trade;
+  if (value === null || shares === null || shares <= 0 || value <= 0) return null;
+  return {
+    price: value / shares,
+    priceUsd: trade.valueUsd === null ? null : trade.valueUsd / shares,
+    derived: true,
+  };
 }

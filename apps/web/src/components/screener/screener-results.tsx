@@ -5,9 +5,14 @@
  * meta.nextOffset, CSV/XLSX export, per-preset RSS link, and the disabled
  * "save as alert" slot (auth lands in Phase 7).
  */
-import { BellPlus, Download, FileSpreadsheet, Loader2, Rss } from "lucide-react";
-import { useState } from "react";
+import { BellPlus, Download, FileSpreadsheet, Loader2, Rss, SearchX } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+
+import { SignInPopover } from "@/components/auth/sign-in-popover";
+import { EmptyState } from "@/components/domain/empty-state";
+import { RowSkeleton } from "@/components/domain/row-skeleton";
 
 import { TradeTable } from "@/components/trades/trade-table";
 import { Button } from "@/components/ui/button";
@@ -30,14 +35,16 @@ export function ScreenerResults({
   /** True when a signed-in session exists — enables "Save as alert". */
   canSaveAlert?: boolean;
 }) {
+  const t = useTranslations("access");
   const [rows, setRows] = useState<TradeRow[]>(initialPage.data);
   const [meta, setMeta] = useState<PageMeta>(initialPage.meta);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   /** Persists the CURRENT screen (preset params included) as an alert rule. */
-  const saveAsAlert = async () => {
+  const saveAsAlert = useCallback(async () => {
     setSaving(true);
     try {
       const { limit: _limit, offset: _offset, ...filters } = params;
@@ -72,7 +79,29 @@ export function ScreenerResults({
     } finally {
       setSaving(false);
     }
-  };
+  }, [params, preset]);
+
+  /**
+   * Replay after a contextual sign-in.
+   *
+   * The popover sends the reader away with `?pending=alert` on the URL
+   * they were already looking at, so when they come back the screen is
+   * identical AND the action they asked for still happens. Without this,
+   * "sign in to save" costs the reader the save.
+   *
+   * The flag is cleared from the URL first, so a refresh does not save a
+   * second copy of the same screen.
+   */
+  const replayed = useRef(false);
+  useEffect(() => {
+    if (replayed.current || !canSaveAlert) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("pending") !== "alert") return;
+    replayed.current = true;
+    url.searchParams.delete("pending");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    void saveAsAlert();
+  }, [canSaveAlert, saveAsAlert]);
 
   const fetcher = (p: TradesParams) => (preset ? fetchScreener(preset, { ...p }) : fetchTrades(p));
 
@@ -131,14 +160,13 @@ export function ScreenerResults({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="tnum mr-auto text-xs text-subtle-foreground" data-testid="result-count">
+        <span className="num mr-auto text-xs text-ink-faint" data-testid="result-count">
           {rows.length}
           {meta.hasMore ? "+" : ""} rows
         </span>
         <Button
           variant="outline"
           size="sm"
-          className="glass border-white/10"
           onClick={() => void exportCsv()}
           disabled={exporting || rows.length === 0}
         >
@@ -148,14 +176,13 @@ export function ScreenerResults({
         <Button
           variant="outline"
           size="sm"
-          className="glass border-white/10"
           onClick={() => void exportXlsx()}
           disabled={exporting || rows.length === 0}
         >
           <FileSpreadsheet aria-hidden /> XLSX
         </Button>
         {preset ? (
-          <Button asChild variant="outline" size="sm" className="glass border-white/10">
+          <Button asChild variant="outline" size="sm">
             <a href={`/api/rss/${preset}`} target="_blank" rel="noreferrer">
               <Rss aria-hidden /> RSS
             </a>
@@ -164,7 +191,7 @@ export function ScreenerResults({
           <Tooltip>
             <TooltipTrigger asChild>
               <span tabIndex={0}>
-                <Button variant="outline" size="sm" className="glass border-white/10" disabled>
+                <Button variant="outline" size="sm" disabled>
                   <Rss aria-hidden /> RSS
                 </Button>
               </span>
@@ -176,7 +203,6 @@ export function ScreenerResults({
           <Button
             variant="outline"
             size="sm"
-            className="glass border-white/10"
             data-testid="save-alert"
             onClick={() => void saveAsAlert()}
             disabled={saving}
@@ -185,41 +211,51 @@ export function ScreenerResults({
             Save as alert
           </Button>
         ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} data-testid="save-alert">
-                <Button variant="outline" size="sm" className="glass border-white/10" disabled>
-                  <BellPlus aria-hidden /> Save as alert
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Sign in to save this screen as an alert</TooltipContent>
-          </Tooltip>
+          // Signed out, the button is LIVE, not disabled. A disabled
+          // control reads as "this is not for you" — which is the exact
+          // misreading this product needs to avoid, because the screen
+          // itself was free to build and free to share. Clicking offers
+          // sign-in in place and then completes the save.
+          <SignInPopover open={signInOpen} onOpenChange={setSignInOpen} action="alert">
+            <Button variant="outline" size="sm" data-testid="save-alert">
+              <BellPlus aria-hidden /> {t("signInToSave")}
+            </Button>
+          </SignInPopover>
         )}
       </div>
 
       {rows.length === 0 ? (
-        <p className="glass rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
-          Nothing matches this screen. Loosen a filter or pick another preset.
-        </p>
+        <EmptyState
+          icon={SearchX}
+          title="Nothing matches this screen"
+          body="Loosen a filter or pick another preset. Every screen here is free to run and free to share as a link."
+        />
       ) : (
         <>
           <TradeTable rows={rows} showCompany height={560} aria-label="Screener results" />
+          {/* The next page at its real height, rather than a spinner on a
+              button: the rows are what is coming, so the rows are what the
+              placeholder should look like. */}
+          {loading ? (
+            <div className="surface @container overflow-hidden rounded-lg" aria-busy>
+              <RowSkeleton rows={4} height={38} />
+              <span className="sr-only" role="status">
+                Loading more results
+              </span>
+            </div>
+          ) : null}
           <div className="flex justify-center">
             {meta.hasMore ? (
               <Button
                 variant="outline"
                 size="sm"
-                className="glass border-white/10"
                 onClick={() => void loadMore()}
                 disabled={loading}
               >
-                {loading ? <Loader2 className="animate-spin" aria-hidden /> : null} Load more
+                Load more
               </Button>
             ) : (
-              <span className="text-2xs py-2 uppercase tracking-widest text-subtle-foreground">
-                End of results
-              </span>
+              <span className="py-2 text-2xs text-ink-faint">End of results</span>
             )}
           </div>
         </>

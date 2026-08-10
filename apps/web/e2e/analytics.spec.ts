@@ -27,9 +27,11 @@ test.describe("heatmap", () => {
     // role=group, not role=img: an img role would make the cells presentational.
     await expect(page.getByRole("group", { name: /Net insider flow treemap/i })).toBeVisible();
 
-    // Identity is never colour-alone: a table view of the same rows exists.
-    await page.getByText(/Table view/).click();
+    // Identity is never colour-alone: a table view of the same rows exists,
+    // and since r4 it is open rather than folded behind a disclosure —
+    // below md it is not a second view of the chart, it IS the chart.
     await expect(page.getByRole("table")).toBeVisible();
+    await expect(page.getByText(/Table view/)).toBeVisible();
   });
 
   test("switches grouping and timeframe through the URL", async ({ page }) => {

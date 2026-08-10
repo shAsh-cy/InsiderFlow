@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { InsiderScorePanel } from "@/components/analytics/insider-score-panel";
 import { StatCard } from "@/components/domain/stat-card";
+import { SetBreadcrumb } from "@/components/shell/breadcrumb";
 import { TradeTable } from "@/components/trades/trade-table";
 import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { queryInsiderScore } from "@/lib/api/analytics-queries";
@@ -42,18 +43,38 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <header className="flex flex-wrap items-center gap-4">
+      {/* The filer's NAME, not the uuid in the URL. Only the server that
+          resolved the profile knows it, which is why the trail is set by the
+          page rather than derived from the pathname. */}
+      <SetBreadcrumb
+        trail={{
+          sectionKey: "leaderboard",
+          sectionHref: "/leaderboard",
+          entity: insider.name,
+        }}
+      />
+      <header className="rail-bleed flex flex-wrap items-center gap-4">
+        {/* A stamped tile, matching the ticker monogram on the stock page.
+            Square rather than circular on purpose: this is a filer's mark on
+            paper, and the round shape in this product means "clickable". */}
         <span
           aria-hidden
-          className="glass flex size-12 items-center justify-center rounded-full text-lg font-semibold text-muted-foreground"
+          className="surface-sunken flex size-12 items-center justify-center rounded-lg text-lg font-semibold text-ink-muted"
         >
           {insider.name.charAt(0)}
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{insider.name}</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-ink">
+            {insider.name}
+          </h1>
+          <p className="text-sm text-ink-muted">
             {roles.length > 0 ? roles.join(" · ") : "Insider"}
-            {insider.cik ? ` · CIK ${insider.cik}` : ""}
+            {insider.cik ? (
+              <>
+                {" · CIK "}
+                <span className="num">{insider.cik}</span>
+              </>
+            ) : null}
           </p>
         </div>
         <WatchlistButton kind="insider" refId={insider.id} label={insider.name} market="US" />
@@ -69,16 +90,16 @@ export default async function InsiderPage({ params }: { params: Promise<{ id: st
       <InsiderScorePanel detail={score} />
 
       <section aria-label="Trade history" className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+        <h2 className="text-sm font-semibold text-ink-muted">
           Cross-company trade history
           {stats.lastActivity ? (
-            <span className="ml-2 normal-case tracking-normal text-subtle-foreground">
-              · last activity {stats.lastActivity}
+            <span className="ml-2 normal-case tracking-normal text-ink-faint">
+              · last activity <span className="num">{stats.lastActivity}</span>
             </span>
           ) : null}
         </h2>
         {trades.data.length === 0 ? (
-          <p className="glass rounded-lg px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="surface rounded-lg px-4 py-8 text-center text-sm text-ink-muted">
             No transactions on record.
           </p>
         ) : (

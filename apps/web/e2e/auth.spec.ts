@@ -32,7 +32,23 @@ test("the public site works either way, and advertises sign-in only when it work
   await expect(page.getByTestId("live-fold")).toBeVisible();
 
   // Sign-in chrome is advertised exactly when the deployment can honor it.
-  await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(configured ? 1 : 0);
+  //
+  // Scoped to the masthead and matched EXACTLY. Unscoped and inexact, this
+  // counted two links on a page that has two: the bar's "Sign in" and the
+  // access banner's "Sign in to save & get alerts", whose name contains the
+  // first. The banner is client-rendered, so a retrying count assertion
+  // passed if it sampled before hydration and failed after — it had been
+  // passing on timing rather than on the fact it claims to check.
+  const bar = page.getByRole("banner");
+  await expect(bar.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(
+    configured ? 1 : 0,
+  );
+  // …and the offer inside the page, which the old locator was accidentally
+  // counting and never actually asserting.
+  await expect(
+    page.getByRole("link", { name: /sign in to save/i }),
+    "the contextual offer is advertised on the same condition",
+  ).toHaveCount(configured ? 1 : 0);
 });
 
 test("settings never errors, whether or not auth is configured", async ({ page, request }) => {
@@ -62,13 +78,53 @@ test("the login page states its state rather than failing", async ({ page, reque
   }
 });
 
-test("save-as-alert stays disabled and explains why when signed out", async ({ page }) => {
+/**
+ * Rewritten in r2. The old contract was "the control is DISABLED when
+ * signed out", which was the wrong promise to make: a dead button next to
+ * a screen the reader just built for free reads as "your data is locked",
+ * and in this product it never is. The control is now live and offers
+ * sign-in in place.
+ *
+ * What is still asserted, and matters more: signed-out visitors are told
+ * the data is free, the affordance says "save" rather than "unlock", and
+ * the actual write path is still refused without a session (covered by
+ * "user API routes reject anonymous callers" below).
+ */
+test("save-as-alert offers contextual sign-in rather than a dead control", async ({ page }) => {
   await page.goto("/screener");
   await expect(page.getByTestId("result-count")).toBeVisible();
+
   const saveAlert = page.getByTestId("save-alert");
-  await expect(saveAlert.getByRole("button")).toBeDisabled();
-  await saveAlert.focus();
-  await expect(page.getByText("Sign in to save this screen as an alert")).toBeVisible();
+  await expect(saveAlert).toBeEnabled();
+  await expect(saveAlert).toHaveText(/save/i);
+  // Never framed as a paywall.
+  await expect(saveAlert).not.toHaveText(/unlock|upgrade|premium|pro\b/i);
+
+  await saveAlert.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByText(/sign in to save this alert/i)).toBeVisible();
+  // The offer explains that reading was never the thing being gated.
+  await expect(page.getByText(/reading stays free/i)).toBeVisible();
+
+  // Keyboard-dismissible, and focus is not stranded in a closed layer.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("signed-out data pages say the data is free, not gated", async ({ page }) => {
+  for (const path of ["/trades", "/screener"]) {
+    await page.goto(path);
+    const banner = page.getByTestId("access-banner");
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveText(/free/i);
+    await expect(banner).not.toHaveText(/unlock|upgrade|premium|trial/i);
+  }
+
+  // Dismissal sticks across a reload — a persistent nag is its own tax.
+  await page.getByTestId("access-banner-dismiss").click();
+  await expect(page.getByTestId("access-banner")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("access-banner")).toHaveCount(0);
 });
 
 test("user API routes reject anonymous callers", async ({ request }) => {

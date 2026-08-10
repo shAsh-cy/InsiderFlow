@@ -30,7 +30,7 @@ export default function LoginPage() {
 
   const sendMagicLink = async (event: React.FormEvent) => {
     event.preventDefault();
-    const supabase = getSupabaseBrowserClient();
+    const supabase = await getSupabaseBrowserClient();
     if (!supabase) return;
     setStatus("sending");
     const { error } = await supabase.auth.signInWithOtp({
@@ -47,7 +47,7 @@ export default function LoginPage() {
   };
 
   const signInWithGithub = async () => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = await getSupabaseBrowserClient();
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: "github",
@@ -58,13 +58,14 @@ export default function LoginPage() {
   return (
     <main
       id="main"
+      tabIndex={-1}
       className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-24"
     >
-      <div className="glass rounded-2xl p-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Sign in to <span className="text-gradient">InsiderFlow</span>
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+      {/* One card on the page ground — the whole view is this card, which is
+          why the accent can be spent on its primary button. */}
+      <div className="surface rounded-lg p-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in to InsiderFlow</h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-muted">
           Accounts sync your watchlist across devices and power alerts. Browsing stays free and
           anonymous — you never need one to read the data.
         </p>
@@ -75,26 +76,24 @@ export default function LoginPage() {
         </Suspense>
 
         {!configured ? (
-          <p className="mt-6 rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-xs leading-relaxed text-amber-200/90">
+          /* A deployment fact, not a failure — so it is a quiet well rather
+             than an alarm. The operator reading it needs the variable names
+             legible, hence mono for every identifier. */
+          <p className="surface-sunken mt-6 rounded-md px-4 py-3 text-xs leading-relaxed text-ink-muted">
             Auth is not configured on this deployment. Set{" "}
-            <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-            <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to enable sign-in — see{" "}
-            <code className="font-mono">docs/auth.md</code>.
+            <code className="font-mono text-ink">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+            <code className="font-mono text-ink">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to enable
+            sign-in — see <code className="font-mono text-ink">docs/auth.md</code>.
           </p>
         ) : status === "sent" ? (
-          <p
-            role="status"
-            className="mt-6 rounded-lg border border-teal/25 bg-teal/8 px-4 py-3 text-sm text-teal"
-          >
-            Check your inbox — we sent a magic link to <strong>{email}</strong>.
+          <p role="status" className="surface-sunken mt-6 rounded-md px-4 py-3 text-sm text-ink">
+            Check your inbox — we sent a magic link to{" "}
+            <strong className="font-mono font-semibold">{email}</strong>.
           </p>
         ) : (
           <>
             <form onSubmit={sendMagicLink} className="mt-6 flex flex-col gap-3">
-              <label
-                htmlFor="email"
-                className="text-2xs uppercase tracking-widest text-subtle-foreground"
-              >
+              <label htmlFor="email" className="text-2xs text-ink-faint">
                 Email
               </label>
               <input
@@ -104,13 +103,10 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="glass h-10 rounded-lg px-3 text-sm outline-none placeholder:text-subtle-foreground"
+                className="h-11 rounded-md border border-border bg-surface px-3 text-sm text-ink outline-none placeholder:text-ink-faint md:h-10"
               />
-              <Button
-                type="submit"
-                disabled={status === "sending"}
-                className="bg-gradient-accent border-0 text-[#06231f]"
-              >
+              {/* The one oxblood fill on the page. */}
+              <Button type="submit" disabled={status === "sending"}>
                 {status === "sending" ? (
                   <Loader2 className="animate-spin" aria-hidden />
                 ) : (
@@ -120,14 +116,14 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="my-5 flex items-center gap-3 text-2xs uppercase tracking-widest text-subtle-foreground">
-              <span className="h-px flex-1 bg-white/10" /> or{" "}
-              <span className="h-px flex-1 bg-white/10" />
+            <div className="my-5 flex items-center gap-3 text-2xs text-ink-faint">
+              <span className="h-px flex-1 bg-border" /> or{" "}
+              <span className="h-px flex-1 bg-border" />
             </div>
 
             <Button
               variant="outline"
-              className="glass w-full border-white/10"
+              className="w-full cursor-pointer"
               onClick={() => void signInWithGithub()}
             >
               <KeyRound aria-hidden /> Continue with GitHub
@@ -135,10 +131,15 @@ export default function LoginPage() {
           </>
         )}
 
-        {message ? <p className="mt-4 text-xs text-sell">{message}</p> : null}
+        {/* The provider's own words, stated plainly. A red panel would shout
+            about something the reader usually just needs to re-read. */}
+        {message ? <p className="mt-4 text-xs text-accent-ink">{message}</p> : null}
 
-        <p className="mt-6 text-xs text-subtle-foreground">
-          <Link href="/" className="underline underline-offset-4 hover:text-foreground">
+        <p className="mt-6 text-xs text-ink-faint">
+          <Link
+            href="/"
+            className="inline-flex min-h-11 cursor-pointer items-center underline decoration-border underline-offset-4 transition-colors hover:text-ink hover:decoration-ink md:min-h-0"
+          >
             Back to InsiderFlow
           </Link>
         </p>

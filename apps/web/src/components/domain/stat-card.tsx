@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { motion, useInView, useReducedMotion, useSpring, useTransform } from "motion/react";
+import { useEffect, useRef } from "react";
 
 import { formatCompact } from "@/lib/format";
+import { springs } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,45 +21,55 @@ const FORMAT_PRESETS = {
 export type StatFormatPreset = keyof typeof FORMAT_PRESETS;
 
 /**
- * Count-up on rAF with an ease-out curve. Deliberately dependency-free —
- * pulling the motion runtime in for a number tween would cost more than
- * the effect is worth. Renders the final value immediately when the user
- * prefers reduced motion.
+ * Spring count-up, started when the card scrolls into view.
+ *
+ * A spring rather than a fixed-duration tween: two counters showing very
+ * different magnitudes settle together instead of one racing ahead, which
+ * is what makes a row of them read as a single instrument panel.
+ *
+ * Two deliberate refusals to animate:
+ *
+ *  1. The server renders the *real* figure, not a placeholder zero. This
+ *     is a product about honest numbers; shipping HTML that says 0 and
+ *     corrects itself once JavaScript arrives is the wrong default, and
+ *     it would make the largest text on the page a lie until hydration.
+ *  2. If the card is already on screen when it mounts, it stays at its
+ *     final value. Resetting a number the reader is currently looking at
+ *     back to zero so it can climb again is a magic trick, not feedback.
+ *
+ * Reduced motion skips the tick entirely.
  */
-function CountUp({ value, format }: { value: number; format: (n: number) => string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [reduced] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
+function CountUp({
+  value,
+  format,
+  inView,
+}: {
+  value: number;
+  format: (n: number) => string;
+  inView: boolean;
+}) {
+  const reduced = useReducedMotion();
+  const spring = useSpring(value, springs.counter);
+  const text = useTransform(spring, (n) => format(n));
+  /** Null until we know whether the card started off screen. */
+  const armed = useRef<boolean | null>(null);
 
   useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
     if (reduced) {
-      node.textContent = format(value);
+      spring.jump(value);
       return;
     }
-    const duration = 1100;
-    const start = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / duration);
-      // easeOutExpo — fast start, gentle settle
-      const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-      node.textContent = format(value * eased);
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [value, format, reduced]);
+    if (armed.current === null) {
+      // First effect after mount: only arm the tick if the reader has
+      // not seen this number yet.
+      armed.current = !inView;
+      if (armed.current) spring.jump(0);
+      else return;
+    }
+    if (inView) spring.set(value);
+  }, [spring, value, inView, reduced]);
 
-  return (
-    <span ref={ref} className="tnum">
-      {format(reduced ? value : 0)}
-    </span>
-  );
+  return <motion.span className="num">{text}</motion.span>;
 }
 
 export function StatCard({
@@ -80,21 +92,42 @@ export function StatCard({
   className?: string;
 }) {
   const formatFn = format ?? FORMAT_PRESETS[preset];
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, amount: 0.4 });
+
   return (
     <div
+      ref={ref}
+      // A hook for the e2e suite, which used to find this card with
+      // `div.surface` filtered by its label — a Tailwind-era styling class
+      // standing in for "a stat card", which would have gone silently
+      // wrong the day `surface` was renamed or applied to something else.
+      data-testid="stat-card"
       className={cn(
-        "glass rounded-xl p-4 transition-transform duration-200 hover:-translate-y-0.5",
-        accent && "border-gradient",
+        // `h-full flex-col`: in a row of three the card fills its grid
+        // track, so three figures of different lengths sit in three boxes
+        // of one height instead of a stepped row that reads as an
+        // accident. The hint is pushed to the bottom rather than trailing
+        // the figure, which keeps the FIGURES on one baseline whether or
+        // not a card carries one.
+        "surface flex h-full flex-col rounded-lg p-4",
+        // The accent card is the one figure on the page that matters
+        // most; it earns a 2px oxblood rule down its left edge.
+        accent && "rail",
         className,
       )}
     >
-      <p className="text-2xs font-medium uppercase tracking-widest text-muted-foreground">
-        {label}
+      <p className="min-h-4 text-2xs font-medium text-ink-muted">{label}</p>
+      <p
+        data-stat-value
+        className={cn(
+          "mt-2 text-xl font-semibold tracking-tight tabular-nums",
+          accent ? "text-accent-ink" : "text-ink",
+        )}
+      >
+        <CountUp value={value} format={formatFn} inView={inView} />
       </p>
-      <p className={cn("mt-1.5 text-2xl font-semibold", accent && "text-gradient")}>
-        <CountUp value={value} format={formatFn} />
-      </p>
-      {hint ? <p className="mt-1 text-xs text-subtle-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-auto pt-2 text-2xs text-ink-faint">{hint}</p> : null}
     </div>
   );
 }

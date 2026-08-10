@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AccessBanner } from "@/components/access/access-banner";
 import { FilterBar } from "@/components/feed/filter-bar";
 import { ScreenerResults } from "@/components/screener/screener-results";
 import { queryTrades } from "@/lib/api/queries";
@@ -39,15 +40,20 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
 
   return (
     <div className="flex flex-col gap-6 pb-24">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Screener</h1>
-        <p className="text-sm text-muted-foreground">
+      <header className="rail-bleed flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Screener</h1>
+        <p className="max-w-[68ch] text-sm text-ink-muted">
           Slice the tape. Every screen is a shareable URL
           {presetName ? "" : " — or start from a preset"}.
         </p>
       </header>
 
-      <nav aria-label="Screen presets" className="flex flex-wrap gap-2">
+      <AccessBanner signedIn={Boolean(user)} />
+
+      {/* Pill-shaped because they are interactive; the active one is marked
+          by weight and ground, not by colour. Seven oxblood chips would
+          spend the page's one accent seven times over. */}
+      <nav aria-label="Screen presets" className="flex flex-wrap gap-1.5">
         {Object.entries(SCREENER_PRESETS).map(([name, def]) => (
           <Link
             key={name}
@@ -55,10 +61,10 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
             title={def.description}
             aria-current={presetName === name ? "page" : undefined}
             className={cn(
-              "h-8 rounded-lg px-3 text-xs leading-8 transition-colors",
+              "inline-flex h-11 cursor-pointer items-center rounded-full border px-3.5 text-xs transition-colors md:h-8 md:px-3",
               presetName === name
-                ? "bg-gradient-accent font-medium text-[#06231f]"
-                : "glass text-muted-foreground hover:text-foreground",
+                ? "border-border bg-fill font-semibold text-ink"
+                : "border-transparent text-ink-muted hover:bg-fill hover:text-ink",
             )}
           >
             {name}
@@ -79,7 +85,7 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
           canSaveAlert={Boolean(user)}
         />
       ) : (
-        <p className="glass rounded-lg px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="surface rounded-lg px-4 py-10 text-center text-sm text-ink-muted">
           The screener is unavailable right now — try again shortly.
         </p>
       )}

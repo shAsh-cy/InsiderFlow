@@ -1,9 +1,17 @@
 "use client";
 
 /**
- * MSPR insider-sentiment sparkline: single 2px series (no legend — the
- * title names it), zero reference line, crosshair tooltip. #7C5CFF is
- * validated in-band against the dark surface.
+ * MSPR insider-sentiment sparkline: one 2px series against a zero rule,
+ * with a crosshair tooltip.
+ *
+ * No legend here, deliberately. The rule that colour may not carry meaning
+ * alone exists to keep two series apart; with a single series there is
+ * nothing to tell apart, and the panel heading plus the caption directly
+ * beneath already name it twice. A third label would be noise.
+ *
+ * The line takes `--series-3` rather than buy/sell: MSPR crosses zero, so
+ * no single hue could honestly stand for its polarity, and borrowing the
+ * buy colour would imply one.
  */
 import {
   Line,
@@ -17,7 +25,10 @@ import {
 
 import type { SentimentPoint } from "@/lib/api/queries";
 
-const LINE = "#7C5CFF";
+const LINE = "var(--series-3)";
+const RULE = "var(--border)";
+/** The active dot punches out of whatever paper it lands on. */
+const GROUND = "var(--surface)";
 
 function SparkTooltip({
   active,
@@ -29,9 +40,9 @@ function SparkTooltip({
   const point = payload?.[0]?.payload;
   if (!active || !point) return null;
   return (
-    <div className="glass-strong rounded-lg px-2.5 py-1.5 text-xs">
-      <span className="text-muted-foreground">{point.label}</span>{" "}
-      <span className="tnum font-medium text-foreground">
+    <div className="surface-raised rounded-md px-2.5 py-1.5 text-xs">
+      <span className="num text-ink-muted">{point.label}</span>{" "}
+      <span className="num font-medium text-ink">
         {point.mspr === null ? "—" : point.mspr.toFixed(1)}
       </span>
     </div>
@@ -49,15 +60,15 @@ export default function SentimentSpark({ points }: { points: SentimentPoint[] })
         <LineChart data={data} margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
           <XAxis dataKey="label" hide />
           <YAxis domain={[-100, 100]} hide />
-          <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
-          <Tooltip content={<SparkTooltip />} cursor={{ stroke: "rgba(255,255,255,0.2)" }} />
+          <ReferenceLine y={0} stroke={RULE} />
+          <Tooltip content={<SparkTooltip />} cursor={{ stroke: RULE }} />
           <Line
             type="monotone"
             dataKey="mspr"
             stroke={LINE}
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4, fill: LINE, stroke: "#101218", strokeWidth: 2 }}
+            activeDot={{ r: 4, fill: LINE, stroke: GROUND, strokeWidth: 2 }}
             connectNulls
           />
         </LineChart>

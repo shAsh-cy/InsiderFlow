@@ -229,6 +229,8 @@ The entire stack runs on free tiers — **no paid services required, no credit c
 
 **→ [docs/quickstart.md](docs/quickstart.md) walks the whole deploy, step by step.**
 
+⛔ The reference deployment is **paused before Part 2** — read [DEPLOYMENT_STATE.md](DEPLOYMENT_STATE.md) before running any deploy command.
+
 > ⚠️ Supabase pauses free projects after **7 idle days** (HTTP 540, manual restore).
 > `.github/workflows/keepalive.yml` prevents that and is the most load-bearing
 > workflow in the repo for a free deployment — do not disable it.
@@ -238,19 +240,21 @@ When each free tier stops being enough, what it costs, and what to do instead:
 
 ## Documentation
 
-| Doc                                     | What it covers                                                         |
-| --------------------------------------- | ---------------------------------------------------------------------- |
-| [quickstart.md](docs/quickstart.md)     | Run locally in one command; deploy free, step by step                  |
-| [architecture.md](docs/architecture.md) | How the pieces fit, and the invariants that hold it together           |
-| [adapters.md](docs/adapters.md)         | **How to add a market** — one adapter, no schema change                |
-| [api.md](docs/api.md)                   | API conventions, caching, and the null/range rules clients must handle |
-| [alerts.md](docs/alerts.md)             | Telegram bot setup, delivery contract, idempotency                     |
-| [auth.md](docs/auth.md)                 | Supabase Auth, RLS, and the dev/prod story                             |
-| [politicians.md](docs/politicians.md)   | STOCK Act data model and source provenance                             |
-| [SCALING.md](SCALING.md)                | Free-tier limits, upgrade triggers, monthly costs                      |
-| `/docs/methodology`                     | Every derived-analytics formula, published in full                     |
-| `/legal`                                | Data sources, licences, and the disclaimers that apply                 |
-| `/status`                               | Live ingestion lag and per-source freshness                            |
+| Doc                                           | What it covers                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| [quickstart.md](docs/quickstart.md)           | Run locally in one command; deploy free, step by step                  |
+| [architecture.md](docs/architecture.md)       | How the pieces fit, and the invariants that hold it together           |
+| [adapters.md](docs/adapters.md)               | **How to add a market** — one adapter, no schema change                |
+| [api.md](docs/api.md)                         | API conventions, caching, and the null/range rules clients must handle |
+| [alerts.md](docs/alerts.md)                   | Telegram bot setup, delivery contract, idempotency                     |
+| [auth.md](docs/auth.md)                       | Supabase Auth, RLS, and the dev/prod story                             |
+| [politicians.md](docs/politicians.md)         | STOCK Act data model and source provenance                             |
+| [design-language.md](docs/design-language.md) | **Ledger** — tokens, type, motion, and the data-colour rules           |
+| [SCALING.md](SCALING.md)                      | Free-tier limits, upgrade triggers, monthly costs                      |
+| `/docs/methodology`                           | Every derived-analytics formula, published in full                     |
+| `/design`                                     | The design system, rendered — every primitive with live data           |
+| `/legal`                                      | Data sources, licences, and the disclaimers that apply                 |
+| `/status`                                     | Live ingestion lag and per-source freshness                            |
 
 ## Legal / data-source notice
 

@@ -5,9 +5,12 @@
  * the one-click import of a signed-out watchlist.
  */
 import { BellRing, Loader2, Send, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/domain/empty-state";
 import { Button } from "@/components/ui/button";
 import { useWatchlist } from "@/hooks/use-watchlist";
 import { getLocalWatchlistStore } from "@/lib/watchlist/store";
@@ -34,6 +37,16 @@ export interface ChannelView {
   timezone: string;
 }
 
+/** Time and date inputs are figures, so they take the mono face like every
+ *  other figure in the product — a digit must not change width as it ticks. */
+const TIME_INPUT_CLASS =
+  "num h-8 cursor-pointer rounded-md border border-border bg-surface px-2 text-xs text-ink";
+
+/**
+ * A settings group: a titled sheet with its heading ruled off from its
+ * controls. The rule is the grouping — no tinted header bar, no shadow
+ * stack, just the hairline that separates a caption from its column.
+ */
 function Section({
   title,
   description,
@@ -44,17 +57,95 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={title} className="glass flex flex-col gap-4 rounded-xl p-5">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          {title}
-        </h2>
+    // `break-inside-avoid` + the bottom margin are what let the whole set
+    // flow into two columns at xl without a card ever being sawn in half at
+    // a column break. Both are inert outside a multi-column context.
+    <section aria-label={title} className="surface flex break-inside-avoid flex-col rounded-lg">
+      <div className="border-b border-border px-5 py-4">
+        <h2 className="text-2xs font-semibold text-ink-muted">{title}</h2>
         {description ? (
-          <p className="mt-1 text-xs leading-relaxed text-subtle-foreground">{description}</p>
+          <p className="mt-1.5 max-w-[68ch] text-xs leading-relaxed text-ink-faint">
+            {description}
+          </p>
         ) : null}
       </div>
-      {children}
+      <div className="px-5 py-2">{children}</div>
     </section>
+  );
+}
+
+/**
+ * One setting: its name on the left, its control on the right.
+ *
+ * A definition grid rather than a flex row per setting. Flex rows put
+ * every control wherever its own label happened to end, so the digest
+ * time floated to the far right while the quiet-hours pair sat inline
+ * next to their words — three settings, three different left edges for
+ * the thing you actually operate. A shared column means you scan the
+ * names down one edge and the controls down another.
+ *
+ * `min-h-11` (44px) on every row: the same rhythm whether the control is
+ * a time input, a switch or a sentence, and comfortably past the 24px
+ * minimum target size in WCAG 2.2 §2.5.8.
+ *
+ * `<label>` when the row drives a single control and `<div role=group>`
+ * when it drives several, so a label never claims to name two inputs.
+ */
+function Field({
+  label,
+  hint,
+  htmlFor,
+  children,
+  asGroup = false,
+}: {
+  label: React.ReactNode;
+  hint?: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+  asGroup?: boolean;
+}) {
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-2.5 text-sm text-ink">
+        {label}
+        {hint ? <span className="text-2xs text-ink-faint">{hint}</span> : null}
+      </span>
+      <span className="flex min-w-0 flex-wrap items-center gap-2.5">{children}</span>
+    </>
+  );
+  const className =
+    "grid min-h-11 grid-cols-1 items-center gap-x-4 gap-y-1.5 border-b border-border py-2.5 last:border-b-0 sm:grid-cols-[minmax(7rem,12rem)_1fr]";
+
+  return asGroup ? (
+    <div
+      role="group"
+      aria-label={typeof label === "string" ? label : undefined}
+      className={className}
+    >
+      {body}
+    </div>
+  ) : (
+    <label htmlFor={htmlFor} className={className}>
+      {body}
+    </label>
+  );
+}
+
+/**
+ * A linked / not-linked marker. Rectangular, because it is not clickable —
+ * the pill shape is reserved for things you can press. State is carried by
+ * ink weight plus the word itself, never by colour alone.
+ */
+function StateTag({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "rounded-sm border border-border px-1.5 py-0.5 text-2xs",
+        on ? "bg-fill font-semibold text-ink" : "text-ink-faint",
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -87,19 +178,16 @@ function ImportBanner() {
   return (
     <div
       data-testid="watchlist-import"
-      className="flex flex-wrap items-center gap-3 rounded-xl border border-teal/25 bg-teal/8 px-4 py-3"
+      className="surface-sunken flex flex-wrap items-center gap-3 rounded-lg px-4 py-3"
     >
-      <Upload className="size-4 text-teal" aria-hidden />
-      <p className="min-w-0 flex-1 text-sm text-teal">
-        You have {pending} watchlist {pending === 1 ? "item" : "items"} saved in this browser.
-        Import them into your account?
+      <Upload className="size-4 shrink-0 text-ink-muted" aria-hidden />
+      <p className="min-w-0 flex-1 text-sm text-ink">
+        You have <span className="num">{pending}</span> watchlist {pending === 1 ? "item" : "items"}{" "}
+        saved in this browser. Import them into your account?
       </p>
-      <Button
-        size="sm"
-        onClick={() => void runImport()}
-        disabled={busy}
-        className="bg-gradient-accent border-0 text-[#06231f]"
-      >
+      {/* The single accent on this screen: a one-time offer that disappears
+          once taken, so nothing else on the page has to compete with it. */}
+      <Button size="sm" onClick={() => void runImport()} disabled={busy}>
         {busy ? <Loader2 className="animate-spin" aria-hidden /> : null} Import
       </Button>
       <Button size="sm" variant="ghost" onClick={() => setDone(true)}>
@@ -120,6 +208,7 @@ export function SettingsClient({
   const [channels, setChannels] = useState(initialChannels);
   const [linking, setLinking] = useState(false);
   const { items: watchlist } = useWatchlist();
+  const t = useTranslations("access");
 
   const telegram = channels.find((c) => c.channel === "telegram");
   const email = channels.find((c) => c.channel === "email");
@@ -169,31 +258,49 @@ export function SettingsClient({
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <ImportBanner />
 
-      <Section
-        title="Alert channels"
-        description="Telegram is the primary channel — free, unlimited, and real-time. Email is reserved for digests and rules that explicitly opt into instant delivery."
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-white/8 px-4 py-3">
-            <Send className="size-4 text-teal" aria-hidden />
-            <span className="text-sm">Telegram</span>
-            <span
-              className={cn(
-                "text-2xs rounded-full px-2 py-0.5 ring-1 ring-inset",
-                telegram?.verified
-                  ? "bg-buy-soft text-buy ring-buy/30"
-                  : "bg-flat-soft text-flat ring-white/10",
-              )}
-            >
+      {/*
+       * Two columns of cards at xl, laid out with CSS multi-column rather
+       * than grid.
+       *
+       * Grid would align each pair to a shared row height, so the short
+       * "Quiet hours" card would sit beside the tall "Alert rules" list
+       * with a hundred-odd pixels of nothing under it. Columns pack by
+       * height and — the part that matters — preserve DOM order, so the
+       * reading order and the tab order are still the order the brief
+       * specifies: channels → rules → quiet hours → watchlist → API.
+       *
+       * xl and not lg: each Field is a `minmax(7rem,12rem)_1fr` definition
+       * grid, and it needs ~440px to keep a name and its control on one
+       * line. Inside the sidebar shell, lg leaves 716px of content region —
+       * two columns of 346px, which would fold every control back under its
+       * own label and undo r3's Step 5. The split starts where the columns
+       * can be wide enough to be worth having.
+       */}
+      <div className="flex flex-col gap-6 xl:block xl:columns-2 xl:gap-x-6 xl:[&>section]:mb-6">
+        <Section
+          title="Alert channels"
+          description="Telegram is the primary channel — free, unlimited, and real-time. Email is reserved for digests and rules that explicitly opt into instant delivery."
+        >
+          {/* Ruled rows on a shared column, not boxed cards: two channels on
+            one sheet are a list, and a list is ruled, not framed. */}
+          <Field
+            asGroup
+            label={
+              <>
+                <Send className="size-4 shrink-0 text-ink-muted" aria-hidden />
+                Telegram
+              </>
+            }
+          >
+            <StateTag on={Boolean(telegram?.verified)}>
               {telegram?.verified ? "linked" : "not linked"}
-            </span>
+            </StateTag>
             <Button
               size="sm"
               variant="outline"
-              className="glass ml-auto border-white/10"
               onClick={() => void linkTelegram()}
               disabled={linking}
               data-testid="link-telegram"
@@ -201,150 +308,202 @@ export function SettingsClient({
               {linking ? <Loader2 className="animate-spin" aria-hidden /> : null}
               {telegram?.verified ? "Re-link" : "Link Telegram"}
             </Button>
-          </div>
+          </Field>
 
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-white/8 px-4 py-3">
-            <BellRing className="size-4 text-muted-foreground" aria-hidden />
-            <span className="text-sm">Email</span>
-            <span className="text-2xs truncate text-subtle-foreground">
+          <Field
+            asGroup
+            label={
+              <>
+                <BellRing className="size-4 shrink-0 text-ink-muted" aria-hidden />
+                Email
+              </>
+            }
+          >
+            <StateTag on={Boolean(email?.verified)}>
+              {email?.verified ? "subscribed" : "unsubscribed"}
+            </StateTag>
+            {/* An unset destination is an em dash, never a blank cell — the
+              same rule the tables follow. */}
+            <span className="min-w-0 truncate font-mono text-2xs text-ink-faint">
               {email?.destination ?? "—"}
             </span>
-            <span
-              className={cn(
-                "text-2xs rounded-full px-2 py-0.5 ring-1 ring-inset",
-                email?.verified
-                  ? "bg-buy-soft text-buy ring-buy/30"
-                  : "bg-flat-soft text-flat ring-white/10",
-              )}
-            >
-              {email?.verified ? "subscribed" : "unsubscribed"}
-            </span>
-            <label className="text-2xs ml-auto flex items-center gap-2 text-subtle-foreground">
-              Digest at
-              <input
-                type="time"
-                value={email?.digestHour ?? "08:00"}
-                onChange={(e) => void patchChannel("email", { digestHour: e.target.value })}
-                className="glass h-8 rounded-lg px-2 text-xs"
-                aria-label="Daily digest time"
-              />
-            </label>
-          </div>
-        </div>
-      </Section>
+          </Field>
 
-      <Section
-        title="Alert rules"
-        description="Saved screens and tracked tickers. Create one from the screener with “Save as alert”."
-      >
-        {rules.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No rules yet. Open the screener, build a screen, and hit “Save as alert”.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2" data-testid="alert-rules">
-            {rules.map((rule) => (
-              <li
-                key={rule.id}
-                className="flex flex-wrap items-center gap-3 rounded-lg border border-white/8 px-4 py-3"
-              >
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={rule.enabled}
-                  aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`}
-                  onClick={() => void patchRule(rule.id, { enabled: !rule.enabled })}
-                  className={cn(
-                    "h-5 w-9 shrink-0 rounded-full transition-colors",
-                    rule.enabled ? "bg-gradient-accent" : "bg-white/12",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "block size-4 rounded-full bg-white transition-transform",
-                      rule.enabled ? "translate-x-4" : "translate-x-0.5",
-                    )}
-                  />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{rule.name}</p>
-                  <p className="text-2xs text-subtle-foreground">
-                    {rule.trackedTicker ? `${rule.trackedTicker} · ` : ""}
-                    {rule.channels.join(", ")}
-                    {rule.quietHoursStart
-                      ? ` · quiet ${rule.quietHoursStart}–${rule.quietHoursEnd}`
-                      : ""}
-                  </p>
-                </div>
-                <select
-                  value={rule.mode}
-                  aria-label={`Delivery mode for ${rule.name}`}
-                  onChange={(e) =>
-                    void patchRule(rule.id, { mode: e.target.value as "instant" | "digest" })
-                  }
-                  className="glass h-8 rounded-lg px-2 text-xs [&>option]:bg-surface-2"
-                >
-                  <option value="instant">Instant</option>
-                  <option value="digest">Daily digest</option>
-                </select>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  aria-label={`Delete ${rule.name}`}
-                  onClick={() => void removeRule(rule.id)}
-                >
-                  <Trash2 className="size-3.5" aria-hidden />
+          {/* Its own row rather than a control floated to the right of the
+            Email line: the digest time is a setting, and it belongs on the
+            same column as every other control on this sheet. */}
+          <Field label="Daily digest" htmlFor="digest-hour" hint="email only">
+            <input
+              id="digest-hour"
+              type="time"
+              value={email?.digestHour ?? "08:00"}
+              onChange={(e) => void patchChannel("email", { digestHour: e.target.value })}
+              className={TIME_INPUT_CLASS}
+            />
+          </Field>
+        </Section>
+
+        <Section
+          title="Alert rules"
+          description="Saved screens and tracked tickers. Create one from the screener with “Save as alert”."
+        >
+          {rules.length === 0 ? (
+            <EmptyState
+              icon={BellRing}
+              tone="sunken"
+              title={t("alertsEmptyTitle")}
+              body={t("alertsEmptyBody")}
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/screener">Open the screener</Link>
                 </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+              }
+            />
+          ) : (
+            <ul className="flex flex-col" data-testid="alert-rules">
+              {rules.map((rule) => (
+                <li
+                  key={rule.id}
+                  // Same 44px rhythm as the definition rows in every other
+                  // section, so the sheet reads as one column of settings
+                  // rather than a form with a table dropped into the middle.
+                  className="flex min-h-11 flex-wrap items-center gap-3 border-b border-border py-2.5 last:border-b-0"
+                >
+                  {/* On is ink, off is a hairline ground. Oxblood is spent once
+                    per view and a column of rules would spend it every row. */}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={rule.enabled}
+                    aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`}
+                    onClick={() => void patchRule(rule.id, { enabled: !rule.enabled })}
+                    className={cn(
+                      "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
+                      rule.enabled ? "bg-ink" : "bg-border",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "block size-4 rounded-full bg-surface shadow-card transition-transform",
+                        rule.enabled ? "translate-x-4" : "translate-x-0.5",
+                      )}
+                    />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{rule.name}</p>
+                    <p className="text-2xs text-ink-faint">
+                      {rule.trackedTicker ? (
+                        <span className="num">{`${rule.trackedTicker} · `}</span>
+                      ) : (
+                        ""
+                      )}
+                      {rule.channels.join(", ")}
+                      {rule.quietHoursStart ? (
+                        <span className="num">{` · quiet ${rule.quietHoursStart}–${rule.quietHoursEnd}`}</span>
+                      ) : (
+                        ""
+                      )}
+                    </p>
+                  </div>
+                  <select
+                    value={rule.mode}
+                    aria-label={`Delivery mode for ${rule.name}`}
+                    onChange={(e) =>
+                      void patchRule(rule.id, { mode: e.target.value as "instant" | "digest" })
+                    }
+                    className="h-8 cursor-pointer rounded-md border border-border bg-surface px-2 text-xs text-ink transition-colors hover:bg-fill [&>option]:bg-surface"
+                  >
+                    <option value="instant">Instant</option>
+                    <option value="digest">Daily digest</option>
+                  </select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={`Delete ${rule.name}`}
+                    onClick={() => void removeRule(rule.id)}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
 
-      <Section
-        title="Quiet hours"
-        description="Instant alerts inside this window roll into the next digest instead of waking you."
-      >
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <label className="flex items-center gap-2">
-            From
+        <Section
+          title="Quiet hours"
+          description="Instant alerts inside this window roll into the next digest instead of waking you."
+        >
+          {/* Both times on one baseline, in one row, on the same column as
+            the digest time above — a window is one setting with two ends,
+            not two settings that happen to sit near each other. */}
+          <Field asGroup label="Window">
             <input
               type="time"
               defaultValue={rules[0]?.quietHoursStart ?? "22:00"}
               onChange={(e) =>
                 rules.forEach((r) => void patchRule(r.id, { quietHoursStart: e.target.value }))
               }
-              className="glass h-8 rounded-lg px-2"
+              className={TIME_INPUT_CLASS}
               aria-label="Quiet hours start"
             />
-          </label>
-          <label className="flex items-center gap-2">
-            to
+            <span className="text-xs text-ink-faint">to</span>
             <input
               type="time"
               defaultValue={rules[0]?.quietHoursEnd ?? "07:00"}
               onChange={(e) =>
                 rules.forEach((r) => void patchRule(r.id, { quietHoursEnd: e.target.value }))
               }
-              className="glass h-8 rounded-lg px-2"
+              className={TIME_INPUT_CLASS}
               aria-label="Quiet hours end"
             />
-          </label>
-          <span className="text-subtle-foreground">
-            Timezone: {telegram?.timezone ?? email?.timezone ?? "UTC"}
-          </span>
-        </div>
-      </Section>
+          </Field>
 
-      <Section
-        title="Watchlist"
-        description="Synced to your account and used by watchlist alert rules."
-      >
-        <p className="text-sm text-muted-foreground">
-          {watchlist.length} tracked {watchlist.length === 1 ? "item" : "items"}.
-        </p>
-      </Section>
+          <Field asGroup label="Timezone">
+            <span className="num text-xs text-ink-muted">
+              {telegram?.timezone ?? email?.timezone ?? "UTC"}
+            </span>
+          </Field>
+        </Section>
+
+        <Section
+          title="Watchlist"
+          description="Synced to your account and used by watchlist alert rules."
+        >
+          <Field asGroup label="Tracked">
+            <span className="text-sm text-ink-muted">
+              <span className="num text-ink">{watchlist.length}</span>{" "}
+              {watchlist.length === 1 ? "item" : "items"}
+            </span>
+          </Field>
+        </Section>
+
+        {/* An honest placeholder. The public API is already open and needs no
+          key; what does not exist yet is self-serve key issuance, so this
+          card says exactly that and offers no control that would pretend
+          otherwise. A disabled "Generate key" button here would be a
+          promise the backend cannot keep. */}
+        <Section
+          title="API"
+          description="The public API is already open — 60 requests/min per IP, no key required. A key only raises that ceiling."
+        >
+          <Field asGroup label="Personal keys">
+            <StateTag on={false}>not yet available</StateTag>
+            <span className="text-xs text-ink-muted">
+              Self-serve key issuance is not built. Until it is, higher limits are arranged by
+              opening an issue — see the{" "}
+              <Link
+                href="/docs"
+                className="text-accent-ink underline decoration-border underline-offset-4 transition-colors hover:decoration-current"
+              >
+                API docs
+              </Link>
+              .
+            </span>
+          </Field>
+        </Section>
+      </div>
     </div>
   );
 }

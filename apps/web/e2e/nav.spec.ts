@@ -1,0 +1,158 @@
+import { test, expect } from "@playwright/test";
+
+/**
+ * NAV TRUTH.
+ *
+ * The navigation makes two claims: "you are here" and "this is the
+ * product". Before r3 it made the first one nowhere and the second one in a
+ * way that looked like the first — a 4px accent rule beside the wordmark,
+ * identical to the sidebar's own current-page marker, which readers
+ * reasonably took for a highlight stuck on.
+ *
+ * These tests pin: exactly one current page, never the brand, and a
+ * visible focus ring on everything you can tab to up there.
+ */
+
+/** Routes that genuinely belong to a nav section. */
+const OWNED = ["/trades", "/screener", "/companies", "/leaderboard", "/politicians"];
+
+/** Routes that belong to no section — nothing may claim them. */
+const UNOWNED = ["/stock/ZZNOVA", "/settings"];
+
+test.describe("navigation state", () => {
+  test("exactly one nav item is current on each owned route", async ({ page }) => {
+    for (const route of OWNED) {
+      await page.goto(route);
+      const current = page.locator("nav [aria-current='page']");
+      await expect(current, `${route}: one current nav item`).toHaveCount(1);
+      // …and it is the one whose href is the route.
+      await expect(current).toHaveAttribute("href", route);
+    }
+  });
+
+  test("no nav item claims a route it does not own", async ({ page }) => {
+    for (const route of UNOWNED) {
+      await page.goto(route);
+      await expect(
+        page.locator("nav [aria-current='page']"),
+        `${route}: nothing in the index owns this page`,
+      ).toHaveCount(0);
+    }
+  });
+
+  test("reference pages highlight their own entries", async ({ page }) => {
+    for (const [route, href] of [
+      ["/design", "/design"],
+      ["/docs", "/docs"],
+      ["/docs/methodology", "/docs/methodology"],
+    ] as const) {
+      await page.goto(route);
+      const current = page.locator("nav [aria-current='page']");
+      await expect(current, `${route}: one current item`).toHaveCount(1);
+      await expect(current).toHaveAttribute("href", href);
+    }
+  });
+
+  test("the brand is never styled or marked as active", async ({ page }) => {
+    for (const route of ["/", "/trades", "/design", "/settings"]) {
+      await page.goto(route);
+      // EVERY mount, not one. r6 gave the brand a second home — the
+      // sidebar header on an app shell, with the masthead's copy kept for
+      // the phone where the sidebar is off-canvas — so a locator that
+      // assumed a single node would have stopped checking the one that is
+      // actually on screen. Each is measured; none may claim state.
+      const rules = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("[data-brand]")).map((el) => {
+          const s = getComputedStyle(el);
+          return {
+            where: el.closest("aside") ? "sidebar" : el.closest("header") ? "masthead" : "other",
+            current: el.getAttribute("aria-current"),
+            // It must not carry the marker the sidebar uses for state — a
+            // left accent rule beside a label is what made it read as
+            // active. Read inside the page rather than through an element
+            // handle: a handle captured before hydration can be detached by
+            // the time it is measured, and getComputedStyle on a detached
+            // node returns empty strings that fail for reasons that have
+            // nothing to do with borders.
+            rule: s.borderLeftStyle === "none" ? 0 : parseFloat(s.borderLeftWidth) || 0,
+          };
+        }),
+      );
+      expect(rules.length, `${route}: the brand must be in the DOM`).toBeGreaterThan(0);
+      for (const r of rules) {
+        expect(r.current, `${route}: the ${r.where} brand must not be current`).toBeNull();
+        expect(r.rule, `${route}: the ${r.where} brand must not carry a left rule`).toBe(0);
+      }
+    }
+  });
+
+  test("the top bar no longer duplicates the sidebar's reference section", async ({ page }) => {
+    await page.goto("/trades");
+    const header = page.getByRole("banner");
+    // Design and API docs live in the sidebar's Reference section, once.
+    await expect(header.getByRole("link", { name: /design/i })).toHaveCount(0);
+    await expect(header.getByRole("link", { name: /api docs/i })).toHaveCount(0);
+    // What the top bar keeps: search, language, theme, settings, sign-in.
+    await expect(header.getByRole("button", { name: /search/i })).toHaveCount(1);
+    await expect(header.getByRole("link", { name: "Settings" })).toHaveCount(1);
+  });
+
+  test("settings gets a real active state in the top bar", async ({ page }) => {
+    await page.goto("/trades");
+    await expect(page.getByRole("banner").locator("[aria-current='page']")).toHaveCount(0);
+
+    await page.goto("/settings");
+    const settings = page.getByRole("banner").locator("[aria-current='page']");
+    await expect(settings).toHaveCount(1);
+    await expect(settings).toHaveAttribute("href", "/settings");
+  });
+
+  test("every nav item shows a focus ring when tabbed to", async ({ page }) => {
+    // `networkidle`, and then focus is asserted to have LANDED before the
+    // outline is read. Hydration can replace a sidebar link between the
+    // locator resolving and `.focus()` running, and `getComputedStyle` on
+    // the node that lost the race reports `outline-style: none` — which
+    // reads as "this item has no focus ring" rather than as "the ring was
+    // measured on a node that is no longer in the document".
+    //
+    // Note also which assertion does the work: `outline-width` computes to
+    // 3px (the `medium` initial value) even when the style is `none`, so
+    // the width check passes trivially and the STYLE check is the real one.
+    await page.goto("/trades", { waitUntil: "networkidle" });
+    const items = page.getByTestId("sidebar").getByRole("link");
+    const count = await items.count();
+    expect(count).toBeGreaterThan(5);
+
+    for (let i = 0; i < count; i += 1) {
+      const item = items.nth(i);
+      await item.focus();
+      await expect(item).toBeFocused();
+      const outline = await item.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { width: parseFloat(s.outlineWidth), style: s.outlineStyle };
+      });
+      const label = await item.textContent();
+      expect(outline.style, `${label?.trim()} has no focus ring`).not.toBe("none");
+      expect(outline.width, `${label?.trim()} has a zero-width focus ring`).toBeGreaterThan(0);
+    }
+  });
+
+  test("the current sidebar item is marked by more than colour", async ({ page }) => {
+    await page.goto("/screener");
+    const current = page.getByTestId("sidebar").locator("nav [aria-current='page']");
+    const marks = await current.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        rule: parseFloat(s.borderLeftWidth),
+        weight: s.fontWeight,
+        ground: s.backgroundColor,
+      };
+    });
+    // A rule in the margin, heavier ink, and a tinted ground — so the state
+    // survives greyscale, and `aria-current` carries it to anyone not
+    // looking at the screen at all.
+    expect(marks.rule).toBeGreaterThan(0);
+    expect(Number(marks.weight)).toBeGreaterThanOrEqual(500);
+    expect(marks.ground).not.toBe("rgba(0, 0, 0, 0)");
+  });
+});

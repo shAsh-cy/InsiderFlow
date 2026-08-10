@@ -201,8 +201,27 @@ function writeStoredSession(stored: StoredSession): Array<{ name: string; value:
 function tamperSignature(jwt: string): string {
   const parts = jwt.split(".");
   const signature = parts[2] ?? "";
-  const last = signature.slice(-1);
-  return [parts[0], parts[1], signature.slice(0, -1) + (last === "A" ? "B" : "A")].join(".");
+
+  // Flip a bit in a middle BYTE, not a character at the end.
+  //
+  // This used to swap the final base64url character between "A" and "B".
+  // A 256-bit HMAC encodes to 43 base64url characters, and the last of
+  // those carries four significant bits plus two of padding — "A" and "B"
+  // differ only in a padding bit, so whenever the real signature happened
+  // to end in "A" the "tampered" token decoded to exactly the original
+  // bytes and authenticated correctly. That is ~1 run in 16, and it
+  // presented as a rare, alarming "the API accepted a forged token"
+  // failure that was really the test failing to forge one.
+  //
+  // Decoding to bytes and flipping one makes the change unambiguous, and
+  // the assertion below refuses to run at all if it somehow did not.
+  const bytes = Buffer.from(signature, "base64url");
+  const mid = Math.floor(bytes.length / 2);
+  bytes[mid] = (bytes[mid] ?? 0) ^ 0xff;
+  const tampered = bytes.toString("base64url");
+  if (tampered === signature) throw new Error("tamperSignature did not change the signature");
+
+  return [parts[0], parts[1], tampered].join(".");
 }
 
 /** A well-formed JWT for this user whose `exp` is an hour in the past. */
@@ -566,6 +585,15 @@ test.describe("cross-user isolation with real sessions", () => {
     ).toBe(200);
     await control.close();
 
+    // The refresh token is neutralised alongside the signature, for the same
+    // reason the expired-token test below does it: @supabase/ssr responds to a
+    // rejected access token by trying to REFRESH it, and a valid refresh token
+    // legitimately mints a new session — so the assertion below would
+    // sometimes be measuring a successful refresh rather than a rejected
+    // signature. It raced, and it failed roughly one run in twenty under
+    // parallel load, which is exactly what a test that occasionally measures
+    // the wrong thing looks like. Isolating the tampering is what makes the
+    // 401 mean "the signature was checked".
     const tampered = await browser.newContext({ baseURL });
     await tampered.addCookies(
       writeStoredSession({
@@ -573,6 +601,7 @@ test.describe("cross-user isolation with real sessions", () => {
         session: {
           ...stored!.session,
           access_token: tamperSignature(stored!.session.access_token),
+          refresh_token: "zz-not-a-refresh-token",
         },
       }).map((c) => ({ ...c, url: baseURL })),
     );

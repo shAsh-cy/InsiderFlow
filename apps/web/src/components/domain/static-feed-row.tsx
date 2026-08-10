@@ -1,7 +1,7 @@
 import type { TradeRow } from "@/lib/api/queries";
 import { cn } from "@/lib/utils";
 
-import { FEED_ROW_CLASS, FeedRowContent } from "./feed-row-content";
+import { FEED_ROW_CLASS, FeedRowContent, tapeRowProps } from "./feed-row-content";
 
 /**
  * Motion-free feed row: identical markup to LiveFeedRow, no animation
@@ -20,7 +20,7 @@ export function StaticFeedRow({
   style?: React.CSSProperties;
 }) {
   return (
-    <li className={cn(FEED_ROW_CLASS, className)} style={style}>
+    <li {...tapeRowProps(trade)} className={cn(FEED_ROW_CLASS, className)} style={style}>
       <FeedRowContent trade={trade} now={now} />
     </li>
   );
