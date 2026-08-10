@@ -603,6 +603,58 @@ aside.sticky > [data-sidebar-brand] {
   padding-inline: var(--shell-gutter);
 }
 
+/* ── The footer's ONE column system (r9) ───────────────────────────────
+   r8 gave the footer two grids: three equal tracks for the link index and
+   two for the fine print. Both were bounded by the shell and both used
+   `--band-gap`, so they looked like one system and were not — at 1920 the
+   index drew lines at 64 / 677 / 1291 while the second paragraph began at
+   984, which is a line nothing else in the footer uses. The band read as a
+   second, misaligned object stacked under the first.
+
+   So there is one template, declared once, and every band rides it. The
+   index puts one group in each track; the fine print puts its first
+   paragraph across the left two tracks and its second in the right one,
+   so BOTH paragraphs begin on a line the index also begins on. The meta
+   row spans the lot.
+
+   Text inside every cell stays left-aligned. Distributing COLUMNS is what
+   makes the middle group look centred; centring the text inside them is
+   what makes a link list look broken. */
+.footer-grid {
+  display: grid;
+  column-gap: var(--band-gap);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .footer-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Below the three-track breakpoint both paragraphs take the full row, so
+   the band stacks while the index is still folding 3 → 2. */
+.footer-span-lead,
+.footer-span-trail {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 768px) {
+  .footer-span-lead {
+    grid-column: 1 / span 2;
+  }
+
+  .footer-span-trail {
+    grid-column: 3 / span 1;
+  }
+}
+
 /* A band that sits outside the sidebar row — the footer — and still
    lands on the content region's left edge. Adds the sidebar back by
    hand because it has no sidebar of its own to sit beside. */

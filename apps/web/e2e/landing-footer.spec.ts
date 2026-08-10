@@ -32,16 +32,31 @@ import { test, expect } from "@playwright/test";
  *        against the left gutter, leaving most of a 1792px band empty.
  *        66ch was the right principle read off the wrong line: it is
  *        Bringhurst's figure for a SINGLE column, and he gives 40–50 for
- *        multi-column setting. So it is two 1fr tracks reaching both
- *        gutters, each paragraph at a multi-column measure inside its own
- *        track, stacking below 768. The brand column left the index — it
- *        repeated the masthead — and the mark is now a compact glyph in
- *        the meta row beside the version.
+ *        multi-column setting. So it became two tracks reaching both
+ *        gutters, each paragraph at a multi-column measure, stacking below
+ *        768. The brand column left the index — it repeated the masthead —
+ *        and the mark became a compact glyph in the meta row.
+ *   r9 — ONE COLUMN SYSTEM. r8 left the footer with two grids: three equal
+ *        tracks for the index and two for the fine print. Both were bounded
+ *        by the shell and both used `--band-gap`, so they LOOKED like one
+ *        system and were not. Measured at 1920, the index drew lines at
+ *        64 / 677 / 1291 while the second paragraph began at 984 — a line
+ *        nothing else in the footer used — so the band read as a second,
+ *        misaligned object stacked under the first. There is now one
+ *        `.footer-grid` template: the index puts one group per track, the
+ *        fine print puts its first paragraph across the left two and its
+ *        second in the right one, and the meta row spans the lot. Both
+ *        paragraphs now begin on a line the index begins on.
  *
- * What changed is the SHAPE of the band. What has not changed, and is
- * still asserted below: the disclaimer is in the footer and not the hero,
- * every link resolves, the source and licence are offered, and the build
- * string never invents a commit it does not have.
+ * What changed in r9 is which LINES the band is drawn on, not the measure
+ * or the size. Text stays left-aligned in every cell throughout: the
+ * distribution of COLUMNS is what makes the middle group read as centred,
+ * and centring the text inside them is what makes a link list look broken.
+ *
+ * What has not changed, and is still asserted below: the disclaimer is in
+ * the footer and not the hero, every link resolves, the source and licence
+ * are offered, and the build string never invents a commit it does not
+ * have.
  */
 
 test.describe("the landing footer", () => {
@@ -221,7 +236,7 @@ test.describe("the landing footer", () => {
 
   // AMENDED in r8 — see the lineage at the top of this file.
   for (const width of [1280, 1440, 1920]) {
-    test(`the fine print is two columns filling the shell at ${width}`, async ({ page }) => {
+    test(`the fine print rides the index's own column lines at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/");
       const measured = await page.evaluate(() => {
@@ -230,8 +245,14 @@ test.describe("the landing footer", () => {
         const s = getComputedStyle(el);
         const paras = Array.from(el.querySelectorAll("p")).map((p) => {
           const r = p.getBoundingClientRect();
-          const fs = parseFloat(getComputedStyle(p).fontSize);
-          return { x: r.x, right: r.right, width: r.width, fontSize: fs };
+          const cs = getComputedStyle(p);
+          return {
+            x: r.x,
+            right: r.right,
+            width: r.width,
+            fontSize: parseFloat(cs.fontSize),
+            align: cs.textAlign,
+          };
         });
         return {
           band: { x: band.x, right: band.right, width: band.width },
@@ -243,8 +264,41 @@ test.describe("the landing footer", () => {
         };
       });
 
-      // Two tracks, side by side, and the pair reaches both gutters.
-      expect(measured.tracks, "two columns").toBe(2);
+      // AMENDED in r9: the band no longer has a track count of its own. It
+      // is laid out by the SAME template as the index — asserted by string
+      // equality on the resolved template, which is the only way to catch
+      // two grids that agree today and drift tomorrow. r8 had three tracks
+      // above and two below, both bounded by the shell and both using
+      // `--band-gap`, which is precisely how they looked like one system
+      // while not being one.
+      const template = await page.evaluate(() => {
+        const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
+        const band = document.querySelector("[data-testid='footer-disclaimer']")!;
+        return {
+          index: getComputedStyle(grid).gridTemplateColumns,
+          band: getComputedStyle(band).gridTemplateColumns,
+          indexGap: getComputedStyle(grid).columnGap,
+          bandGap: getComputedStyle(band).columnGap,
+        };
+      });
+      const tracks = (value: string) => value.split(" ").map(parseFloat);
+      const bandTracks = tracks(template.band);
+      const indexTracks = tracks(template.index);
+      expect(bandTracks.length, `band ${template.band} vs index ${template.index}`).toBe(
+        indexTracks.length,
+      );
+      // Compared numerically within a pixel, not by string. Chrome hands the
+      // leftover sub-pixel to a different track when a grid has two spanning
+      // children instead of three plain ones — 428.531 against 428.547 at
+      // 1440 — and that is float distribution, not a second template.
+      for (const [i, t] of bandTracks.entries()) {
+        expect(
+          Math.abs(t - indexTracks[i]!),
+          `track ${i + 1}: band ${t}, index ${indexTracks[i]}`,
+        ).toBeLessThanOrEqual(1);
+      }
+      expect(template.bandGap, "one gap token for both bands").toBe(template.indexGap);
+      expect(measured.tracks, "three tracks, shared with the index").toBe(3);
       expect(measured.paras.length).toBe(2);
       expect(measured.paras[0]!.x, "first column starts at the band's edge").toBeCloseTo(
         measured.band.x,
@@ -259,6 +313,41 @@ test.describe("the landing footer", () => {
         measured.paras[1]!.x,
         `second column starts at ${Math.round(measured.paras[1]!.x)}, midpoint is ${Math.round(midpoint)}`,
       ).toBeGreaterThanOrEqual(midpoint - 1);
+
+      // THE r9 CLAIM. Both paragraphs begin on a line the INDEX above them
+      // also begins on. r8 put the second at the band's own midpoint —
+      // 984 at 1920, against index lines at 64 / 677 / 1291 — which is
+      // what made the footer read as two grids rather than one.
+      const lines = await page.evaluate(() => {
+        const grid = document.querySelector("[data-content-region] footer")!.firstElementChild!;
+        return Array.from(grid.children).map((c) => c.getBoundingClientRect().x);
+      });
+      for (const [i, p] of measured.paras.entries()) {
+        const shared = lines.some((line) => Math.abs(line - p.x) <= 1);
+        expect(
+          shared,
+          `paragraph ${i + 1} starts at ${Math.round(p.x)}; index lines are ${lines
+            .map((l) => Math.round(l))
+            .join(", ")}`,
+        ).toBe(true);
+      }
+      // Specifically: the first under the first column, the last under the
+      // last, so the band spans the same run of the shell the index does.
+      expect(
+        Math.abs(measured.paras[0]!.x - lines[0]!),
+        "first paragraph under column 1",
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(measured.paras[1]!.x - lines[lines.length - 1]!),
+        "second paragraph under the last column",
+      ).toBeLessThanOrEqual(1);
+
+      // Left-aligned, every one of them. Distributing columns is the whole
+      // mechanism; centring or right-aligning the text is what would make
+      // this read as broken.
+      for (const p of measured.paras) {
+        expect(p.align, "fine print is left-aligned").toMatch(/^(start|left)$/);
+      }
 
       // …and each column is still set to a MULTI-column measure. 50ch is
       // Bringhurst's upper bound for columns; 66ch is his single-column

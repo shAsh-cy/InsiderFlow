@@ -81,7 +81,8 @@ export async function LandingFooter() {
   return (
     <footer className="border-t border-border pt-10 pb-14">
       {/* ── The index ──────────────────────────────────────────────────
-          Three groups, evenly across the shell, 3 → 2 → 1.
+          Three groups, evenly across the shell, 3 → 2 → 1, on the shared
+          `.footer-grid` template every band in this footer rides.
 
           r7 gave the first column to the mark, the wordmark and a tagline.
           That was a third repetition of an identity the masthead is already
@@ -91,10 +92,7 @@ export async function LandingFooter() {
           what it cost was the three groups being squeezed into the
           remaining three quarters. The mark is still in the footer — it is
           in the meta row, at icon scale, where a compact mark belongs. */}
-      <div
-        style={{ columnGap: "var(--band-gap)" }}
-        className="grid gap-y-10 sm:grid-cols-2 md:grid-cols-3"
-      >
+      <div className="footer-grid gap-y-10">
         {groups.map((group) => (
           <nav key={group.label} aria-label={group.label} className="flex flex-col gap-3">
             {/* Uppercase in the SANS face, not mono: mono here is reserved
@@ -161,14 +159,20 @@ export async function LandingFooter() {
           substance rather than one wording. */}
       <div
         data-testid="footer-disclaimer"
-        style={{ columnGap: "var(--band-gap)" }}
-        className="mt-10 grid grid-cols-1 gap-y-3 border-t border-border pt-6 text-xs leading-normal text-ink-faint md:grid-cols-2"
+        className="footer-grid mt-10 gap-y-3 border-t border-border pt-6 text-xs leading-normal text-ink-faint"
       >
-        <p className="max-w-[50ch]">
+        {/* Left two tracks, so this paragraph opens on the same line as
+            Product above it. */}
+        <p className="footer-span-lead max-w-[50ch]">
           <strong className="font-semibold text-ink-muted">{t("disclaimerLead")}</strong>{" "}
           {t("disclaimerBody")}
         </p>
-        <p className="max-w-[50ch]">
+        {/* Right track, so this one opens on the same line as Reference.
+            r8 put it at the band's midpoint, which is a line no column in
+            the index uses — the whole of what made the footer read as two
+            objects. Its track reaches the far gutter; the 50ch cap is what
+            stops the text from following it there. */}
+        <p className="footer-span-trail max-w-[50ch]">
           <strong className="font-semibold text-ink-muted">{t("sourcesLead")}</strong>{" "}
           {t("sourcesBody")}
         </p>
