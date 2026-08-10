@@ -199,7 +199,12 @@ export async function LandingFooter() {
           build actually knew one — see lib/build-info. */}
       {/* Same rhythm as the band above it — `.footer-band` carries the rule
           and the spacing on both, so the two dividers cannot drift apart. */}
-      <div className="footer-band flex flex-wrap items-center gap-x-4 gap-y-2">
+      {/* Centred as ONE unit — r10. The mark and the version stay side by
+          side and the pair sits on the shell's centre line, at every width
+          including a phone. A closing signature belongs on the axis of the
+          thing it closes; flush left it read as the start of a fourth band
+          that never arrived. */}
+      <div className="footer-band flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
         {/* The mark at icon scale, not the masthead's box. Deliberately NOT
             a link and NOT `data-brand`: the masthead carries the one
             navigational brand on this page, and a second link home at the
