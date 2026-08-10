@@ -72,11 +72,23 @@ import {
  *        landing's 77/86/115 and the app shell's 32px step. And the
  *        masthead gains an always-present ground and hairline, so the brand
  *        no longer floats on the page at scrollTop=0.
+ *   r8 — THE BRAND ALIGNS TO THE OUTERMOST INK. r6 and r7 unified the
+ *        brand with the hero's TEXT edge, which was the right fix for what
+ *        was wrong then. But the hero's leftmost mark is not its H1 — it is
+ *        the 2px racing-green rule its `.rail-bleed` header hangs into the
+ *        gutter, 22px further left — so the bar jutted out past the logo
+ *        and the logo read as indented from the composition it leads. The
+ *        mark now hangs by exactly what the rail hangs by, read from the
+ *        same token. This is optical margin alignment: hanging punctuation
+ *        and hung bullets, Gutenberg through to InDesign's "Optical Margin
+ *        Alignment" — align to the optically outermost ink, not to the box
+ *        the text sits in.
  *
- * What changed is the NUMBER and where it comes from. The edges are still
- * unified, and there is still no separate brand edge and no brand pinned to
- * the bezel above inset content — those are the two failure modes this
- * project has already paid for twice, and the tests for them stay.
+ * What changed in r8 is WHICH element the brand keys to, not whether it
+ * keys to the composition at all. There is still no separate brand edge —
+ * the mark and the rail are one edge — and still no brand pinned to the
+ * bezel above inset content. Those are the two failure modes this project
+ * has already paid for twice, and the tests for them stay.
  */
 
 /** ±4px, as specified: sub-pixel layout rounding is not a design failure. */
@@ -155,6 +167,12 @@ interface Geometry {
   /** Where the brand is actually mounted and drawn. */
   brandHost: "masthead" | "sidebar" | "drawer" | "other" | "none";
   brandLeft: number | null;
+  /**
+   * The left edge of the composition's outermost ink: the 2px racing-green
+   * rule a `.rail-bleed` header hangs into the gutter. Null where the page
+   * opens with no rail.
+   */
+  accentBarLeft: number | null;
   /** The content region's BOX — its right edge is the far gutter. */
   regionLeft: number;
   regionRight: number;
@@ -186,6 +204,11 @@ async function readGeometry(page: Page): Promise<Geometry> {
     }
 
     const brand = Array.from(document.querySelectorAll("[data-brand]")).find(drawn) ?? null;
+    // The accent bar IS the rail's left border, so the rule's left edge is
+    // the rail element's border-box x.
+    const rail =
+      Array.from(document.querySelectorAll("[data-content-region] .rail-bleed")).find(drawn) ??
+      null;
     const brandHost = !brand
       ? "none"
       : brand.closest("header")
@@ -228,6 +251,7 @@ async function readGeometry(page: Page): Promise<Geometry> {
       sidebarRight: side ? side.getBoundingClientRect().right : null,
       brandHost,
       brandLeft: brand ? brand.getBoundingClientRect().x : null,
+      accentBarLeft: rail ? rail.getBoundingClientRect().x : null,
       regionLeft: rb.x,
       regionRight: rb.right,
       regionWidth: rb.width,
@@ -243,21 +267,44 @@ async function readGeometry(page: Page): Promise<Geometry> {
 
 test.describe("the landing: the masthead is the hero's own shell", () => {
   for (const width of [1280, 1440, 1920]) {
-    test(`the logo and the hero start on one x at ${width}`, async ({ page }) => {
+    test(`the logo stands on the hero's accent bar at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/");
       const g = await readGeometry(page);
 
-      // The reported bug, measured directly. Before r6 this was 53px at
-      // 1280, 62 at 1440 and 91 at 1920 — the brand pinned to the bezel
-      // while the hero started at the fluid shell's margin.
+      // AMENDED in r8 — see the lineage at the top of this file.
+      //
+      // r6 and r7 asserted brand.left === heroH1.left, and that was the
+      // right fix for what was wrong at the time: the brand had been pinned
+      // to the bezel while the hero started at the shell's margin, 53px
+      // apart at 1280 and 91 at 1920. But the hero's leftmost INK is not
+      // its H1 — it is the 2px racing-green rule the `.rail-bleed` header
+      // hangs into the gutter, 22px further left. Aligning the mark to the
+      // text box left that rule jutting out past the logo, and the logo
+      // read as indented from the composition it is supposed to lead.
+      //
+      // So: optical margin alignment. The same idea as hanging punctuation
+      // and hung bullets — Gutenberg's compositors hung hyphens past the
+      // measure, InDesign ships it as "Optical Margin Alignment" — align to
+      // the optically outermost ink, not to the box the text sits in.
       expect(g.brandHost, `the landing has no sidebar, so the brand is up top`).toBe("masthead");
+      expect(g.accentBarLeft, "the hero opens with a rail").not.toBeNull();
       const h1 = await page.locator("[data-content-region] h1:visible").first().boundingBox();
       expect(h1, "the hero heading has no box").not.toBeNull();
+
       expect(
-        Math.abs(g.brandLeft! - h1!.x),
-        `@${width}: logo at ${Math.round(g.brandLeft!)}, hero H1 at ${Math.round(h1!.x)}`,
+        Math.abs(g.brandLeft! - g.accentBarLeft!),
+        `@${width}: logo at ${Math.round(g.brandLeft!)}, accent bar at ${Math.round(g.accentBarLeft!)}`,
       ).toBeLessThanOrEqual(EXACT);
+
+      // …and the H1 stays where the rail puts it: inset by the rule's own
+      // 2px plus `--shell-rail-inset`. Asserted as a RANGE rather than a
+      // number, because it is the rail's geometry and not a value this test
+      // gets to choose — but it must stay a deliberate inset rather than
+      // collapsing onto the bar or drifting off into the column.
+      const inset = h1!.x - g.accentBarLeft!;
+      expect(inset, `@${width}: H1 is ${Math.round(inset)}px right of the bar`).toBeGreaterThan(16);
+      expect(inset, `@${width}: H1 is ${Math.round(inset)}px right of the bar`).toBeLessThan(28);
 
       // …and the other end of the same bar. `lg:pe-8` used to run the
       // controls 45–83px past the content's right edge, which is the same

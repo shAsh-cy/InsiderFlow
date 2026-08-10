@@ -517,6 +517,31 @@ body:has([data-app-shell]) [data-masthead] {
   body:has([data-app-shell]) [data-masthead] [data-brand] {
     display: none;
   }
+
+  /* ── r8: the mark aligns to the composition's OUTERMOST INK ──────────
+     Every standalone shell opens with a `.rail-bleed` header, whose 2px
+     racing-green border hangs into the gutter and is the leftmost mark on
+     the page. r6 and r7 aligned the masthead brand to the TEXT edge
+     instead, so the accent bar jutted out to the left of the logo and the
+     logo read as indented from a composition it was supposed to lead.
+
+     This is optical margin alignment, the same idea as hanging punctuation
+     and hung bullets — Gutenberg's compositors hung hyphens past the
+     measure, and InDesign ships it as "Optical Margin Alignment". You
+     align to the optically outermost ink, not to the box the text happens
+     to sit in. So the brand hangs by exactly what the rail hangs by:
+     `--shell-rail-inset` plus the rule's own 2px, the same expression
+     `.rail-bleed` uses, read from the same token so the two cannot drift.
+
+     Scoped to ≥1024 because that is where the brand LEADS the bar: below
+     it the drawer trigger comes first and the mark follows, so there is
+     nothing for the mark to be the outermost thing of. App shells are
+     excluded because their brand lives in the sidebar, aligned to the
+     eleven nav items beneath it — a different composition with a different
+     outermost element. */
+  body:not(:has([data-app-shell])) [data-masthead] [data-brand] {
+    margin-inline-start: calc(-1 * (var(--shell-rail-inset) + 2px));
+  }
 }
 
 /* ── The bar's two states ──────────────────────────────────────────────
