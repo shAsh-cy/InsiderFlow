@@ -435,6 +435,13 @@
      items beneath it stand on one line. Zero where there is no sidebar. */
   --shell-nav-inset: 0rem;
 
+  /* The gutter BETWEEN columns of a multi-column band, as opposed to
+     `--shell-gutter`, which is the distance from a band to the viewport.
+     Two different jobs, so two different tokens: the outer gutter is
+     pinned to its floor on a laptop, while a column gap wants to open in
+     proportion to the columns it is separating. */
+  --band-gap: clamp(1.5rem, 3vw, 3rem);
+
   /* ── The masthead's own surface ──────────────────────────────────────
      Both are derived from themed tokens rather than restated per theme.
      `.light` and `.dark` are declared on the SAME element as `:root`, so

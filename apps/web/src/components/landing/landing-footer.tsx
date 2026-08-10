@@ -139,35 +139,47 @@ export async function LandingFooter() {
       </div>
 
       {/* ── The fine print ─────────────────────────────────────────────
-          Full-width band, but the paragraphs are capped at 66ch. The
-          measure is the point: this is the only part of the footer read as
-          prose, and a 150-character line of legal text is a line nobody
-          finishes. The testid spans both paragraphs — `ship.spec` asserts
-          the substance rather than one wording. */}
+          TWO columns, one paragraph each, filling the shell.
+
+          r7 capped these at 66ch and left them stacked, which put the whole
+          band in a single column against the left gutter with the right
+          half of a 1792px band empty. 66ch was the right principle read off
+          the wrong line of Bringhurst: it is his figure for a SINGLE
+          column, and for multi-column setting he gives 40–50. So the
+          measure moves with the layout — two 1fr tracks that reach both
+          gutters, each paragraph set to a multi-column measure inside its
+          own track.
+
+          `text-xs` (12px) and not `text-2xs` (11px): reduced, but not below
+          the size Lighthouse's legible-font-size audit — and the reason
+          behind it — treats as readable. At 11px this band was enough of
+          the landing's text to take mobile best-practices from 100 to 96.
+          `leading-normal` is 1.5, which is the line-height fine print is
+          set at when anyone bothers to specify one.
+
+          The testid spans both paragraphs — `ship.spec` asserts the
+          substance rather than one wording. */}
       <div
         data-testid="footer-disclaimer"
-        // `text-xs` (12px) and not `text-2xs` (11px). Reduced, but not
-        // below the size Lighthouse's mobile legible-font-size audit — and
-        // the reason behind it — treat as readable: this band is several
-        // paragraphs long, so at 11px it was enough of the page's text to
-        // take the landing's best-practices score from 100 to 96.
-        className="mt-10 flex flex-col gap-3 border-t border-border pt-6 text-xs leading-relaxed text-ink-faint"
+        style={{ columnGap: "var(--band-gap)" }}
+        className="mt-10 grid grid-cols-1 gap-y-3 border-t border-border pt-6 text-xs leading-normal text-ink-faint md:grid-cols-2"
       >
-        <p className="max-w-[66ch]">
+        <p className="max-w-[50ch]">
           <strong className="font-semibold text-ink-muted">{t("disclaimerLead")}</strong>{" "}
           {t("disclaimerBody")}
         </p>
-        <p className="max-w-[66ch]">
+        <p className="max-w-[50ch]">
           <strong className="font-semibold text-ink-muted">{t("sourcesLead")}</strong>{" "}
           {t("sourcesBody")}
         </p>
       </div>
 
       {/* ── The build ──────────────────────────────────────────────────
-          Mono, because it is a version string and that is the one thing
-          mono is for here. It prints a commit only when the build actually
-          knew one — see lib/build-info. */}
-      <div className="mt-6 border-t border-border pt-4">
+          Its own row, spanning the shell. Mono, because it is a version
+          string and that is the one thing mono is for here, with tabular
+          figures from the `num` class. It prints a commit only when the
+          build actually knew one — see lib/build-info. */}
+      <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-4">
         <p data-testid="build-string" className="num text-2xs text-ink-faint">
           {buildString()}
           {" · AGPL-3.0"}
