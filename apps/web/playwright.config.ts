@@ -33,6 +33,11 @@ const MANAGED_PORT = 3100;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Pings Postgres before any project starts and aborts with a named
+  // failure if it is down, empty or stale. Without it those three states
+  // arrive as timeouts and freshness failures, which read as regressions
+  // in whatever was changed last — see the file for the two incidents.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
