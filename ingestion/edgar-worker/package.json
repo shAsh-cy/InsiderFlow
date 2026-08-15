@@ -30,10 +30,10 @@
     "@cloudflare/workers-types": "^5.20260730.1",
     "@electric-sql/pglite": "^0.3.0",
     "@types/node": "^22.15.0",
-    "drizzle-kit": "^0.31.0",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0",
-    "wrangler": "^4.20.0"
+    "wrangler": "^4.123.0"
   }
 }

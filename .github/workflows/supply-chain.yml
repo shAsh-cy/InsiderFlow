@@ -1,0 +1,120 @@
+name: Supply chain
+
+# OWASP 2025 A03 — software supply chain failures, community-ranked the
+# number one risk. The dependency tree is where a project like this one is
+# most likely to be compromised without anybody touching its source, and
+# it is the part that changes while nobody is looking. So it is checked on
+# every pull request AND on a schedule: a lockfile that was clean when it
+# merged is not clean forever, and nothing in a PR-only gate ever notices
+# an advisory published the week after.
+#
+# Three scanners, deliberately not one:
+#
+#   osv-scanner  reads the lockfile against OSV, which aggregates GHSA,
+#                the Go and Rust advisory DBs and others. It scans EVERY
+#                dependency, dev included.
+#   pnpm audit   reads the GitHub Advisory Database through npm's own
+#                endpoint. Run at both scopes on purpose — `--prod` is
+#                what ships, the unscoped run is what a contributor
+#                installs. During r12 the unscoped run and osv-scanner
+#                both found six dev-only advisories that `--prod` alone
+#                reported as clean.
+#   gitleaks     is a different question entirely: not "is a dependency
+#                vulnerable" but "did we commit a credential".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 04:17 UTC daily. Not on the hour: every scheduled workflow on GitHub
+    # fires at :00 and the queue is worst there.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  osv-scanner:
+    name: osv-scanner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # SARIF upload writes into the repository's code-scanning alerts, so
+      # a finding becomes a tracked alert with a history rather than a line
+      # in a log that scrolls away.
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan the lockfile
+        # Pinned to a tag rather than a moving major: a supply-chain gate
+        # that silently updates itself is the thing it exists to prevent.
+        uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
+        id: osv
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=sarif
+            --output=osv-results.sarif
+            --lockfile=pnpm-lock.yaml
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv-results.sarif
+          category: osv-scanner
+
+      # The upload must happen even when the scan finds something, so the
+      # alerts appear — and the job must still fail, or it is advisory.
+      - name: Fail if the scan found anything
+        if: steps.osv.outcome == 'failure'
+        run: |
+          echo "::error::osv-scanner found known vulnerabilities — see the Security tab."
+          exit 1
+
+  pnpm-audit:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Production first and separately, so a failure names which scope
+      # broke. A dev-only advisory is a different conversation from one in
+      # the shipped bundle, and a single combined run hides that.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=low
+
+      - name: Audit every dependency
+        run: pnpm audit --audit-level=low
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret that was committed and then "removed" in
+          # a later commit is still in the pack, still clonable, and still
+          # a live credential. Scanning only the tip finds nothing.
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml

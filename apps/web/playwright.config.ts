@@ -39,6 +39,32 @@ export default defineConfig({
   // in whatever was changed last — see the file for the two incidents.
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
+  /**
+   * CAPPED, because the default oversubscribes and the suite stops being
+   * trustworthy when it does.
+   *
+   * Playwright defaults to about one worker per two cores — 8 on this
+   * 16-core box. Measured there, `layout.spec.ts` failed 5 to 7 tests per
+   * run with a DIFFERENT set each time, every one of them `page.goto:
+   * Test timeout of 30000ms exceeded` rather than an assertion. The same
+   * file is 35/35 at two workers and 29/35 at eight, and the server is
+   * not the bottleneck: measured directly it answers /trades in 289ms
+   * serially and 379ms under eight concurrent requests, with 7 of 100
+   * Postgres connections in use. What saturates is the machine running
+   * eight Chromium instances that each load a full page of client JS
+   * while Docker and Postgres share the same cores.
+   *
+   * A suite that fails a different handful of tests every run is worse
+   * than a slow one: it teaches everyone to re-run rather than read, and
+   * the first real regression then arrives dressed as noise. Four is
+   * green and repeatable here — 266 expected, 0 unexpected, 0 flaky —
+   * and CI runners are 2-core, so they get two.
+   *
+   * A ceiling, not a target. The `perf` project still runs alone via
+   * `dependencies` because it measures the machine, and the serial
+   * `stream` project is unchanged; both are still needed.
+   */
+  workers: process.env.CI ? 2 : 4,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
