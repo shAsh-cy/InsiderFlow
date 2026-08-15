@@ -140,12 +140,26 @@ test("unsubscribe rejects an unknown token without leaking state", async ({ requ
   expect(await response.text()).toContain("Link not recognized");
 });
 
-test("the telegram webhook rejects unsigned traffic when a secret is set", async ({ request }) => {
+test("the telegram webhook rejects unsigned traffic", async ({ request }) => {
   const response = await request.post("/api/alerts/telegram", {
     data: { message: { text: "/start abc", chat: { id: 1 } } },
   });
-  // 403 when TELEGRAM_WEBHOOK_SECRET is configured; 200 (ignored) otherwise.
-  expect([200, 403]).toContain(response.status());
+  // AMENDED in r12, and worth reading as a warning rather than a tidy-up.
+  //
+  // This assertion used to be `expect([200, 403]).toContain(status)`, with
+  // a comment explaining that 200 meant "no secret configured, so the
+  // update is ignored". It was not ignored. With no secret configured the
+  // handler ran the update and called `completeTelegramLink`, which binds
+  // a Telegram chat to whichever account generated the token — so the one
+  // state this test explicitly permitted was the state in which anybody
+  // who found the URL could attach a stranger's alert stream to their own
+  // chat. A test that accepts both the safe and the unsafe outcome cannot
+  // fail, and this one did not, for eleven revisions.
+  //
+  // There is now one right answer in every deployment mode: unsigned
+  // traffic is 401. `telegram-webhook.spec.ts` covers the positive case
+  // and both modes in full.
+  expect(response.status(), "an unsigned update is refused in every mode").toBe(401);
 });
 
 /**

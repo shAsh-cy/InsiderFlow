@@ -111,5 +111,9 @@ export default function globalSetup(): void {
     );
   }
 
-  console.log(`e2e pre-flight ok — ${total} transactions, ${recent} within 24h`);
+  // stderr, NOT stdout. The JSON and JUnit reporters write their document
+  // to stdout, and anything else printed there lands inside it — this line
+  // on stdout turned `--reporter=json` into "Unexpected token 'e'" and
+  // would have broken any CI step that parses the run.
+  process.stderr.write(`e2e pre-flight ok — ${total} transactions, ${recent} within 24h\n`);
 }
