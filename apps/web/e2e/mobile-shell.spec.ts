@@ -141,11 +141,15 @@ test.describe("the condensed masthead @mobile", () => {
     await expectTarget(page.getByTestId("nav-drawer-trigger"), "menu");
     await expectTarget(page.getByTestId("open-palette"), "search");
     await expectTarget(page.getByTestId("shell-overflow"), "overflow menu");
+    // TIGHTENED in r12. This was wrapped in `if (count > 0)`, so a test
+    // named "every control in the bar is a 44px target" passed when the
+    // control was not in the bar at all — the one failure it most needed
+    // to catch. Signed out, the masthead always offers sign-in
+    // (`account-chip.spec.ts` asserts it visible), so its presence is a
+    // contract and the guard was hiding, not tolerating.
     const signIn = page.getByRole("banner").getByRole("link", { name: "Sign in", exact: true });
-    if ((await signIn.count()) > 0) {
-      const box = await signIn.boundingBox();
-      expect(Math.round(box!.height), "sign in height").toBeGreaterThanOrEqual(TARGET - 1);
-    }
+    await expect(signIn, "the signed-out masthead offers sign-in").toHaveCount(1);
+    await expectTarget(signIn, "sign in");
   });
 
   test("the brand keeps its accessible name with the wordmark hidden", async ({ page }) => {

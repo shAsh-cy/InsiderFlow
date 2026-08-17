@@ -81,10 +81,15 @@ test.describe("the Telegram webhook", () => {
   });
 
   test("refuses GET regardless of the header", async ({ request }) => {
-    // Only POST is exported. A 405 here is the framework refusing, which
-    // is fine — what must never happen is a 200.
+    // TIGHTENED in r12, by me, one task after I wrote the sweep that found
+    // this class. It read `expect([401, 405]).toContain(status)` with a
+    // comment reasoning that either would be acceptable. That is the exact
+    // shape being swept for: two permitted answers where the framework
+    // gives exactly one. Only POST is exported from this route, so Next
+    // answers 405 and there is nothing conditional about it — measured,
+    // then asserted.
     const res = await request.get(ENDPOINT, { headers: { [HEADER]: CONFIGURED_SECRET } });
-    expect([401, 405]).toContain(res.status());
+    expect(res.status(), "only POST is exported, so GET is 405").toBe(405);
   });
 
   test(`the matching case (mode: ${MODE || "undeclared"})`, async ({ request }) => {

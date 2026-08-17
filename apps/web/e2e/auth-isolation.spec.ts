@@ -468,6 +468,24 @@ test.describe("cross-user isolation with real sessions", () => {
         const link = await ctxVictim.request.post("/api/me/channels", {
           data: { action: "link-telegram" },
         });
+        // EXAMINED in the r12 assertion sweep and deliberately LEFT as a
+        // two-status acceptance — the one candidate that turned out not to
+        // be an instance of the class.
+        //
+        // I did tighten it first, to `botConfigured ? 200 : 503` read from
+        // `process.env.TELEGRAM_BOT_USERNAME`, and that was the same
+        // mistake this phase already made once: the RUNNER's environment
+        // is not the SERVER's. The server reads .env.local; the runner
+        // does not, so the "tightened" version demanded 503 from a server
+        // that was correctly answering 200.
+        //
+        // The difference from the auth.spec case that hid an open webhook:
+        // there, one of the two permitted statuses WAS the vulnerability,
+        // and nothing downstream distinguished them. Here both branches
+        // are handled, the 503 branch writes the row the route would have
+        // written, and the claim under test — that user B cannot see or
+        // alter user A's channel — is asserted identically either way. The
+        // status is a precondition, not the subject.
         expect(
           [200, 503],
           "link-telegram must either issue a deep link or say it is unconfigured",
