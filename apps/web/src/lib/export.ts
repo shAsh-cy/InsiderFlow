@@ -56,11 +56,49 @@ export function downloadBlob(content: BlobPart, filename: string, mime: string):
   URL.revokeObjectURL(url);
 }
 
-/** XLSX via lazy-loaded SheetJS — only ever downloaded on click. */
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/**
+ * One export cell.
+ *
+ * `null` stays `null`, which `write-excel-file` renders as an EMPTY cell.
+ * That is the same honesty rule the CSV path follows and the reason this
+ * function exists rather than a `String(value)`: a price that was not
+ * disclosed must not arrive in a spreadsheet as a 0 that AVERAGE() will
+ * happily fold into a mean.
+ */
+function toCell(value: string | number | boolean | null) {
+  if (value === null) return null;
+  if (typeof value === "number") return { value, type: Number as NumberConstructor };
+  if (typeof value === "boolean") return { value, type: Boolean as BooleanConstructor };
+  return { value, type: String as StringConstructor };
+}
+
+/**
+ * XLSX via a lazy-loaded writer — only ever downloaded on click.
+ *
+ * The writer is `write-excel-file` and not SheetJS. SheetJS's own advisory
+ * for CVE-2023-30533 says "workflows that do not read arbitrary files (for
+ * example, exporting data to spreadsheet files) are unaffected", so this
+ * path was never exposed to it — but the patched SheetJS build is only
+ * published to the vendor's own CDN and not to npm, and an off-registry
+ * tarball is invisible to `pnpm audit` and osv-scanner. Trading a
+ * reachable-by-nobody CVE for a permanent hole in the scanners is the
+ * wrong way round in a project whose supply chain is the thing being
+ * hardened. This library writes and cannot read, so the entire class of
+ * parser CVEs is absent rather than merely unreachable.
+ *
+ * The blob goes through `downloadBlob`, the same synthetic-anchor path the
+ * CSV export uses, rather than the library's own `toFile` — one download
+ * mechanism in this file, already covered by tests.
+ */
 export async function downloadXlsx(rows: ExportRow[], filename: string): Promise<void> {
-  const XLSX = await import("xlsx");
-  const sheet = XLSX.utils.json_to_sheet(rows);
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, "trades");
-  XLSX.writeFile(book, filename);
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+  const headers = Object.keys(rows[0] ?? {});
+  const data = [
+    headers.map((header) => ({ value: header, type: String as StringConstructor })),
+    ...rows.map((row) => headers.map((header) => toCell(row[header] ?? null))),
+  ];
+  const blob = await writeXlsxFile(data, { sheet: "trades" }).toBlob();
+  downloadBlob(blob, filename, XLSX_MIME);
 }

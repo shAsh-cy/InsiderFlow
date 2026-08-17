@@ -1,0 +1,66 @@
+# gitleaks configuration.
+#
+# `useDefault` keeps the upstream rule set — AWS keys, GitHub tokens,
+# private keys, Slack and Stripe credentials and the rest — and the rules
+# below are added on top for credentials specific to this project. Never
+# replace the defaults with a hand-written list: the value of a scanner is
+# the patterns nobody on this project thought to write down.
+
+title = "InsiderFlow"
+
+[extend]
+useDefault = true
+
+# ── 21st.dev API keys ─────────────────────────────────────────────────
+#
+# Not in the default set, because it is a small vendor. Present here
+# because this repository's UI work uses the 21st.dev CLI and the key is
+# exactly the shape that gets pasted into a config file "just to test it"
+# and then committed.
+[[rules]]
+id = "21st-dev-api-key"
+description = "21st.dev secret key"
+regex = '''21st_sk_[A-Za-z0-9]{32,}'''
+keywords = ["21st_sk_"]
+
+# ── Telegram bot tokens ───────────────────────────────────────────────
+#
+# `TELEGRAM_BOT_TOKEN` is full control of the bot — read every linked
+# chat, send as it, and re-point the webhook at an attacker's server. The
+# format is <numeric bot id>:<35 char secret>.
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram bot token"
+regex = '''[0-9]{8,10}:AA[A-Za-z0-9_-]{33}'''
+keywords = [":AA"]
+
+# ── Supabase service-role JWT ─────────────────────────────────────────
+#
+# The service-role key bypasses row-level security completely. It is a
+# JWT whose payload contains the role, so the encoded claim is the tell.
+[[rules]]
+id = "supabase-service-role-key"
+description = "Supabase service-role key"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+keywords = ["eyJ"]
+# The anon key is public by design — it is compiled into the client
+# bundle and RLS is what protects the data behind it. Flagging it would
+# train people to add allowlist entries, which is how the service-role
+# key eventually gets one too.
+[rules.allowlist]
+regexTarget = "match"
+regexes = ['''"role":\s*"anon"''', '''NEXT_PUBLIC_SUPABASE_ANON_KEY''']
+
+[allowlist]
+description = "Fixtures, decoys and documentation"
+paths = [
+  # CI plants a decoy secret to prove the image-secret gate can fail. The
+  # decoy is meant to be found by that gate, not by this one.
+  '''\.github/workflows/ci\.yml''',
+  # Lockfiles carry integrity hashes that look like high-entropy strings.
+  '''pnpm-lock\.yaml''',
+]
+regexes = [
+  # The literal used by the image-secret test, and only that literal.
+  '''ci-decoy-must-not-ship''',
+]
