@@ -36,7 +36,10 @@ jobs:
       # The project-specific gates. Each exists because something got past
       # the generic ones: a missing changelog section, a class selector
       # standing in for a component, and a status array that accepted the
-      # exploitable answer. None of them run unless CI runs them.
+      # exploitable answer. The fourth is the odd one out — it was added
+      # while the tree was already clean, to keep it that way: schemas are
+      # shared, handlers are not, and a new route is a one-file change that
+      # never opens schemas.ts. None of them run unless CI runs them.
       - name: Lint the changelog
         run: pnpm lint:changelog
 
@@ -45,6 +48,9 @@ jobs:
 
       - name: Lint e2e assertions
         run: pnpm lint:e2e-assertions
+
+      - name: Lint API input validation
+        run: pnpm lint:api-schemas
 
       - name: Format check
         run: pnpm format:check

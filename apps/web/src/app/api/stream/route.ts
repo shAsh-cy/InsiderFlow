@@ -31,6 +31,8 @@ import { checkRateLimit, rateLimitHeaders, rateLimitIdentity } from "@/lib/api/r
 import { STREAM_RETRY_AFTER_SECONDS, streamCapacity, streamLimiter } from "@/lib/api/stream-limits";
 import { serializeTrade } from "@/lib/api/queries";
 import type { TradeRow } from "@/lib/api/queries";
+import { parseCursor } from "@/lib/api/stream-cursor";
+import type { Cursor } from "@/lib/api/stream-cursor";
 import { getDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -40,20 +42,7 @@ const POLL_INTERVAL_MS = 2_500;
 const MAX_BATCH = 100;
 const RETRY_MS = 3_000;
 
-interface Cursor {
-  epochMs: number;
-  id: string;
-}
-
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
-
-function parseCursor(raw: string | null): Cursor | null {
-  if (!raw) return null;
-  const [ms, id] = raw.split(":");
-  const epochMs = Number(ms);
-  if (!Number.isFinite(epochMs) || !id || !/^[0-9a-f-]{36}$/i.test(id)) return null;
-  return { epochMs, id };
-}
 
 const eventId = (t: TradeRow): string => `${new Date(t.createdAt).getTime()}:${t.id}`;
 
