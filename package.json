@@ -32,7 +32,8 @@
     "backfill": "pnpm --filter @insiderflow/edgar-worker backfill",
     "india:ingest": "pnpm --filter @insiderflow/india-local ingest",
     "smoke:alert-insert": "node packages/db/scripts/smoke-alert-insert.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint:e2e-assertions": "node scripts/lint-e2e-assertions.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

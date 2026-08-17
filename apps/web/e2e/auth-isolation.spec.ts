@@ -468,6 +468,15 @@ test.describe("cross-user isolation with real sessions", () => {
         const link = await ctxVictim.request.post("/api/me/channels", {
           data: { action: "link-telegram" },
         });
+        // ── THE RULE, so nobody "tightens" this again ─────────────────
+        //
+        // A multi-status assertion is a BUG when one of the accepted
+        // answers IS the failure state and nothing downstream
+        // distinguishes them. It is LEGITIMATE when both branches are
+        // handled and the actual subject is asserted identically either
+        // way. `scripts/lint-e2e-assertions.mjs` enforces that: a status
+        // array in a spec must be listed there with a justification.
+        //
         // EXAMINED in the r12 assertion sweep and deliberately LEFT as a
         // two-status acceptance — the one candidate that turned out not to
         // be an instance of the class.
