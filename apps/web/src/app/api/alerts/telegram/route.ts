@@ -43,6 +43,26 @@ import { isAuthorizedTelegramUpdate } from "@/lib/security/telegram-webhook";
  * registers a webhook, so no legitimate inbound update exists there and
  * refusing every one of them is correct. Outbound sending does not pass
  * through this handler and is unaffected.
+ *
+ * ── NO ORIGIN/CSRF GATE HERE. THAT IS A DECISION ──────────────────────
+ *
+ * `/api/me/*` gained a same-origin allowlist (lib/security/csrf.ts).
+ * This route is EXEMPT, deliberately, and the exemption is not an
+ * oversight for someone to "fix" later.
+ *
+ * The reason is that CSRF is an attack on AMBIENT credentials — the
+ * browser attaching a cookie the user's page did not ask it to attach.
+ * There is no ambient credential here. This endpoint is machine-to-
+ * machine: Telegram's servers POST to it with an explicit secret header
+ * and no cookie, and a browser is never the caller. The header IS the
+ * authentication, compared in constant time above, and an attacker who
+ * does not hold it gets 401 whatever origin they claim.
+ *
+ * Applying the allowlist would therefore protect nothing and break the
+ * feature outright: Telegram sends no `Origin` and no `Referer`, and the
+ * allowlist refuses a request carrying neither. Every genuine update
+ * would become a 403. `e2e/csrf.spec.ts` asserts exactly that this did
+ * not happen — no Origin and no secret is still 401, not 403.
  */
 interface TelegramUpdate {
   message?: {

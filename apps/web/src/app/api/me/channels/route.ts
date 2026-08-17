@@ -4,6 +4,7 @@ import { z } from "zod";
 import { listChannels, startTelegramLink, updateChannelPrefs } from "@/lib/api/user-queries";
 import { getSessionUser } from "@/lib/auth/supabase-server";
 import { getDb } from "@/lib/db";
+import { refuseIfCrossOrigin } from "@/lib/security/csrf";
 
 const patchSchema = z.object({
   channel: z.enum(["telegram", "email", "webpush"]),
@@ -42,6 +43,11 @@ export async function GET(): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
+  // AFTER the 401, never before — see the note in lib/security/csrf.ts.
+  // This one mints a Telegram link token; a cross-origin page that could
+  // trigger it would be racing the victim for their own alert stream.
+  const refusal = refuseIfCrossOrigin(req);
+  if (refusal) return refusal;
   const body = (await req.json().catch(() => ({}))) as { action?: string };
   if (body.action !== "link-telegram") {
     return Response.json(
@@ -66,6 +72,8 @@ export async function POST(req: Request): Promise<Response> {
 export async function PATCH(req: Request): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
+  const refusal = refuseIfCrossOrigin(req);
+  if (refusal) return refusal;
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(

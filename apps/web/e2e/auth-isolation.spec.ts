@@ -1,8 +1,5 @@
-import { createServerClient } from "@supabase/ssr";
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, APIResponse, BrowserContext } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import type { APIRequestContext, APIResponse } from "@playwright/test";
 
 import {
   alertChannels,
@@ -13,6 +10,14 @@ import {
 } from "@insiderflow/db";
 
 import { psql } from "./fixtures";
+import {
+  APP_DATABASE_URL,
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL,
+  contextFor,
+  signUpAndCaptureCookies,
+} from "./session";
+import type { AuthedUser } from "./session";
 
 /**
  * Cross-user exploitation, with REAL sessions.
@@ -45,99 +50,13 @@ import { psql } from "./fixtures";
  */
 
 /**
- * Read the env the app itself uses; the Playwright process does not inherit it.
- *
- * Paths are resolved from process.cwd() (apps/web, where Playwright runs)
- * rather than from `import.meta` — the spec files are transpiled to CJS, where
- * `import.meta` is a syntax error and the whole file silently fails to load.
+ * The session-minting helpers moved to `./session` when `csrf.spec.ts`
+ * needed the same ones. `contextFor` there now also sets an `Origin`
+ * header, because Playwright's `APIRequestContext` sends none and a real
+ * browser always does on a mutation — see that file for the measurement.
+ * Nothing asserted below changed; the requests simply stopped being ones
+ * no browser could have made.
  */
-function readEnvFile(relativePath: string): Record<string, string> {
-  try {
-    const raw = readFileSync(resolve(process.cwd(), relativePath), "utf8");
-    const out: Record<string, string> = {};
-    for (const line of raw.split("\n")) {
-      const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
-      if (!match) continue;
-      out[match[1]!] = match[2]!.replace(/^["']|["']$/g, "");
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-const fileEnv = { ...readEnvFile("../../.env"), ...readEnvFile(".env.local") };
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? fileEnv.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? fileEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-
-/**
- * The RLS-bound role, not the admin connection. Defaults to the URI
- * `.env.example` ships and `docker compose` creates, so this runs against the
- * reference stack with no extra setup.
- */
-const APP_DATABASE_URL =
-  process.env.APP_DATABASE_URL ??
-  fileEnv.APP_DATABASE_URL ??
-  "postgres://insiderflow_app:insiderflow_local_dev@localhost:5433/insiderflow";
-
-interface AuthedUser {
-  id: string;
-  email: string;
-  /** Cookies in exactly the encoding @supabase/ssr writes, ready for the browser. */
-  cookies: Array<{ name: string; value: string }>;
-}
-
-/**
- * Sign a user up and capture the session as COOKIES.
- *
- * Deliberately not "call the API with a Bearer token": the app authenticates
- * from cookies via @supabase/ssr, so a bearer test would exercise a code path
- * that does not exist. Driving the same client with an in-memory jar produces
- * exactly the bytes the real browser would hold, without reverse-engineering
- * the cookie format.
- */
-async function signUpAndCaptureCookies(
-  email: string,
-  password: string,
-): Promise<AuthedUser | null> {
-  const jar = new Map<string, string>();
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll: () => [...jar].map(([name, value]) => ({ name, value })),
-      setAll: (cookies) => {
-        for (const { name, value } of cookies) {
-          if (value) jar.set(name, value);
-          else jar.delete(name);
-        }
-      },
-    },
-  });
-
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error || !data.session) {
-    // Either password sign-up is disabled, or confirmations are on and there
-    // is no session yet. Both are configuration, not a failing assertion.
-    return null;
-  }
-  return {
-    id: data.user!.id,
-    email,
-    cookies: [...jar].map(([name, value]) => ({ name, value })),
-  };
-}
-
-async function contextFor(
-  browser: import("@playwright/test").Browser,
-  user: AuthedUser,
-  baseURL: string,
-): Promise<BrowserContext> {
-  const context = await browser.newContext({ baseURL });
-  await context.addCookies(
-    user.cookies.map((c) => ({ name: c.name, value: c.value, url: baseURL })),
-  );
-  return context;
-}
 
 // ── Session cookie surgery ──────────────────────────────────────────────────
 //
@@ -585,6 +504,19 @@ test.describe("cross-user isolation with real sessions", () => {
   });
 
   // ── Token shapes, against every route ─────────────────────────────────────
+  //
+  // The three contexts below are built WITHOUT the `Origin` header
+  // `contextFor` adds, and deliberately so. Every assertion here is 401,
+  // and 401 is only the answer if the session check runs BEFORE the
+  // same-origin check on all seven mutating `/api/me/*` handlers —
+  // watchlist POST and DELETE, alert-rules POST, PATCH and DELETE,
+  // channels POST and PATCH, which is what ME_ROUTES enumerates. Reorder
+  // them and these turn 403 and this file goes red — a free guard on the
+  // ordering `src/lib/security/csrf.ts` argues for, paid for by nothing.
+  //
+  // `POST /auth/signout` is the eighth gated handler and is NOT in that
+  // list: it has no session check to sit behind, so it answers 403 to an
+  // anonymous cross-origin caller by design. `e2e/csrf.spec.ts` owns it.
 
   test("every /api/me route rejects an absent token", async ({ request }) => {
     for (const route of ME_ROUTES) {

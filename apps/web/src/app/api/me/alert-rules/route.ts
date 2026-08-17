@@ -10,6 +10,7 @@ import {
 import { getSessionUser } from "@/lib/auth/supabase-server";
 import { tradesQuerySchema } from "@/lib/api/schemas";
 import { getDb } from "@/lib/db";
+import { refuseIfCrossOrigin } from "@/lib/security/csrf";
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "expected HH:MM");
 
@@ -56,6 +57,10 @@ export async function GET(): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
+  // AFTER the 401, never before — see the note in lib/security/csrf.ts.
+  // A 403 to an anonymous caller would leak whether they hold a session.
+  const refusal = refuseIfCrossOrigin(req);
+  if (refusal) return refusal;
 
   const parsed = createSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -92,6 +97,8 @@ export async function POST(req: Request): Promise<Response> {
 export async function PATCH(req: Request): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
+  const refusal = refuseIfCrossOrigin(req);
+  if (refusal) return refusal;
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(
@@ -107,6 +114,8 @@ export async function PATCH(req: Request): Promise<Response> {
 export async function DELETE(req: Request): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
+  const refusal = refuseIfCrossOrigin(req);
+  if (refusal) return refusal;
   const id = new URL(req.url).searchParams.get("id");
   if (!id || !z.string().uuid().safeParse(id).success) {
     return Response.json(
