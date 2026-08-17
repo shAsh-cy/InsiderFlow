@@ -6,6 +6,7 @@
  * fixed window. In-memory is per serverless instance, so treat the public
  * limit as per-instance-approximate; Upstash makes it global.
  */
+import { checkOutboundUrl } from "@insiderflow/core";
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -49,15 +50,73 @@ function memoryLimiter(): MemoryRateLimiter {
   return globalStore.__insiderflowRateLimiter;
 }
 
+/**
+ * The limiter's own URL, checked once and remembered.
+ *
+ * ── WHY THE URL CHECK AND NOT THE GUARDED TRANSPORT ───────────────────
+ *
+ * `@insiderflow/core/ssrf-fetch` exists and does more than this: it pins
+ * the resolved address at connect time and re-judges every redirect. It
+ * is deliberately NOT used here, and the reason is the hot path. This
+ * function runs on every rate-limited API request, and swapping undici
+ * for a `node:https` request per call is a latency change to the busiest
+ * code in the app, made for a threat that is not the one this call has.
+ *
+ * What this call actually risks is an operator setting
+ * UPSTASH_REDIS_REST_URL to something wrong — `http://`, an address in
+ * the metadata range, a URL with credentials in it — and shipping a
+ * bearer token to it on every request. That is a URL-shaped problem and
+ * `checkOutboundUrl` is the URL-shaped answer. It runs once per process
+ * rather than once per request, so it costs nothing.
+ *
+ * The residual, stated: a host that passes the check and later resolves
+ * to a private address is not caught here. It would be caught by the
+ * guarded transport, and if this ever fetches something less hot than a
+ * counter, that is the upgrade.
+ */
+export function upstashPipelineEndpoint(url: string): { endpoint: string } | { reason: string } {
+  // The configured host is allowlisted, so the operator is agreeing with
+  // themselves — a list compiled into `core` cannot know a per-deployment
+  // Upstash hostname. Everything else `checkOutboundUrl` enforces still
+  // applies, and that is the part with teeth here.
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return { reason: "UPSTASH_REDIS_REST_URL is not a valid absolute URL" };
+  }
+  const decision = checkOutboundUrl(url, [host]);
+  if (!decision.allowed) return { reason: decision.reason };
+  return { endpoint: `${decision.url.origin}${decision.url.pathname.replace(/\/$/, "")}/pipeline` };
+}
+
+/** Checked once per process, not once per request. */
+let upstashEndpoint: string | null | undefined;
+function resolveUpstashEndpoint(url: string): string | null {
+  if (upstashEndpoint !== undefined) return upstashEndpoint;
+  const result = upstashPipelineEndpoint(url);
+  if ("reason" in result) {
+    // Once, not per request: a limiter that logs on every call during a
+    // misconfiguration is its own outage.
+    console.error(`rate limiter: refusing UPSTASH_REDIS_REST_URL — ${result.reason}`);
+    upstashEndpoint = null;
+    return null;
+  }
+  upstashEndpoint = result.endpoint;
+  return upstashEndpoint;
+}
+
 async function upstashHit(key: string, limit: number): Promise<RateLimitResult | null> {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
+  const endpoint = resolveUpstashEndpoint(url);
+  if (!endpoint) return null; // fail open on misconfiguration, as on outage
 
   const windowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
   const redisKey = `rl:${key}:${windowStart}`;
   try {
-    const response = await fetch(`${url}/pipeline`, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify([

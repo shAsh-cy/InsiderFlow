@@ -13,7 +13,7 @@ import {
   nsePledgeUrl,
   nseSastUrl,
 } from "@insiderflow/core";
-import type { FetchLike } from "@insiderflow/core";
+import { createGuardedFetch } from "@insiderflow/core/ssrf-fetch";
 import { createDbHandle } from "@insiderflow/db";
 import { makeFxRateLookup } from "@insiderflow/edgar-worker/enrich";
 import { createCachedFetch, jsonLogger, RateLimiter } from "@insiderflow/edgar-worker/http";
@@ -27,9 +27,31 @@ function argValue(name: string): string | undefined {
   return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
 }
 
+/**
+ * Every outbound request this CLI makes, through the guard.
+ *
+ * This process runs on somebody's home machine, on their home network, by
+ * design — the exchanges block datacenter IPs, which is the whole reason
+ * for the local runner. That makes it the process in this repo with the
+ * most interesting things reachable on a private address: a router
+ * admin page, a NAS, whatever else is on the LAN. The URLs it builds are
+ * compile-time constants from `@insiderflow/core` with date arguments, so
+ * nothing here is attacker-chosen today; the guard is what keeps that
+ * true if a host is ever made configurable, and what stops an NSE or BSE
+ * redirect from leaving the two domains it is supposed to stay on.
+ */
+const guardedFetch = createGuardedFetch({
+  allowedHosts: [
+    "api.bseindia.com",
+    "nsearchives.nseindia.com",
+    "www.bseindia.com",
+    "www.nseindia.com",
+  ],
+});
+
 /** Manual live smoke: prints row counts + first-row keys, writes NOTHING. */
 async function smoke(): Promise<void> {
-  const session = new NseSession();
+  const session = new NseSession(guardedFetch);
   const to = new Date().toISOString().slice(0, 10);
   const from = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
 
@@ -59,7 +81,7 @@ async function smoke(): Promise<void> {
     }
   }
   try {
-    const announcements = await fetchBseAnnouncements(fetch as FetchLike, new RateLimiter(500));
+    const announcements = await fetchBseAnnouncements(guardedFetch, new RateLimiter(500));
     jsonLogger("smoke_bse", {
       rows: announcements.length,
       firstRowKeys: announcements[0] ? Object.keys(announcements[0]).sort().slice(0, 12) : [],
@@ -101,8 +123,8 @@ async function main(): Promise<void> {
     const fxFetch = createCachedFetch({ db: handle.db, ttlSeconds: 7 * 86_400 });
     const stats = await runIndiaIngest({
       db: handle.db,
-      session: new NseSession(),
-      bseFetch: fetch as FetchLike,
+      session: new NseSession(guardedFetch),
+      bseFetch: guardedFetch,
       fxRateLookup: makeFxRateLookup(handle.db, fxFetch),
       days: argValue("days") ? Number(argValue("days")) : undefined,
       log: jsonLogger,
