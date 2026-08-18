@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * FAIL FAST WHEN THE DATABASE IS NOT THERE.
@@ -57,7 +59,92 @@ function abort(what: string, detail: string, remedy: string): never {
   );
 }
 
-export default function globalSetup(): void {
+/**
+ * IS THE SERVER WE ARE ABOUT TO REUSE THE ONE WE MEANT TO TEST?
+ *
+ * `webServer.reuseExistingServer` is what makes an iterative local run
+ * bearable, and it is also the third incident. A `next start` left over
+ * from an earlier session held port 3100 and Playwright reused it in
+ * silence, so 323 tests ran against a build that predated the branch by
+ * two commits. It reported 120 failures in specs the branch never
+ * touched — footer geometry, a treemap's ARIA role — which reads as a
+ * catastrophic regression and was a stale process.
+ *
+ * The config's own comment says "a stale one would be a silent lie", and
+ * guards only CI. This guards the case that actually happened.
+ *
+ * It fails in BOTH directions, which is the point: a stale server can
+ * invent failures, as it did, and it can just as easily hide real ones by
+ * serving code where the bug has not been written yet.
+ */
+async function assertServerMatchesBuild(port: number): Promise<void> {
+  const listening = await fetch(`http://localhost:${port}/api/health`, {
+    signal: AbortSignal.timeout(4000),
+  })
+    .then(() => true)
+    .catch(() => false);
+
+  // Nothing there: Playwright is about to build and start its own, which
+  // is the case this check has no opinion about.
+  if (!listening) return;
+
+  let buildId: string;
+  try {
+    buildId = readFileSync(join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim();
+  } catch {
+    abort(
+      "a server is already running, and there is no local build to compare it to",
+      `something is listening on ${port} but .next/BUILD_ID does not exist, so this run ` +
+        "would reuse a server whose provenance cannot be established.",
+      `stop it (the suite will then build its own), or run \`pnpm --filter @insiderflow/web exec next build\` first.`,
+    );
+  }
+
+  // Every build gets a fresh id, and its static assets are served under
+  // it. A server built from a different tree 404s on this path.
+  const response = await fetch(
+    `http://localhost:${port}/_next/static/${buildId}/_buildManifest.js`,
+    { signal: AbortSignal.timeout(4000) },
+  ).catch(() => null);
+
+  if (!response || !response.ok) {
+    abort(
+      "the server on this port is serving a DIFFERENT build",
+      `.next/BUILD_ID is ${buildId}, and the running server does not serve that build's assets ` +
+        `(${response ? `HTTP ${response.status}` : "request failed"}). Tests would run against ` +
+        "code that is not the code in this working tree.",
+      `stop the process holding port ${port} and re-run — Playwright will build and start its own. ` +
+        "On Windows: `netstat -ano | findstr :" +
+        port +
+        "` then `taskkill /PID <pid> /F`.",
+    );
+  }
+
+  // The build can also be older than the SOURCE, which the check above
+  // cannot see: both server and .next agree, and both predate an edit.
+  const newest = newestMtime(join(process.cwd(), "src"));
+  const builtAt = statSync(join(process.cwd(), ".next", "BUILD_ID")).mtimeMs;
+  if (newest > builtAt) {
+    abort(
+      "the running server is older than the source",
+      `a file under src/ was modified ${Math.round((newest - builtAt) / 1000)}s after the build ` +
+        "the reused server is serving. The edit under test is not in it.",
+      `stop the process holding port ${port} and re-run.`,
+    );
+  }
+}
+
+/** Newest mtime under a directory, in ms. */
+function newestMtime(dir: string): number {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    newest = Math.max(newest, entry.isDirectory() ? newestMtime(path) : statSync(path).mtimeMs);
+  }
+  return newest;
+}
+
+export default async function globalSetup(): Promise<void> {
   // 1. Is the database reachable at all?
   let now: string;
   try {
@@ -109,6 +196,14 @@ export default function globalSetup(): void {
         "the freshness specs assert a non-zero 'filings today' and will fail on data, not on code.",
       "`pnpm seed` (re-stamps arrivals across yesterday and today).",
     );
+  }
+
+  // 3. If a server is already up, is it OUR server? Only meaningful for
+  //    the managed port: PLAYWRIGHT_BASE_URL means the operator chose the
+  //    target deliberately and this check has no standing to second-guess
+  //    which build is running there.
+  if (!process.env.PLAYWRIGHT_BASE_URL) {
+    await assertServerMatchesBuild(3100);
   }
 
   // stderr, NOT stdout. The JSON and JUnit reporters write their document
