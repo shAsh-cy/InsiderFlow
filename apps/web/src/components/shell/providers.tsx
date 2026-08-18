@@ -22,7 +22,7 @@ const Toaster = dynamic(() => import("@/components/ui/sonner").then((m) => m.Toa
   ssr: false,
 });
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, nonce }: { children: React.ReactNode; nonce?: string }) {
   return (
     /*
      * Dark is the default, and it is not the OS's decision.
@@ -54,6 +54,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
       value={{ light: "light", dark: "dark" }}
       storageKey="insiderflow-theme"
       disableTransitionOnChange
+      /*
+       * The ONE script Next does not nonce for us.
+       *
+       * next-themes writes its own inline anti-flash script — the thing
+       * that sets the class on <html> before paint — and it is not a
+       * script Next emitted, so the framework's automatic nonce stamping
+       * does not reach it. Measured under report-only: 39 of 40 script
+       * tags on `/` carried the nonce and this was the fortieth.
+       *
+       * Under an enforced policy it is refused, and the failure is
+       * specifically the one this script exists to prevent: the page
+       * paints in the default theme and then snaps to the stored one
+       * after hydration. A visitor who chose light gets a dark flash on
+       * every navigation. Passing the nonce is the whole fix.
+       */
+      nonce={nonce}
     >
       <MotionConfig reducedMotion="user">
         <TooltipProvider delayDuration={150}>

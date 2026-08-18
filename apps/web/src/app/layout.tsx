@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { IBM_Plex_Mono, Onest } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
@@ -59,11 +60,17 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [user, locale, t] = await Promise.all([
+  const [user, locale, t, requestHeaders] = await Promise.all([
     getSessionUser(),
     getLocale(),
     getTranslations("nav"),
+    headers(),
   ]);
+  // Set by middleware.ts, and read here for the one inline script Next
+  // does not stamp itself — see the note at ThemeProvider. Absent on any
+  // response the CSP deliberately skips (prefetches, RSC payloads), where
+  // there is no document policy for it to match.
+  const nonce = requestHeaders.get("x-nonce") ?? undefined;
   const session = {
     userId: user?.id ?? null,
     email: user?.email ?? null,
@@ -88,7 +95,7 @@ export default async function RootLayout({
           {t("skipToContent")}
         </a>
         <NextIntlClientProvider>
-          <Providers>
+          <Providers nonce={nonce}>
             <SessionProvider session={session}>
               {/* Wraps the bar AND the page: a breadcrumb's entity name is
                   known only to the page that rendered it, and the bar that

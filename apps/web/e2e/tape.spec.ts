@@ -297,9 +297,20 @@ test.describe("the tape on a phone @mobile", () => {
     // hard to reach on a phone, it was absent from the page.
     const menu = row.getByTestId("row-menu");
     await expect(menu).toBeVisible();
-    const box = await menu.boundingBox();
-    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(43);
-    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(43);
+    // Polled, not read once. `toBeVisible` resolves as soon as the element
+    // has a box, which under load is before the row has finished settling
+    // — this read 42 in a loaded run and 44 in every isolated one, which
+    // is a measurement taken early, not a control that shrank. Same trap
+    // `mobile-shell.spec.ts` documents for the masthead targets.
+    await expect
+      .poll(
+        async () => {
+          const b = await menu.boundingBox();
+          return b ? Math.round(Math.min(b.width, b.height)) : -1;
+        },
+        { message: "the row menu never settled at a tappable size", timeout: 5000 },
+      )
+      .toBeGreaterThanOrEqual(43);
 
     await menu.tap();
     const content = page.getByTestId("row-menu-content");
