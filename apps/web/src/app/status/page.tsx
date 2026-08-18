@@ -152,19 +152,24 @@ export default async function StatusPage() {
             Measured from rows each source actually produced, not from a heartbeat — a job can run
             successfully and still deliver nothing.
           </p>
-          {report.sources.length === 0 ? (
-            <p className="surface rounded-lg px-4 py-8 text-center text-sm text-ink-muted">
-              No transactions ingested yet.
-            </p>
-          ) : (
-            <ul className="surface flex flex-col rounded-lg">
-              {report.sources.map((source) => (
-                <li
-                  key={source.source}
-                  className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-0"
-                >
+          {/*
+            Every DECLARED source is listed, including the ones producing
+            nothing. A source that has never delivered a row reads "never"
+            with the reason beside it — previously it was simply absent from
+            this list, which let a reader conclude EDGAR was all there is
+            rather than learn that two other sources exist and are off.
+          */}
+          <ul className="surface flex flex-col rounded-lg" data-testid="status-sources">
+            {report.sources.map((source) => (
+              <li
+                key={source.source}
+                data-testid={`status-source-${source.source}`}
+                data-posture={source.posture}
+                className="flex flex-col gap-1 border-b border-border px-4 py-3 last:border-0"
+              >
+                <div className="flex items-center gap-3">
                   <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                    {SOURCE_LABEL[source.source] ?? source.source}
+                    {SOURCE_LABEL[source.source] ?? source.label}
                   </span>
                   <span className="num text-2xs text-ink-faint">
                     {source.rows.toLocaleString("en-US")} rows
@@ -172,10 +177,42 @@ export default async function StatusPage() {
                   <span className="num w-20 text-right text-xs text-ink-muted">
                     {describeAge(source.ageSeconds)}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
+                </div>
+                {source.posture !== "live" || source.rows === 0 ? (
+                  <p className="max-w-[68ch] text-2xs leading-relaxed text-ink-faint">
+                    {source.note}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+
+          <PanelHeading id="readiness-heading">Before this is public</PanelHeading>
+          <p className="max-w-[68ch] text-2xs leading-relaxed text-ink-faint">
+            Steps a person has to perform, which no amount of correct code can complete. Listed here
+            rather than only in the deploy runbook because a checklist is read once and a status
+            page is read whenever something looks wrong.
+          </p>
+          <ul className="surface flex flex-col rounded-lg" data-testid="status-readiness">
+            {report.readiness.map((item) => (
+              <li
+                key={item.name}
+                data-testid={`status-readiness-${item.state}`}
+                className="flex flex-col gap-1 border-b border-border px-4 py-3 last:border-0"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1 text-sm text-ink">{item.name}</span>
+                  <span className="text-2xs uppercase tracking-widest text-ink-muted">
+                    {item.state}
+                  </span>
+                </div>
+                <p className="max-w-[68ch] text-2xs leading-relaxed text-ink-faint">
+                  {item.detail}
+                </p>
+                <p className="text-2xs text-ink-faint">{item.where}</p>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <section aria-labelledby="counts-heading" className="flex flex-col gap-3">
