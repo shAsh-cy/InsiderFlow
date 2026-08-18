@@ -36,6 +36,21 @@ export interface SyntheticCompany {
   insiderId: string;
 }
 
+/** A string literal, with embedded quotes doubled the way SQL wants them. */
+const quote = (s: string): string => `'${s.replaceAll("'", "''")}'`;
+
+/**
+ * A nullable numeric as a SQL literal.
+ *
+ * The whole point of the adversarial fixtures is that NULL and 0 are
+ * different facts, so this never coalesces one into the other: `null` is
+ * written as NULL, `0` is written as 0, and only `undefined` falls back.
+ */
+const numLit = (v: number | null | undefined, fallback: number | null = null): string => {
+  const value = v === undefined ? fallback : v;
+  return value === null ? "NULL" : String(value);
+};
+
 /** Bumped per call so two fixtures in one process can never draw the same. */
 let fixtureSeq = 0;
 
@@ -56,7 +71,14 @@ let fixtureSeq = 0;
  * so a longer fixture name resolves to a company that does not exist and
  * the page 404s for reasons that have nothing to do with the test.
  */
-export function createSyntheticCompany(prefix = "ZZTEST"): SyntheticCompany {
+export function createSyntheticCompany(
+  prefix = "ZZTEST",
+  options: { country?: string } = {},
+): SyntheticCompany {
+  // The stock page branches on country for the whole India disclosure block,
+  // so a fixture that needs those panels has to be an Indian company rather
+  // than a US one with Indian-looking rows attached.
+  const country = options.country ?? "US";
   const base36 = (n: number, width: number) =>
     Math.floor(n).toString(36).toUpperCase().slice(-width).padStart(width, "0");
 
@@ -69,10 +91,10 @@ export function createSyntheticCompany(prefix = "ZZTEST"): SyntheticCompany {
     try {
       const out = psql(
         `WITH co AS (INSERT INTO companies (external_key, ticker, name, country, sector)
-            VALUES ('ticker:US:${ticker}', '${ticker}', 'ZZ Synthetic Test Corp', 'US', 'Testing')
+            VALUES ('ticker:${country}:${ticker}', '${ticker}', 'ZZ Synthetic Test Corp', '${country}', 'Testing')
             RETURNING id),
           ins AS (INSERT INTO insiders (external_key, name, is_officer, officer_title)
-            VALUES ('name:US:ZZ TESTER ${ticker}', 'ZZ TESTER ${ticker}', true, 'Chief Test Officer')
+            VALUES ('name:${country}:ZZ TESTER ${ticker}', 'ZZ TESTER ${ticker}', true, 'Chief Test Officer')
             RETURNING id)
           SELECT co.id || ' ' || ins.id FROM co, ins;`,
       );
@@ -104,24 +126,107 @@ export function insertSyntheticTrade(
     code?: string;
     tag?: string;
     ingestedDaysAgo?: number;
+    /** Attach the row to a filing, so `superseded_by_filing_id` can reach it. */
+    filingId?: string;
   } = {},
 ): string {
   const shares = options.shares ?? 1000;
   const price = options.price ?? 10;
   const code = options.code ?? "P";
-  const dedupKey = `e2e-${options.tag ?? target.ticker}-${shares}#0`;
+  // The ticker is in the key unconditionally, NOT as a fallback for `tag`.
+  // As a fallback it dropped out the moment a caller passed one, so all four
+  // Playwright workers running `{ tag: "layout" }` drew `e2e-layout-1000#0`,
+  // and three of the four inserts were silently swallowed by ON CONFLICT DO
+  // NOTHING — a fixture that reports success and creates no row. The ticker
+  // is the only per-worker unique thing here, so it always leads.
+  const dedupKey = `e2e-${target.ticker}-${options.tag ?? "trade"}-${shares}#0`;
   const createdAt =
     options.ingestedDaysAgo === undefined
       ? "now()"
       : `now() - interval '${Number(options.ingestedDaysAgo)} days'`;
   psql(
-    `INSERT INTO transactions (source, insider_id, company_id, txn_date, code, shares, price,
-        value, currency, price_usd, value_usd, acquired_disposed, is_10b5_1, is_derivative,
+    `INSERT INTO transactions (source, filing_id, insider_id, company_id, txn_date, code, shares,
+        price, value, currency, price_usd, value_usd, acquired_disposed, is_10b5_1, is_derivative,
         relevance, dedup_key, country, created_at)
-      VALUES ('edgar', '${target.insiderId}', '${target.companyId}', CURRENT_DATE, '${code}',
+      VALUES ('edgar', ${options.filingId ? `'${options.filingId}'` : "NULL"},
+        '${target.insiderId}', '${target.companyId}', CURRENT_DATE, '${code}',
         ${shares}, ${price}, ${shares * price}, 'USD', ${price}, ${shares * price},
         '${code === "S" ? "D" : "A"}', false, false, 'opportunistic', '${dedupKey}', 'US',
         ${createdAt})
+      ON CONFLICT (dedup_key) DO NOTHING;`,
+  );
+  return dedupKey;
+}
+
+/**
+ * A filing for the synthetic company; returns its id.
+ *
+ * `accession_no` is the idempotency key in this schema, so it carries the
+ * fixture namespace too — a re-run reuses the row rather than colliding.
+ */
+export function insertSyntheticFiling(
+  target: SyntheticCompany,
+  options: { formType?: string; tag?: string; filedDaysAgo?: number } = {},
+): string {
+  const formType = options.formType ?? "4";
+  const accessionNo = `e2e-${target.ticker}-${options.tag ?? formType}`;
+  return psql(
+    `INSERT INTO filings (accession_no, form_type, filed_at, issuer_company_id, source_url)
+       VALUES (${quote(accessionNo)}, ${quote(formType)},
+         now() - interval '${Number(options.filedDaysAgo ?? 1)} days', '${target.companyId}',
+         'https://example.invalid/filing/${target.ticker}.html')
+     ON CONFLICT (accession_no) DO UPDATE SET form_type = EXCLUDED.form_type
+     RETURNING id;`,
+  )
+    .split("\n")[0]!
+    .trim();
+}
+
+/**
+ * Point an original filing at the amendment that replaced it.
+ *
+ * This is the one column that decides whether a row is published, so the
+ * fixture writes it exactly as the ingestion worker does rather than
+ * approximating the state with a delete.
+ */
+export function supersedeFiling(originalFilingId: string, amendmentFilingId: string): void {
+  psql(
+    `UPDATE filings SET superseded_by_filing_id = '${amendmentFilingId}'
+      WHERE id = '${originalFilingId}';`,
+  );
+}
+
+/**
+ * An NSE SAST disclosure for the synthetic company.
+ *
+ * Every figure is explicitly nullable, because this is the fixture that has
+ * to be able to say "the filing disclosed zero" and "the filing disclosed
+ * nothing" as two different rows. Pass `0` for the first and `null` for the
+ * second; neither is a default.
+ */
+export function insertSyntheticSastDisclosure(
+  target: SyntheticCompany,
+  options: {
+    acquirerName: string;
+    tag: string;
+    shares?: number | null;
+    sharesPctAfter?: number | null;
+    value?: number | null;
+    valueUsd?: number | null;
+    daysAgo?: number;
+  },
+): string {
+  const dedupKey = `e2e-sast-${target.ticker}-${options.tag}#0`;
+  psql(
+    `INSERT INTO sast_disclosures (country, exchange, symbol, company_name, acquirer_name,
+        regulation, category, acquisition_mode, side, shares, shares_pct_after, value,
+        currency, value_usd, txn_date, intimated_at, source_url, dedup_key)
+      VALUES ('IN', 'NSE', '${target.ticker}', 'ZZ Synthetic Test Corp',
+        ${quote(options.acquirerName)}, '29(2)', 'Promoter Group', 'Inter-se transfer',
+        'acquisition', ${numLit(options.shares)}, ${numLit(options.sharesPctAfter)},
+        ${numLit(options.value)}, 'INR', ${numLit(options.valueUsd)},
+        CURRENT_DATE - ${Number(options.daysAgo ?? 3)}, CURRENT_DATE,
+        'https://example.invalid/sast/${target.ticker}.pdf', '${dedupKey}')
       ON CONFLICT (dedup_key) DO NOTHING;`,
   );
   return dedupKey;
@@ -136,13 +241,26 @@ export function insertSyntheticTrade(
  */
 export function insertSyntheticPoliticianTrade(
   target: SyntheticCompany,
-  options: { txnType?: string; amountRange?: string; tag?: string } = {},
+  options: {
+    txnType?: string;
+    /**
+     * The verbatim bracket as filed. Pass `null` to leave it off, which
+     * forces the UI to rebuild the bracket from the bounds — the only path
+     * where equal bounds could be collapsed into a point value.
+     */
+    amountRange?: string | null;
+    amountMin?: number | null;
+    amountMax?: number | null;
+    tag?: string;
+  } = {},
 ): { politicianId: string; dedupKey: string; name: string } {
   const name = `ZZ Representative Fictional ${target.ticker}`;
   const externalKey = `house:zz representative fictional ${target.ticker.toLowerCase()}`;
   const dedupKey = `e2e-pol-${options.tag ?? target.ticker}#0`;
   const txnType = options.txnType ?? "purchase";
-  const amountRange = options.amountRange ?? "$15,001 - $50,000";
+  // `??` would turn an explicit null back into the default, which is exactly
+  // the state this fixture exists to be able to create.
+  const amountRange = options.amountRange === undefined ? "$15,001 - $50,000" : options.amountRange;
 
   // psql prints the INSERT command tag on its own line alongside the RETURNING
   // row, so take the first line rather than the whole output.
@@ -161,7 +279,8 @@ export function insertSyntheticPoliticianTrade(
         owner, source, source_url, dedup_key)
       VALUES ('${politicianId}', '${target.companyId}', '${target.ticker}',
         'ZZ Synthetic Test Corp', 'Stock', '${txnType}', CURRENT_DATE - 20, CURRENT_DATE,
-        15001, 50000, '${amountRange}', 'self', 'e2e-fixture',
+        ${numLit(options.amountMin, 15001)}, ${numLit(options.amountMax, 50000)},
+        ${amountRange === null ? "NULL" : quote(amountRange)}, 'self', 'e2e-fixture',
         'https://example.invalid/ptr/${target.ticker}.pdf', '${dedupKey}')
       ON CONFLICT (dedup_key) DO NOTHING;`,
   );
@@ -188,6 +307,7 @@ export function cleanupSyntheticCompany(target: SyntheticCompany): void {
      DELETE FROM cluster_flags WHERE company_id = '${target.companyId}';
      DELETE FROM company_anomalies WHERE company_id = '${target.companyId}';
      DELETE FROM trade_returns WHERE company_id = '${target.companyId}';
+     DELETE FROM sast_disclosures WHERE symbol = '${target.ticker}';
      DELETE FROM transactions WHERE company_id = '${target.companyId}';
      UPDATE filings SET superseded_by_filing_id = NULL WHERE issuer_company_id = '${target.companyId}';
      DELETE FROM filings WHERE issuer_company_id = '${target.companyId}';
