@@ -33,6 +33,13 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # `pnpm lint` is `pnpm -r lint`, and pnpm's -r skips the root project.
+      # The five scripts that ENFORCE the gates below therefore linted
+      # nowhere, which is how a reference to a variable renamed out of
+      # existence shipped inside the EDGAR latency gate's failure branch.
+      - name: Lint the gate scripts
+        run: pnpm lint:scripts
+
       # The project-specific gates. Each exists because something got past
       # the generic ones: a missing changelog section, a class selector
       # standing in for a component, and a status array that accepted the

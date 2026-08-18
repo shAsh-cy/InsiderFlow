@@ -253,7 +253,7 @@ await client.close();
 
 if (detectionSeconds !== null && detectionSeconds > MAX_SECONDS) {
   console.error(
-    `FAIL: ${Math.round(endToEndSeconds)}s exceeds the ${MAX_SECONDS}s ceiling.\n` +
+    `FAIL: ${Math.round(detectionSeconds)}s exceeds the ${MAX_SECONDS}s ceiling.\n` +
       "Check discovery paging, the pending-filings drain rate, and EDGAR's own latency\n" +
       "before assuming the parser regressed.",
   );

@@ -13,6 +13,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "lint:scripts": "eslint scripts",
     "lint:changelog": "node scripts/lint-changelog.mjs",
     "lint:e2e-locators": "node scripts/lint-e2e-locators.mjs",
     "// test": "Sequential: four packages spin up PGlite (Postgres in WASM), and running those WASM heaps concurrently exhausts memory on a 2-core runner (VirtualAlloc/OOM). Serial is slower but deterministic.",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@eslint/js": "^9.30.0",
     "eslint": "^9.30.0",
+    "globals": "14.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.0",
     "prettier": "^3.6.0",
