@@ -34,7 +34,8 @@
     "smoke:alert-insert": "node packages/db/scripts/smoke-alert-insert.mjs",
     "prepare": "husky",
     "lint:e2e-assertions": "node scripts/lint-e2e-assertions.mjs",
-    "lint:api-schemas": "node scripts/lint-api-schemas.mjs"
+    "lint:api-schemas": "node scripts/lint-api-schemas.mjs",
+    "lint:client-bundle": "node scripts/lint-client-bundle.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

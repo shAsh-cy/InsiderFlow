@@ -61,6 +61,14 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # AFTER the build, because it scans the build output. `.next/static`
+      # is what every visitor downloads, so a key that lands there is
+      # disclosed rather than merely at risk — and only NEXT_PUBLIC_ values
+      # are inlined, which makes this a narrow mistake to make and a total
+      # one to suffer.
+      - name: No secrets in the client bundle
+        run: pnpm lint:client-bundle
+
   # A required check, not a nicety. `.dockerignore` once used bare `.env` /
   # `.env.*` patterns, which match only the build-context root — so
   # `apps/web/.env.local` was copied into the image and auto-loaded by Next at
