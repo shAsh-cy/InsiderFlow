@@ -98,7 +98,10 @@ function telegramViolations(html: string): string[] {
       }
       const raw = html.slice(i + 1, end);
       const isClosing = raw.startsWith("/");
-      const name = (isClosing ? raw.slice(1) : raw).split(/[\s/]/, 1)[0].toLowerCase();
+      // `?? ""` rather than `!`: `<>` is legal input to this function and
+      // splits to an empty first element, which is not in the tag set and
+      // is therefore reported rather than crashing the scan.
+      const name = ((isClosing ? raw.slice(1) : raw).split(/[\s/]/, 1)[0] ?? "").toLowerCase();
 
       if (!TELEGRAM_TAGS.has(name)) {
         problems.push(`unsupported tag <${isClosing ? "/" : ""}${name}> at ${i}`);
