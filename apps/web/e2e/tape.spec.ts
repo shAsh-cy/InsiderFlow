@@ -317,9 +317,20 @@ test.describe("the tape on a phone @mobile", () => {
     await expect(content).toBeVisible();
     await expect(content.getByTestId("row-menu-watch")).toBeVisible();
     await expect(content.getByTestId("row-menu-alert")).toBeVisible();
-    // 44px rows in the menu too.
-    const itemBox = await content.getByTestId("row-menu-watch").boundingBox();
-    expect(Math.round(itemBox!.height)).toBeGreaterThanOrEqual(43);
+    // 44px rows in the menu too — polled for the same reason as the
+    // trigger above, and this one was missed when that fix went in. The
+    // dropdown animates open, so `toBeVisible` resolves while the item is
+    // still growing: it read 42 under a full-suite run and 44 in every
+    // isolated one. Measuring mid-transition is not a smaller control.
+    await expect
+      .poll(
+        async () => {
+          const b = await content.getByTestId("row-menu-watch").boundingBox();
+          return b ? Math.round(b.height) : -1;
+        },
+        { message: "the menu row never settled at a tappable height", timeout: 5000 },
+      )
+      .toBeGreaterThanOrEqual(43);
   });
 
   test("tapping track while signed out offers sign-in rather than refusing", async ({ page }) => {
