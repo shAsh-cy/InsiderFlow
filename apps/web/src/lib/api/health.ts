@@ -98,13 +98,13 @@ const DECLARED_SOURCES: readonly DeclaredSource[] = [
     key: "nse_india",
     label: "NSE (India)",
     posture: "not-in-hosted-deploy",
-    note: "Exchange terms of use and IT Act §43 keep scraping out of the hosted build. Self-hosters can enable it with ENABLE_INDIA_INGEST; a licensed feed can be pointed at INDIA_FEED_URL.",
+    note: "Exchange terms of use and IT Act §43 keep scraping out of the hosted build. Self-hosters can enable it with ENABLE_INDIA_INGEST; a licensed feed can be pointed at INDIA_FEED_URL. Smoked live from a residential Indian line on 2026-08-18: SAST, bulk deals and pledges returned real rows and their field names are confirmed. The PIT endpoint — the one carrying actual insider trades — answered HTTP 200 with an empty envelope over a 90-day window, so its row shape remains INFERRED and unverified.",
   },
   {
     key: "bse_india",
     label: "BSE (India)",
     posture: "not-in-hosted-deploy",
-    note: "Same posture as NSE. Announcements and scrip search are verified working from a datacenter IP; the insider-trading endpoints are not, and are not shipped.",
+    note: "Same posture as NSE. Announcements are confirmed live (2026-08-18) and carry metadata plus PDF links, never structured trade numbers; one of two attempts failed on a malformed response header. The insider-trading endpoints are not shipped.",
   },
   {
     key: "politicians",

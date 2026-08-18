@@ -30,11 +30,73 @@ scoring, sector classification, and net-flow anomaly detection. **Planned**: mor
 Every derived number is computed by a formula published at [`/docs/methodology`](/docs/methodology).
 There is no proprietary model, and none of it is investment advice.
 
+## What is verified, and what is only claimed
+
+Read this before the feature list. Every row says how it was checked and when — a
+row with no measurement behind it says so, because "not measured" and "passed"
+are different facts and this project has confused them before.
+
+Live at [`/status`](/status) and `/api/health`, with per-source timestamps. A
+source that has never produced a row reads **never**, not `0`.
+
+| Source                              | State                          | How that was established                                                                                                      |
+| ----------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **SEC EDGAR (US)**                  | Live                           | Ingested from live EDGAR on 2026-08-15: 25 filings discovered, 21 ingested, 71 transactions, 44.5s wall clock                 |
+| **Congressional (STOCK)**           | Upstream dead                  | Pipeline built and tested; the house/senate-stock-watcher S3 buckets answer **403**. Produces nothing. Env-swappable          |
+| **NSE India — SAST, bulk, pledges** | Self-host only, confirmed      | Live smoke from a residential Indian line, 2026-08-18: 1,334 / 70 / 1,693 rows, field names recorded                          |
+| **NSE India — PIT**                 | Self-host only, **unverified** | Same run: HTTP 200 with an empty envelope over 90 days. Row shape stays **INFERRED**. This is the endpoint with the trades    |
+| **BSE India**                       | Self-host only, confirmed      | Announcements returned 50 rows; metadata and PDF links only, never structured numbers. 1 of 2 attempts failed on a bad header |
+| **Finnhub, FMP**                    | Optional, keyed                | Adapters tested against recorded payloads; not exercised live in this round                                                   |
+| **EU MAR, SEDI**                    | Stub                           | Normalizer shape only. No feed                                                                                                |
+
+### Latency: three numbers, and only one of them is ours
+
+`pnpm measure:edgar-latency` measures this against live EDGAR rather than
+asserting it. It separates terms that were previously added together:
+
+- **Dissemination** — EDGAR acceptance to public feed. **Theirs.** Filings accepted
+  after 17:30 ET disseminate the _next business morning_, so this term is
+  occasionally twelve hours and never ours. Reported, never asserted on.
+- **Detection** — public feed to queryable row. **Ours**, gated at 180s. **Not yet
+  measured**: measuring it requires watching a filing arrive, and the 420s watch
+  window on 2026-08-15 at 07:20 ET saw no new Form 4. The script exits 2 and says
+  so rather than printing a number nobody produced.
+- **Pipeline** — run start to queryable row: **44.5s measured**, for 25 filings.
+
+The figure this section used to carry — "60–90 seconds from EDGAR acceptance" —
+was arithmetic, not a measurement, and it added a term belonging to the SEC to two
+of ours.
+
+### Known defects, stated rather than filed away
+
+- **The SSE cursor is floored to a millisecond** while `created_at` keeps
+  microseconds, so the newest row re-qualifies on every 2.5s poll tick — measured
+  at **ten deliveries of one row inside a single 25s window**, and again on
+  reconnect. The shipped web client dedupes by trade id and shows nothing twice;
+  an API consumer polling `?mode=poll` receives the tail row on every poll. The
+  fix belongs in `fetchSince`, which both paths share. Pinned by a deliberately
+  failing test in `apps/web/e2e/stream-resume.spec.ts`.
+- **NSE bulk deals and pledges ignore their date window** — identical row counts
+  for a 7-day and a 90-day request. `--days` does not bound them; schema-level
+  dedup is what makes a repeat run harmless.
+
+### Blocking before this deployment is public
+
+Also carried on [`/status`](/status), because a checklist is read once and a status
+page is read whenever something looks wrong.
+
+| Step                                        | State                                                             |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| Cloudflare Turnstile enabled in Supabase    | Code shipped, **dashboard step pending**                          |
+| Production email+password provider disabled | **Pending** — this process cannot read the setting                |
+| RLS verified against the real Supabase      | Implemented and tested on PGlite; **deploy-verification pending** |
+
+`SECURITY_CHECKLIST.md` item 13 records "N/A — prod has no password login". That
+becomes true when the provider is actually disabled, and not before.
+
 ### What "real time" means here, precisely
 
-A single Form 4 reaches the site in roughly **60–90 seconds** from EDGAR acceptance: up to 60s
-waiting for the next cron tick, ~12s to fetch, parse and persist, and no page cache to wait out.
-Through the cached API or the SSE stream, allow ~2 minutes.
+Through the cached API or the SSE stream, allow roughly two minutes end to end.
 
 **Bursts drain, they do not vanish.** EDGAR Form 4 volume clusters heavily after the US close, and
 a run fetches at most `MAX_FILINGS_PER_RUN` (default 25) filings. Everything discovered beyond

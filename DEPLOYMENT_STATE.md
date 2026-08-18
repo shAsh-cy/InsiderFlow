@@ -297,6 +297,25 @@ While this checkpoint stands:
 
 ---
 
+## BLOCKING before the deployment is public (r15)
+
+Three things no amount of correct code completes. Each is also a visible row
+on `/status`, so it cannot be quietly carried to launch: the status page is
+read whenever something looks wrong, and a checklist is read once.
+
+| Step                                            | Where it is done                              | State at r15                                               |
+| ----------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------- |
+| **Enable Cloudflare Turnstile**                 | Supabase dashboard → Auth → Attack protection | Code shipped and inert until enabled (r14 item 9)          |
+| **Disable the email+password provider in prod** | Supabase dashboard → Auth → Providers → Email | **Not verified.** No process here can read that setting    |
+| **Verify RLS against the real Supabase**        | Step 1 of the runbook below                   | Implemented and tested on PGlite; deploy-verification open |
+
+`SECURITY_CHECKLIST.md` item 13 records the password-login risk as "N/A — prod
+has no password login". **That statement becomes true when the provider is
+actually disabled, and is not true before then.** It is written as N/A on the
+strength of an intended configuration, which is exactly the shape of claim r14
+was created to stop accepting — so it is repeated here, next to the step that
+makes it accurate.
+
 ## RESUME — Part 2 runbook
 
 Ordered. Do not skip step 1; it can invalidate later steps.
