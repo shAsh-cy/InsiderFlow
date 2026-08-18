@@ -83,6 +83,19 @@ export interface CspOptions {
    * listening for.
    */
   upgradeInsecure: boolean;
+  /**
+   * Widen the policy for Cloudflare Turnstile — and ONLY when it is
+   * actually configured.
+   *
+   * Turnstile renders a challenge in an iframe from
+   * challenges.cloudflare.com and talks back to it. `frame-src` is the
+   * directive that decides whether that iframe may exist at all, and
+   * `frame-src` has no fallback to `default-src 'self'` that would let it
+   * through by accident — an unconfigured deployment keeps the tighter
+   * policy, and enabling the captcha is what opens exactly these two
+   * origins and nothing else.
+   */
+  turnstile?: boolean;
 }
 
 /**
@@ -95,7 +108,12 @@ export interface CspOptions {
  * app makes is same-origin, and there are no external fonts, images,
  * analytics or CDNs to allow for.
  */
-export function buildCsp({ nonce, supabaseOrigin, upgradeInsecure }: CspOptions): string {
+export function buildCsp({
+  nonce,
+  supabaseOrigin,
+  upgradeInsecure,
+  turnstile = false,
+}: CspOptions): string {
   const connect = ["'self'"];
   if (supabaseOrigin) {
     // wss: too — Supabase Realtime upgrades, and a connect-src that
@@ -103,10 +121,15 @@ export function buildCsp({ nonce, supabaseOrigin, upgradeInsecure }: CspOptions)
     connect.push(supabaseOrigin, supabaseOrigin.replace(/^https:/, "wss:"));
   }
 
+  // Cloudflare serves the widget script and the challenge iframe. Both are
+  // added only when a site key exists — see `turnstile` in CspOptions.
+  const TURNSTILE = "https://challenges.cloudflare.com";
+  const scriptSrc = `'self' 'nonce-${nonce}' 'strict-dynamic'`;
+
   const directives: Array<[string, string]> = [
     // Everything not named below falls back to same-origin.
     ["default-src", "'self'"],
-    ["script-src", `'self' 'nonce-${nonce}' 'strict-dynamic'`],
+    ["script-src", scriptSrc],
     /*
      * `'unsafe-inline'` for styles, and it is a concession rather than an
      * oversight — so here is exactly what forced it and what it costs.
@@ -153,6 +176,10 @@ export function buildCsp({ nonce, supabaseOrigin, upgradeInsecure }: CspOptions)
     // by a <meta> tag.
     ["form-action", "'self'"],
     ["frame-ancestors", "'none'"],
+    // `frame-src 'none'` unless the captcha is on. This directive does NOT
+    // fall back to default-src, so naming it explicitly is what makes the
+    // absence of an iframe surface a stated decision rather than a default.
+    ["frame-src", turnstile ? TURNSTILE : "'none'"],
   ];
 
   const policy = directives.map(([name, value]) => `${name} ${value}`).join("; ");

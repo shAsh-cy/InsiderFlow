@@ -126,6 +126,8 @@ export async function middleware(request: NextRequest) {
       nonce,
       supabaseOrigin: url ? safeOrigin(url) : null,
       upgradeInsecure: !isLoopbackHost(request.headers.get("host")),
+      // Only widens the policy when a site key is actually configured.
+      turnstile: Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY),
     });
     requestHeaders.set("x-nonce", nonce);
     requestHeaders.set(CSP_ENFORCE_HEADER, policy);

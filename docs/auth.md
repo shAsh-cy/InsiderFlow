@@ -160,6 +160,48 @@ Verify from outside the dashboard, against the deployed project:
 curl -sS -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/signup"   -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY"   -H "Content-Type: application/json"   -d '{"email":"probe@example.com","password":"probe-not-a-real-password"}'
 ```
 
+### Bot protection: Cloudflare Turnstile
+
+The magic-link form takes an email address and causes an email to be sent.
+Whoever owns that primitive can point it at other people's inboxes and spend
+this deployment's sending reputation delivering them — which costs the Resend
+quota first and the domain's reputation second.
+
+Supabase Auth has its own rate limits, and they are the obvious answer rather
+than a sufficient one: through 2025–2026 they have been reported repeatedly as
+inconsistently enforced across projects, and a control that cannot be verified
+from outside is not one to rely on alone. Turnstile is verified by Supabase on
+every auth call once enabled, which makes it the half that can be checked: send
+a request without a token and it is refused.
+
+**The code is shipped and inert until the dashboard half is done.** With no
+site key, the widget does not render, no token is sent, and sign-in behaves
+exactly as it does today. That is deliberate — it is the state of every fresh
+clone and of CI — but it does mean _the protection is not on until someone
+performs these steps._
+
+1. **Cloudflare dashboard → Turnstile → Add widget.** Hostname: your deployment
+   domain (add `localhost` too if you want it in local dev). Widget mode:
+   **Managed**. You get a **site key** and a **secret key**.
+2. **Supabase dashboard → Authentication → Attack Protection → Enable Captcha
+   protection.** Provider: **Turnstile by Cloudflare**. Paste the **secret**
+   key here. This is the only place that value goes — it is not an environment
+   variable of this application and there is no entry for it in
+   `.env.example`, on purpose.
+3. **Deployment environment → set `NEXT_PUBLIC_TURNSTILE_SITE_KEY`** to the
+   site key. It is public and compiled into the client bundle by design.
+4. Redeploy. The CSP opens `frame-src https://challenges.cloudflare.com`
+   automatically, and only while the key is set.
+
+Verify it is actually on — this is the check worth doing, because steps 2 and 3
+can be done independently and either alone looks fine:
+
+```bash
+# With captcha enforcement enabled, a token-less OTP request must be REFUSED.
+curl -sS -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/otp"   -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY"   -H "Content-Type: application/json"   -d '{"email":"probe@example.com"}'
+# Expect an error mentioning captcha. A 200 here means step 2 was not applied.
+```
+
 ## Sessions, tokens, and redirects
 
 - **Identity is always validated.** Server code derives the user from

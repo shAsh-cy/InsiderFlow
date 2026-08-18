@@ -71,6 +71,26 @@ describe("buildCsp — the rest of the policy", () => {
     expect(parse(policy()).get("connect-src")).toBe("'self'");
   });
 
+  it("keeps frame-src closed unless Turnstile is configured", () => {
+    // `frame-src` does not fall back to default-src, so naming it is what
+    // makes "no iframes" a stated decision instead of a default nobody
+    // checked. Enabling the captcha opens exactly one origin.
+    expect(parse(policy()).get("frame-src")).toBe("'none'");
+    expect(parse(policy({ turnstile: true })).get("frame-src")).toBe(
+      "https://challenges.cloudflare.com",
+    );
+  });
+
+  it("does not widen script-src for Turnstile, because strict-dynamic already covers it", () => {
+    // The widget script is injected by our own nonce'd bundle, and
+    // 'strict-dynamic' propagates trust to what a trusted script loads.
+    // Adding the host would be redundant on CSP3 and would weaken the
+    // policy for a CSP2 browser, which ignores strict-dynamic and honours
+    // the host list.
+    const scriptSrc = parse(policy({ turnstile: true })).get("script-src") ?? "";
+    expect(scriptSrc).not.toContain("challenges.cloudflare.com");
+  });
+
   it("adds upgrade-insecure-requests only when asked", () => {
     expect(policy({ upgradeInsecure: true })).toContain("upgrade-insecure-requests");
     expect(policy({ upgradeInsecure: false })).not.toContain("upgrade-insecure-requests");
