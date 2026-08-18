@@ -289,6 +289,61 @@ When each free tier stops being enough, what it costs, and what to do instead:
 | `/legal`                                      | Data sources, licences, and the disclaimers that apply                 |
 | `/status`                                     | Live ingestion lag and per-source freshness                            |
 
+## Before you make this repository public
+
+Four settings that cost nothing, take about five minutes, and are worth more
+than any check in this repo — because they act on the push, not after it.
+Nothing below weakens or replaces an existing gate; they close the gap
+between "CI caught it" and "it never got in".
+
+**1. Secret scanning and push protection** (free on public repositories)
+
+_Settings → Code security → Secret protection → enable **Secret scanning** and
+**Push protection**._
+
+`gitleaks` in CI tells you a credential is already in the history — by which
+point the fix is rotation, not deletion. Push protection refuses the push,
+which is the only outcome that leaves nothing to rotate. Enable both; they
+cover different vendors than our own rules do.
+
+**2. Branch protection on `main`**
+
+_Settings → Branches → Add rule → `main`._ Require a pull request, and require
+these status checks to pass:
+
+| Check                           | Workflow           |
+| ------------------------------- | ------------------ |
+| `Typecheck, lint, test, build`  | `ci.yml`           |
+| `No secrets in the built image` | `ci.yml`           |
+| `osv-scanner`                   | `supply-chain.yml` |
+| `pnpm audit`                    | `supply-chain.yml` |
+| `gitleaks`                      | `supply-chain.yml` |
+
+The `ci` job is where the seven gates live — typecheck, lint, format,
+`lint:changelog`, `lint:e2e-locators`, `lint:e2e-assertions`,
+`lint:api-schemas`. Requiring the job requires all seven.
+
+Also tick **Do not allow bypassing the above settings**, or the protection
+applies to everyone except the person most likely to be pushing at midnight.
+
+Do NOT add the deployment workflows (analytics, ops, backfill, keepalive) as
+required checks. They are gated on `DEPLOYMENT_ACTIVE` and report as skipped;
+a required check that never runs blocks every merge.
+
+**3. Dependabot**
+
+_Settings → Code security → enable **Dependabot alerts** and **security
+updates**._ `osv-scanner` and `pnpm audit` run daily and tell you an advisory
+exists; Dependabot opens the pull request that fixes it. Add
+`.github/dependabot.yml` for version updates too if the PR volume is welcome —
+the daily scanners already cover the security half.
+
+**4. Actions permissions**
+
+_Settings → Actions → General → Workflow permissions → **Read repository
+contents**._ Every workflow here declares what it needs; the repository
+default should not be write.
+
 ## Legal / data-source notice
 
 - **SEC EDGAR (US)** — EDGAR filings are US-government works in the **public domain** and free
