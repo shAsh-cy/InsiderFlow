@@ -12,7 +12,8 @@ import { describe, expect, it } from "vitest";
 import {
   SAMPLE_BSE_ANNOUNCEMENTS,
   SAMPLE_NSE_BULK_ROWS,
-  SAMPLE_NSE_PIT_ROWS,
+  SAMPLE_NSE_PIT_INDEX_ROWS,
+  SAMPLE_NSE_PIT_XBRL,
   SAMPLE_NSE_PLEDGE_ROWS,
   SAMPLE_NSE_SAST_ROWS,
 } from "@insiderflow/core/fixtures";
@@ -27,8 +28,13 @@ const INR_USD = 0.0114;
 
 const sessionMock: NseJsonSession = {
   getJson<T>(url: string): Promise<T> {
-    const payload = url.includes("corporates-pit")
-      ? { data: SAMPLE_NSE_PIT_ROWS }
+    const payload = url.includes("corporates-pit-gg")
+      ? // One index row, because exactly one XBRL document was recorded and
+        // serving it for three different filings would assert against data
+        // NSE does not produce — three filings from three companies cannot
+        // contain the same two transactions. The other recorded rows prove
+        // the index FIELD NAMES in packages/core; this proves the RUN.
+        { data: SAMPLE_NSE_PIT_INDEX_ROWS.slice(0, 1) }
       : url.includes("corporate-sast-reg29")
         ? { data: SAMPLE_NSE_SAST_ROWS }
         : url.includes("corporate-pledgedata")
@@ -37,6 +43,13 @@ const sessionMock: NseJsonSession = {
             ? { data: SAMPLE_NSE_BULK_ROWS }
             : { data: [] };
     return Promise.resolve(payload as T);
+  },
+  // PIT is two fetches since V2.0: the index above, then this document per
+  // filing. The fixture is a real NSE filing carrying TWO transactions, so
+  // the run below also proves a document is not collapsed into one row.
+  getText(url: string): Promise<string> {
+    if (!url.endsWith(".xml")) throw new Error();
+    return Promise.resolve(SAMPLE_NSE_PIT_XBRL);
   },
 };
 
@@ -94,27 +107,46 @@ describe("runIndiaIngest (PGlite, recorded fixtures)", () => {
     };
 
     const stats = await runIndiaIngest(options);
-    expect(stats.pit).toMatchObject({ raw: 3, normalized: 2, inserted: 2, deduped: 0 });
+    // ONE filing, TWO transactions. The counts changed shape in r16 with
+    // PIT V2.0: `raw` used to be JSON rows from a single call and is now
+    // transactions extracted from fetched documents. The old numbers
+    // (raw 3, normalized 2) counted a payload NSE no longer serves.
+    expect(stats.pit).toMatchObject({
+      filings: 1,
+      documentsFetched: 1,
+      documentsFailed: 0,
+      raw: 2,
+      normalized: 2,
+      inserted: 2,
+      deduped: 0,
+    });
     expect(stats.sast).toMatchObject({ raw: 2, inserted: 2 });
     expect(stats.bulkBlock).toMatchObject({ raw: 2, inserted: 2 });
     expect(stats.pledge).toMatchObject({ raw: 2, inserted: 2 });
     expect(stats.bseInsiderAnnouncements).toBe(1);
 
     // PIT rows went through the SAME path a licensed feed would.
+    //
+    // Two rows from ONE document — the same person, the same day, one
+    // executed on each exchange. The figures are the filing's own, so this
+    // asserts against a real SEBI disclosure rather than a shape someone
+    // typed: before r16 these numbers came from a hand-built V1 JSON row,
+    // because the endpoint that served them could not be reached.
     const txns = await db.select().from(dbExports.transactions);
     expect(txns).toHaveLength(2);
-    const buy = txns.find((t) => t.code === "P")!;
-    expect(buy).toMatchObject({
+    expect(txns.every((t) => t.code === "P")).toBe(true);
+    const larger = txns.reduce((a, b) => (Number(a.shares) > Number(b.shares) ? a : b));
+    expect(larger).toMatchObject({
       source: "nse-bse",
       country: "IN",
       currency: "INR",
       relevance: "opportunistic",
-      shares: "100000.0000",
-      value: "245000000.0000",
-      valueUsd: "2793000.0000", // 245,00,00,000 INR × 0.0114
+      shares: "1252262.0000",
+      value: "110814212.0000",
+      valueUsd: "1263282.0168", // 11,08,14,212 INR × 0.0114
     });
     const companies = await db.select().from(dbExports.companies);
-    expect(companies.find((c) => c.ticker === "RELIANCE")).toMatchObject({ country: "IN" });
+    expect(companies.find((c) => c.ticker === "JAYSREETEA")).toMatchObject({ country: "IN" });
 
     // SAST with USD conversion.
     const sast = await db.select().from(dbExports.sastDisclosures);

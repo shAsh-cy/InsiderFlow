@@ -39,15 +39,15 @@ are different facts and this project has confused them before.
 Live at [`/status`](/status) and `/api/health`, with per-source timestamps. A
 source that has never produced a row reads **never**, not `0`.
 
-| Source                              | State                          | How that was established                                                                                                      |
-| ----------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **SEC EDGAR (US)**                  | Live                           | Ingested from live EDGAR on 2026-08-15: 25 filings discovered, 21 ingested, 71 transactions, 44.5s wall clock                 |
-| **Congressional (STOCK)**           | Upstream dead                  | Pipeline built and tested; the house/senate-stock-watcher S3 buckets answer **403**. Produces nothing. Env-swappable          |
-| **NSE India — SAST, bulk, pledges** | Self-host only, confirmed      | Live smoke from a residential Indian line, 2026-08-18: 1,334 / 70 / 1,693 rows, field names recorded                          |
-| **NSE India — PIT**                 | Self-host only, **unverified** | Same run: HTTP 200 with an empty envelope over 90 days. Row shape stays **INFERRED**. This is the endpoint with the trades    |
-| **BSE India**                       | Self-host only, confirmed      | Announcements returned 50 rows; metadata and PDF links only, never structured numbers. 1 of 2 attempts failed on a bad header |
-| **Finnhub, FMP**                    | Optional, keyed                | Adapters tested against recorded payloads; not exercised live in this round                                                   |
-| **EU MAR, SEDI**                    | Stub                           | Normalizer shape only. No feed                                                                                                |
+| Source                              | State                     | How that was established                                                                                                       |
+| ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **SEC EDGAR (US)**                  | Live                      | Ingested from live EDGAR on 2026-08-15: 25 filings discovered, 21 ingested, 71 transactions, 44.5s wall clock                  |
+| **Congressional (STOCK)**           | Upstream dead             | Pipeline built and tested; the house/senate-stock-watcher S3 buckets answer **403**. Produces nothing. Env-swappable           |
+| **NSE India — SAST, bulk, pledges** | Self-host only, confirmed | Live smoke from a residential Indian line, 2026-08-18: 1,334 / 70 / 1,693 rows, field names recorded                           |
+| **NSE India — PIT**                 | Self-host only, confirmed | 2026-08-19: the endpoint had been RETIRED, not blocked. `corporates-pit-gg` returns 169 filings/week; field names now recorded |
+| **BSE India**                       | Self-host only, confirmed | Announcements returned 50 rows; metadata and PDF links only, never structured numbers. 1 of 2 attempts failed on a bad header  |
+| **Finnhub, FMP**                    | Optional, keyed           | Adapters tested against recorded payloads; not exercised live in this round                                                    |
+| **EU MAR, SEDI**                    | Stub                      | Normalizer shape only. No feed                                                                                                 |
 
 ### Latency: three numbers, and only one of them is ours
 
@@ -79,6 +79,11 @@ of ours.
 - **NSE bulk deals and pledges ignore their date window** — identical row counts
   for a 7-day and a 90-day request. `--days` does not bound them; schema-level
   dedup is what makes a repeat run harmless.
+- **A retired endpoint here returns `200` with an empty envelope, not `404`.**
+  NSE's `corporates-pit` did exactly that, and this project read it as an IP
+  block for three rounds. The smoke now probes it permanently as a control. Any
+  source that can answer "nothing" and "nothing, because I no longer exist"
+  with the same bytes needs one.
 
 ### Blocking before this deployment is public
 

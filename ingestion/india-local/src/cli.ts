@@ -9,6 +9,7 @@ import {
   NSE_PIT_REFERER,
   NSE_PRIME_URL,
   nseBulkBlockUrl,
+  nsePitIndexUrl,
   nsePitUrl,
   nsePledgeUrl,
   nseSastUrl,
@@ -52,13 +53,15 @@ const guardedFetch = createGuardedFetch({
 /**
  * Manual live smoke: prints row counts + first-row keys, writes NOTHING.
  *
- * `--days` matters more than it looks. A seven-day window that returns
- * zero PIT rows has two explanations that this tool exists to tell apart:
- * NSE soft-failing to empty data (what it does to a datacenter IP), or a
- * genuinely quiet week. Widening the window separates them — an empty
- * ninety-day PIT window on an exchange of that size is not a quiet
- * quarter, it is a block. Reported as `days` in every line so a pasted
- * log says what it was asking for.
+ * Both PIT endpoints are probed on purpose. `pit-retired` is the CONTROL:
+ * it reports zero every time, from any address, because `corporates-pit`
+ * is retired and answers an empty envelope rather than a 404. Printing the
+ * two side by side is what turns "we got nothing" into "the endpoint gives
+ * nobody anything" — the distinction this repository failed to make for
+ * three rounds, attributing it to datacenter IP blocking instead.
+ *
+ * `--days` widens the window when a count looks low, which separates a
+ * quiet week from a broken feed for the endpoints that are still live.
  */
 async function smoke(days: number): Promise<void> {
   const session = new NseSession(guardedFetch);
@@ -66,7 +69,11 @@ async function smoke(days: number): Promise<void> {
   const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 
   const targets: Array<[string, string, string]> = [
-    ["pit", nsePitUrl(from, to), NSE_PIT_REFERER],
+    // Both, deliberately. `pit-retired` is expected to report zero rows —
+    // it is the control that shows an empty answer is the endpoint's, not
+    // this machine's, which is the confusion that cost three rounds.
+    ["pit", nsePitIndexUrl(from, to), NSE_PIT_REFERER],
+    ["pit-retired", nsePitUrl(from, to), NSE_PIT_REFERER],
     ["sast", nseSastUrl(from, to), NSE_PRIME_URL],
     ["bulk", nseBulkBlockUrl("bulk_deals", from, to), NSE_PRIME_URL],
     ["pledge", nsePledgeUrl(from, to), NSE_PRIME_URL],
@@ -142,9 +149,18 @@ async function main(): Promise<void> {
       days: argValue("days") ? Number(argValue("days")) : undefined,
       log: jsonLogger,
     });
-    if (stats.pit.raw === 0) {
+    if (stats.pit.filings === 0) {
       jsonLogger("india_ingest_warning", {
-        note: "NSE returned zero PIT rows — from a datacenter IP NSE soft-fails to empty data. Run `pnpm india:ingest --smoke` and see the README.",
+        note:
+          "The PIT index returned no filings. Run `pnpm india:ingest --smoke`: if `pit` is zero " +
+          "while sast/pledge return rows, the index endpoint has moved again — check " +
+          "`activeApiName` in the page source. If everything is zero, suspect the session.",
+      });
+    } else if (stats.pit.documentsFailed > stats.pit.documentsFetched) {
+      // Filings found and documents unreadable is a different fault from
+      // no filings at all, and it used to produce the same silence.
+      jsonLogger("india_ingest_warning", {
+        note: `${stats.pit.documentsFailed} of ${stats.pit.filings} PIT documents could not be fetched or parsed.`,
       });
     }
   } finally {
