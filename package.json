@@ -35,7 +35,8 @@
     "prepare": "husky",
     "lint:e2e-assertions": "node scripts/lint-e2e-assertions.mjs",
     "lint:api-schemas": "node scripts/lint-api-schemas.mjs",
-    "lint:client-bundle": "node scripts/lint-client-bundle.mjs"
+    "lint:client-bundle": "node scripts/lint-client-bundle.mjs",
+    "measure:edgar-latency": "pnpm --filter @insiderflow/db exec tsx scripts/measure-edgar-latency.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
