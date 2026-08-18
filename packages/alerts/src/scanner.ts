@@ -39,6 +39,7 @@ import {
   scannerState,
   sql,
   transactions,
+  withUserContextAsApp,
 } from "@insiderflow/db";
 import type { Database, TradeFilterInput } from "@insiderflow/db";
 
@@ -269,11 +270,64 @@ async function idsMatchingInSql(
   return ids;
 }
 
-async function loadRules(db: Database, kind: AlertKind = "transaction"): Promise<MatchableRule[]> {
+/**
+ * The user ids that have an enabled rule of this kind — and NOTHING else.
+ *
+ * This is the one read the scanner cannot scope to a user, because
+ * choosing whose rules to load is the question it is asking. It runs on
+ * the admin connection and selects a single column: opaque uuids, no rule
+ * names, no filters, no channel destinations.
+ *
+ * That is the residual, stated rather than hidden. Before this change the
+ * same connection read every column of every user's rules and channels;
+ * now the widest thing a background job sees across users is "these
+ * accounts have alerts turned on". The content comes back one user at a
+ * time, from the database, under the policy.
+ */
+async function usersWithRules(db: Database, kind: AlertKind): Promise<string[]> {
   const rows = await db
-    .select()
+    .selectDistinct({ userId: alertRules.userId })
     .from(alertRules)
     .where(and(eq(alertRules.enabled, true), eq(alertRules.kind, kind)));
+  return rows.map((r) => r.userId);
+}
+
+/**
+ * Every enabled rule, loaded one user at a time under that user's own RLS
+ * context.
+ *
+ * ── WHY A LOOP RATHER THAN ONE QUERY ──────────────────────────────────
+ *
+ * One query is faster and was what this did. It was also the over-read:
+ * on the admin connection — table owner, and BYPASSRLS on Supabase — the
+ * policies in `0009_rls_enforced.sql` are skipped entirely, so a single
+ * `select().from(alertRules)` returned every user's rules whether or not
+ * anything downstream needed them. The query layer scoped what happened
+ * next, which means the guarantee rested on the application remembering.
+ * That is the guarantee RLS exists to replace.
+ *
+ * `withUserContextAsApp` drops each transaction to the NOBYPASSRLS app
+ * role and sets `app.user_id`, so the policy — not this file — decides
+ * which rows come back. With no context set the same query returns zero
+ * rows, which is asserted in `packages/db/src/scanner-scope.test.ts`.
+ *
+ * The cost is one transaction per user with an enabled rule, on a job that
+ * runs on a cron and has no latency budget. For a deployment where that
+ * stops being true, the fix is batching by user rather than removing the
+ * scoping.
+ */
+async function loadRules(db: Database, kind: AlertKind = "transaction"): Promise<MatchableRule[]> {
+  const userIds = await usersWithRules(db, kind);
+  const rows: Array<typeof alertRules.$inferSelect> = [];
+  for (const userId of userIds) {
+    const owned = await withUserContextAsApp(db, userId, (tx) =>
+      tx
+        .select()
+        .from(alertRules)
+        .where(and(eq(alertRules.enabled, true), eq(alertRules.kind, kind))),
+    );
+    rows.push(...owned);
+  }
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
@@ -413,14 +467,31 @@ export async function scanForMatches(options: ScanOptions): Promise<ScanResult> 
   }
 }
 
+/**
+ * Quiet-hours timezones, per user, under that user's own RLS context.
+ *
+ * Same over-read as `loadRules` and a narrower blast radius if it went
+ * wrong — a timezone is not a secret — but `alert_channels` is the table
+ * that also holds Telegram chat ids, email addresses and the link and
+ * unsubscribe capability tokens. A `select()` here that grew a column
+ * would be reading exactly those across every user, so it is scoped for
+ * the same reason and by the same mechanism.
+ *
+ * The user ids come from the rules already loaded, so this adds no
+ * cross-user read of its own.
+ */
 async function loadTimezones(db: Database, rules: MatchableRule[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (rules.length === 0) return map;
-  const rows = await db
-    .select({ userId: alertChannels.userId, timezone: alertChannels.timezone })
-    .from(alertChannels);
-  for (const row of rows) {
-    if (!map.has(row.userId)) map.set(row.userId, row.timezone);
+  for (const userId of new Set(rules.map((r) => r.userId))) {
+    const rows = await withUserContextAsApp(db, userId, (tx) =>
+      tx
+        .select({ userId: alertChannels.userId, timezone: alertChannels.timezone })
+        .from(alertChannels),
+    );
+    for (const row of rows) {
+      if (!map.has(row.userId)) map.set(row.userId, row.timezone);
+    }
   }
   return map;
 }

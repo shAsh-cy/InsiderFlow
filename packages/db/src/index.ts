@@ -23,6 +23,8 @@ export {
   USER_ID_SETTING,
   withCapability,
   withUserContext,
+  withUserContextAsApp,
+  APP_ROLE,
 } from "./user-context";
 export type { ScopedDb } from "./user-context";
 // Re-export the query operators so consumers use a single drizzle-orm instance.
