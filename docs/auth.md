@@ -125,10 +125,40 @@ or `BYPASSRLS`.
 Enable GitHub OAuth and email magic links in the Supabase dashboard, with
 `https://<your-deployment>/auth/callback` as the redirect URL.
 
-To run `e2e/auth-isolation.spec.ts` — the cross-user exploitation suite — also
-enable **email + password** and turn **off** email confirmation on the dev
-project, so the tests can mint two real users. Without that they skip, and say
-so in the output rather than passing silently.
+### Production providers: GitHub OAuth and magic link, and nothing else
+
+**Email + password must be OFF on the production project.** It exists only so
+`e2e/auth-isolation.spec.ts` — the cross-user exploitation suite — can mint two
+real users on a DEV project. Enable it there, with email confirmation turned
+off, and nowhere else. Without it those tests skip and say so in the output
+rather than passing silently.
+
+Leaving it on in production adds a credential this product otherwise does not
+have: a password to phish, to stuff from a breach list, to reset over email, to
+store. None of that risk buys anything, because no part of the UI offers a
+password field — `apps/web/e2e/auth-providers.spec.ts` asserts that, so a
+future form cannot appear without a test going red.
+
+That is also why "hash passwords properly" is **N/A** for this project rather
+than done: with the provider off there is no password for InsiderFlow to hash,
+salt, or leak. Supabase Auth (GoTrue) hashes with bcrypt on the dev project;
+that is its business and never ours, because the application never sees the
+credential.
+
+Turn it off:
+
+1. Supabase dashboard → **Authentication → Sign In / Providers**.
+2. **Email** → turn **Enable email provider** off, or keep the provider on for
+   magic links and turn **Enable email password sign-in** off. The second is
+   the usual shape, since magic links use the same email provider.
+3. Confirm on **Authentication → Users** that no user has a password identity.
+
+Verify from outside the dashboard, against the deployed project:
+
+```bash
+# Must answer 400/422 with "email_provider_disabled" or similar — never 200.
+curl -sS -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/signup"   -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY"   -H "Content-Type: application/json"   -d '{"email":"probe@example.com","password":"probe-not-a-real-password"}'
+```
 
 ## Sessions, tokens, and redirects
 
