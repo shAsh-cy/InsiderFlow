@@ -40,18 +40,51 @@ concurrency:
 
 jobs:
   digest:
-    if: github.event.schedule == '40 23 * * *' || github.event.inputs.job == 'digest'
+    # DEPLOYMENT_ACTIVE (a repository VARIABLE, see README) is ANDed with the
+    # existing schedule filter. Both halves matter: the schedule decides which
+    # of this workflow's two crons fired, the variable decides whether there
+    # is a deployment for it to act on.
+    if: ${{ vars.DEPLOYMENT_ACTIVE == 'true' && (github.event.schedule == '40 23 * * *' || github.event.inputs.job == 'digest') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # ── WHY THE GUARD IS A STEP AND THE GATE IS A VARIABLE ─────────
+      #
+      # `secrets.*` is not readable in a job-level `if:` — GitHub rejects it
+      # at parse time with "Unrecognized named-value: 'secrets'", and the
+      # whole workflow errors rather than skipping. `vars.*` IS allowed
+      # there, so the repository variable DEPLOYMENT_ACTIVE gates the job
+      # and this step gates the work inside it.
+      #
+      # The secret is read through the environment rather than interpolated
+      # into the script body. `${{ secrets.X }}` inside a `run:` is expanded
+      # before the shell sees it, so a syntax error or an `set -x` would
+      # print the credential into a public run log; `$X` from `env:` cannot.
+      - name: Check for the deployment secrets
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::notice title=Nothing to do::DEPLOYMENT_ACTIVE is true but DATABASE_URL is empty, so there is no database to talk to. Exiting 0."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
       - uses: pnpm/action-setup@v4
+        if: steps.preflight.outputs.ready == 'true'
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.preflight.outputs.ready == 'true'
       - name: Flush any pending digests
+        if: steps.preflight.outputs.ready == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SITE_URL: ${{ secrets.SITE_URL }}
@@ -61,18 +94,47 @@ jobs:
         run: pnpm --filter @insiderflow/analytics run digest
 
   ops-check:
-    if: github.event.schedule == '5 */6 * * *' || github.event.inputs.job == 'ops-check'
+    if: ${{ vars.DEPLOYMENT_ACTIVE == 'true' && (github.event.schedule == '5 */6 * * *' || github.event.inputs.job == 'ops-check') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # ── WHY THE GUARD IS A STEP AND THE GATE IS A VARIABLE ─────────
+      #
+      # `secrets.*` is not readable in a job-level `if:` — GitHub rejects it
+      # at parse time with "Unrecognized named-value: 'secrets'", and the
+      # whole workflow errors rather than skipping. `vars.*` IS allowed
+      # there, so the repository variable DEPLOYMENT_ACTIVE gates the job
+      # and this step gates the work inside it.
+      #
+      # The secret is read through the environment rather than interpolated
+      # into the script body. `${{ secrets.X }}` inside a `run:` is expanded
+      # before the shell sees it, so a syntax error or an `set -x` would
+      # print the credential into a public run log; `$X` from `env:` cannot.
+      - name: Check for the deployment secrets
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::notice title=Nothing to do::DEPLOYMENT_ACTIVE is true but DATABASE_URL is empty, so there is no database to talk to. Exiting 0."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
       - uses: pnpm/action-setup@v4
+        if: steps.preflight.outputs.ready == 'true'
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.preflight.outputs.ready == 'true'
       - name: Check pipeline health
+        if: steps.preflight.outputs.ready == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

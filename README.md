@@ -235,6 +235,39 @@ The entire stack runs on free tiers — **no paid services required, no credit c
 > `.github/workflows/keepalive.yml` prevents that and is the most load-bearing
 > workflow in the repo for a free deployment — do not disable it.
 
+### The `DEPLOYMENT_ACTIVE` switch
+
+Four workflows — nightly analytics, ops (digest + health check), the EDGAR
+reconcile, and the Supabase keep-alive — talk to a **production database**.
+Until one exists they have nothing to do, and a scheduled job that fails
+nightly for "the deployment does not exist yet" is worse than no job at all:
+it fills the Actions tab with red, sends failure email nobody reads, and
+trains you to ignore the run that eventually means something.
+
+So they are gated on a repository **variable** (not a secret):
+
+```bash
+# Turn them on, once the database and secrets are real:
+gh variable set DEPLOYMENT_ACTIVE --body true
+
+# Or: Settings → Secrets and variables → Actions → Variables → New variable
+#     Name: DEPLOYMENT_ACTIVE     Value: true
+
+# Turn them back off (e.g. while the project is paused):
+gh variable delete DEPLOYMENT_ACTIVE
+```
+
+**Unset is the safe default.** Those jobs report as _skipped_ — grey, not red —
+and nothing else in CI changes. A variable rather than a secret because
+`secrets.*` cannot be read in a job-level `if:` (GitHub fails the whole
+workflow with `Unrecognized named-value: 'secrets'`), while `vars.*` can.
+
+Each gated job ALSO checks that `DATABASE_URL` is actually non-empty before
+doing any work, so setting the variable before adding the secrets logs a
+notice and exits 0 rather than failing. The two layers answer different
+questions: the variable is "should this run at all", the guard is "is it
+actually configured".
+
 When each free tier stops being enough, what it costs, and what to do instead:
 **[SCALING.md](SCALING.md)**.
 
