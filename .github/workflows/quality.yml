@@ -1,0 +1,80 @@
+# Accessibility and performance, on a schedule and on demand.
+#
+# WHY A SEPARATE WORKFLOW. `ci.yml` runs on every push and finishes in
+# minutes; this needs a production build, a live Postgres, a seeded
+# database and a browser, and Lighthouse alone samples fifteen page loads.
+# Putting it in the push path would make every commit wait for it, and a
+# gate people wait for is a gate people learn to skip.
+#
+# WHY IT EXISTS AT ALL. r15 went looking for the axe and Lighthouse gates
+# ten UI revisions had been built against and found NEITHER — no
+# dependency, no config, nothing in CI. The numbers came from scratchpad
+# scripts nobody committed. A gate that only ever ran on one laptop is not
+# a gate, and this file is the difference.
+name: quality
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 04:00 UTC. Often enough to catch a regression while
+    # the change that caused it is still recent; rare enough that nobody
+    # starts ignoring the email.
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  a11y-and-perf:
+    name: axe (15 routes x 2 themes) + Lighthouse medians
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: insiderflow
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/insiderflow
+      # The suite asserts against the ZZ* fixtures, which are hidden by
+      # default so they can never reach a real deployment's analytics.
+      INSIDERFLOW_SHOW_SYNTHETIC: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Migrate and seed
+        run: pnpm db:migrate && pnpm seed
+
+      - name: Install Playwright chromium
+        run: pnpm --filter @insiderflow/web exec playwright install --with-deps chromium
+
+      # Builds and starts its own server via playwright.config.ts, and the
+      # r15 pre-flight refuses to reuse one that is not this build.
+      - name: axe — WCAG 2.1 AA, both themes
+        run: pnpm --filter @insiderflow/web exec playwright test e2e/a11y.spec.ts --project=chromium
+
+      - name: Start the built server for Lighthouse
+        run: |
+          pnpm --filter @insiderflow/web exec next start -p 3100 &
+          npx wait-on http://localhost:3100/api/health --timeout 120000
+
+      # Prints the standing deficit between the goal and the measurement on
+      # every run; fails only on a drop below the recorded floor.
+      - name: Lighthouse — medians over 3 runs
+        run: pnpm lighthouse --runs=3
