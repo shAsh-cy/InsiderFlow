@@ -345,6 +345,7 @@ When each free tier stops being enough, what it costs, and what to do instead:
 | [auth.md](docs/auth.md)                       | Supabase Auth, RLS, and the dev/prod story                             |
 | [politicians.md](docs/politicians.md)         | STOCK Act data model and source provenance                             |
 | [design-language.md](docs/design-language.md) | **Ledger** — tokens, type, motion, and the data-colour rules           |
+| [AGENT_SAFETY.md](docs/AGENT_SAFETY.md)       | Tool metadata as untrusted data, edit provenance, and the MCP audit    |
 | [SCALING.md](SCALING.md)                      | Free-tier limits, upgrade triggers, monthly costs                      |
 | `/docs/methodology`                           | Every derived-analytics formula, published in full                     |
 | `/design`                                     | The design system, rendered — every primitive with live data           |
