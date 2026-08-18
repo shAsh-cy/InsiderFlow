@@ -6,6 +6,7 @@ import {
   insertSyntheticTrade,
   type SyntheticCompany,
 } from "./fixtures";
+import { settledBox } from "./measure";
 
 /**
  * LAYOUT v3.1 — ONE LEFT EDGE PER SHELL. Rewritten from v3 (r5), which was
@@ -138,26 +139,14 @@ const ALL_ROUTES = [...APP_ROUTES, ...PROSE_ROUTES, ...STANDALONE_ROUTES];
 /**
  * A bounding box, polled until the element has actually been laid out.
  *
- * `boundingBox()` does not auto-wait: it returns null for an element that
- * is attached but has no box yet, so a single read is a race against
- * layout rather than a measurement of it. It stayed hidden here until the
- * suite grew enough concurrent work to widen the window — then two of
- * these read null and failed as `Cannot read properties of null`, which
- * reads like a missing element rather than a measurement taken too early.
- * `mobile-shell.spec.ts` documents the same trap for touch targets.
+ * Delegates to `./measure`, which is now the single implementation — this
+ * file and `mobile-shell.spec.ts` had grown one each independently, and
+ * that is exactly why the sites in `masthead.spec.ts` and
+ * `responsive.spec.ts` went unfixed through three separate sweeps: there
+ * was no one place to look.
  */
 async function boxOf(locator: Locator, name: string) {
-  let box: Awaited<ReturnType<Locator["boundingBox"]>> = null;
-  await expect
-    .poll(
-      async () => {
-        box = await locator.boundingBox();
-        return box ? box.width : -1;
-      },
-      { message: `${name} never got a box`, timeout: 10_000 },
-    )
-    .toBeGreaterThan(0);
-  return box!;
+  return settledBox(locator, name);
 }
 
 async function readShellTokens(page: Page) {

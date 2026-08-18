@@ -6,6 +6,7 @@ import {
   insertSyntheticTrade,
   type SyntheticCompany,
 } from "./fixtures";
+import { settledBox } from "./measure";
 
 /**
  * NOTHING RUNS OFF THE SIDE OF THE SCREEN. @mobile
@@ -231,11 +232,11 @@ test.describe("wide tables on a narrow screen @mobile", () => {
   test("the table does not eat the whole screen, and is keyboard-scrollable", async ({ page }) => {
     await page.goto("/screener");
     const scroller = page.getByTestId("data-table-scroll");
-    const box = await scroller.boundingBox();
+    const box = await settledBox(scroller, "screener table scroller");
     const viewport = page.viewportSize()!;
     // A 560px well on a phone captures every vertical drag inside it, so
     // the page cannot be scrolled past the table by touch at all.
-    expect(box!.height).toBeLessThanOrEqual(viewport.height * 0.75);
+    expect(box.height).toBeLessThanOrEqual(viewport.height * 0.75);
     // WCAG 2.1.1: a scroll container with no focusable child needs to be
     // focusable itself, or a keyboard cannot reach the columns to its right.
     await expect(scroller).toHaveAttribute("tabindex", "0");
@@ -264,15 +265,19 @@ test.describe("the screener's filters on a phone @mobile", () => {
       vw: window.innerWidth,
     }));
     expect(pageWidth.doc).toBeLessThanOrEqual(pageWidth.vw + 1);
-    expect(scrollable || (await row.boundingBox())!.width <= pageWidth.vw).toBe(true);
+    // Measured, then asserted — the box was read inline here, which made it
+    // the one measurement in this file taken while the tape was still
+    // settling.
+    const rowWidth = (await settledBox(row, "primary tape row")).width;
+    expect(scrollable || rowWidth <= pageWidth.vw).toBe(true);
   });
 
   test("the rest opens in a bottom sheet and applies on a button", async ({ page }) => {
     await page.goto("/screener");
     const trigger = page.getByTestId("filter-sheet-trigger");
     await expect(trigger).toBeVisible();
-    const triggerBox = await trigger.boundingBox();
-    expect(Math.round(triggerBox!.height)).toBeGreaterThanOrEqual(43);
+    const triggerBox = await settledBox(trigger, "filter sheet trigger");
+    expect(Math.round(triggerBox.height)).toBeGreaterThanOrEqual(43);
 
     await trigger.tap();
     const sheet = page.getByTestId("filter-sheet");
@@ -280,11 +285,14 @@ test.describe("the screener's filters on a phone @mobile", () => {
 
     // A sheet: anchored to the bottom, where a thumb is.
     const viewport = page.viewportSize()!;
-    const box = await sheet.boundingBox();
-    expect(Math.round(box!.y + box!.height), "flush to the bottom").toBeGreaterThanOrEqual(
+    // A bottom sheet ANIMATES up from off-canvas, so a single read here is
+    // the worst case in the file: it lands mid-travel and reports a sheet
+    // that is not flush to the bottom, which reads as a layout bug.
+    const box = await settledBox(sheet, "filter sheet");
+    expect(Math.round(box.y + box.height), "flush to the bottom").toBeGreaterThanOrEqual(
       viewport.height - 2,
     );
-    expect(Math.round(box!.width), "full width").toBeGreaterThanOrEqual(viewport.width - 2);
+    expect(Math.round(box.width), "full width").toBeGreaterThanOrEqual(viewport.width - 2);
 
     // Draft state: choosing does nothing until Apply. The bar writes to the
     // URL on every change, which would leave one history entry per control.
