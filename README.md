@@ -79,6 +79,11 @@ of ours.
 - **NSE bulk deals and pledges ignore their date window** — identical row counts
   for a 7-day and a 90-day request. `--days` does not bound them; schema-level
   dedup is what makes a repeat run harmless.
+- **`/screener` regressed 14 points on mobile Lighthouse** — 76 at r4, 62 today,
+  bimodal across runs (57–76 on an unchanging build). Script evaluation and
+  hydration, not the server: TTFB is 62ms and 286 kB of First Load JS evaluates
+  for ~1.9s throttled. Diagnosed but not fixed, with the attribution that is
+  still a hypothesis named as one — [docs/performance.md](docs/performance.md).
 - **A retired endpoint here returns `200` with an empty envelope, not `404`.**
   NSE's `corporates-pit` did exactly that, and this project read it as an IP
   block for three rounds. The smoke now probes it permanently as a control. Any
@@ -340,22 +345,23 @@ When each free tier stops being enough, what it costs, and what to do instead:
 
 ## Documentation
 
-| Doc                                           | What it covers                                                         |
-| --------------------------------------------- | ---------------------------------------------------------------------- |
-| [quickstart.md](docs/quickstart.md)           | Run locally in one command; deploy free, step by step                  |
-| [architecture.md](docs/architecture.md)       | How the pieces fit, and the invariants that hold it together           |
-| [adapters.md](docs/adapters.md)               | **How to add a market** — one adapter, no schema change                |
-| [api.md](docs/api.md)                         | API conventions, caching, and the null/range rules clients must handle |
-| [alerts.md](docs/alerts.md)                   | Telegram bot setup, delivery contract, idempotency                     |
-| [auth.md](docs/auth.md)                       | Supabase Auth, RLS, and the dev/prod story                             |
-| [politicians.md](docs/politicians.md)         | STOCK Act data model and source provenance                             |
-| [design-language.md](docs/design-language.md) | **Ledger** — tokens, type, motion, and the data-colour rules           |
-| [AGENT_SAFETY.md](docs/AGENT_SAFETY.md)       | Tool metadata as untrusted data, edit provenance, and the MCP audit    |
-| [SCALING.md](SCALING.md)                      | Free-tier limits, upgrade triggers, monthly costs                      |
-| `/docs/methodology`                           | Every derived-analytics formula, published in full                     |
-| `/design`                                     | The design system, rendered — every primitive with live data           |
-| `/legal`                                      | Data sources, licences, and the disclaimers that apply                 |
-| `/status`                                     | Live ingestion lag and per-source freshness                            |
+| Doc                                           | What it covers                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------ |
+| [quickstart.md](docs/quickstart.md)           | Run locally in one command; deploy free, step by step                    |
+| [architecture.md](docs/architecture.md)       | How the pieces fit, and the invariants that hold it together             |
+| [adapters.md](docs/adapters.md)               | **How to add a market** — one adapter, no schema change                  |
+| [api.md](docs/api.md)                         | API conventions, caching, and the null/range rules clients must handle   |
+| [alerts.md](docs/alerts.md)                   | Telegram bot setup, delivery contract, idempotency                       |
+| [auth.md](docs/auth.md)                       | Supabase Auth, RLS, and the dev/prod story                               |
+| [politicians.md](docs/politicians.md)         | STOCK Act data model and source provenance                               |
+| [design-language.md](docs/design-language.md) | **Ledger** — tokens, type, motion, and the data-colour rules             |
+| [AGENT_SAFETY.md](docs/AGENT_SAFETY.md)       | Tool metadata as untrusted data, edit provenance, and the MCP audit      |
+| [performance.md](docs/performance.md)         | What Lighthouse actually measures here, and the one route that regressed |
+| [SCALING.md](SCALING.md)                      | Free-tier limits, upgrade triggers, monthly costs                        |
+| `/docs/methodology`                           | Every derived-analytics formula, published in full                       |
+| `/design`                                     | The design system, rendered — every primitive with live data             |
+| `/legal`                                      | Data sources, licences, and the disclaimers that apply                   |
+| `/status`                                     | Live ingestion lag and per-source freshness                              |
 
 ## Before you make this repository public
 
