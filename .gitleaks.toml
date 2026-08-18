@@ -49,7 +49,17 @@ keywords = ["eyJ"]
 # key eventually gets one too.
 [rules.allowlist]
 regexTarget = "match"
-regexes = ['''"role":\s*"anon"''', '''NEXT_PUBLIC_SUPABASE_ANON_KEY''']
+regexes = [
+  '''"role":\s*"anon"''',
+  '''NEXT_PUBLIC_SUPABASE_ANON_KEY''',
+  # A signature that is a run of z's is not a signature. `account-chip.spec.ts`
+  # carries two shape-correct tokens signed by nobody, to prove a forged cookie
+  # renders the sign-in link instead of an account chip — the test needs a real
+  # JWT SHAPE and must never contain a real JWT. Allowlisting the shape of the
+  # fake, rather than the file, means a genuine key committed to that same spec
+  # still trips this rule.
+  '''\.z{20,}$''',
+]
 
 [allowlist]
 description = "Fixtures, decoys and documentation"
@@ -59,8 +69,47 @@ paths = [
   '''\.github/workflows/ci\.yml''',
   # Lockfiles carry integrity hashes that look like high-entropy strings.
   '''pnpm-lock\.yaml''',
+
+  # ── Build output and installed dependencies ────────────────────────
+  #
+  # These matter only to `gitleaks dir`, which reads the filesystem rather
+  # than the pack. Git mode never sees them — they are gitignored and have
+  # never been committed — so excluding them removes 700 MB of noise from a
+  # local run without narrowing what the history scan covers by one byte.
+  #
+  # `.env` is deliberately NOT here. A dir-mode run that flags a
+  # developer's own `.env.local` is the tool telling the truth about what
+  # is sitting on that disk; CI checks out no such file and is unaffected.
+  '''(^|/)node_modules/''',
+  '''(^|/)\.next/''',
+  '''(^|/)\.wrangler/''',
+  '''(^|/)dist/''',
+  '''(^|/)coverage/''',
+  '''(^|/)playwright-report/''',
+  '''(^|/)test-results/''',
 ]
 regexes = [
   # The literal used by the image-secret test, and only that literal.
   '''ci-decoy-must-not-ship''',
+
+  # ── Fixtures that are supposed to look like credentials ────────────
+  #
+  # Everything below is allowlisted by its exact value or by a shape no
+  # real credential can have. Not by path: blanket-allowing a test file is
+  # how a real key eventually lands in one and nothing says a word.
+
+  # The forged JWTs in e2e/account-chip.spec.ts, whose signature is a run
+  # of z's. Repeated here because the default `jwt` rule matches them too,
+  # and a rule-scoped allowlist only covers its own rule.
+  '''\.z{20,}''',
+
+  # The webhook secret in lib/security/telegram-webhook.test.ts. A literal
+  # in a unit test that asserts constant-time comparison accepts the exact
+  # value and refuses every near-miss; it has never been a live secret.
+  '''cQ8v3nZ1sT7pXk2LmR9wJb4hY6dA0eGu''',
+
+  # The comparison fixture in lib/security/constant-time.test.ts. It is the
+  # MD5 of the string "password" — a published test vector, chosen so that
+  # anyone reading the test recognises it as one.
+  '''5f4dcc3b5aa765d61d8327deb882cf99''',
 ]
