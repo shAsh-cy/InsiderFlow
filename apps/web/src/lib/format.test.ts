@@ -46,6 +46,24 @@ describe("formatDualCurrency", () => {
     expect(formatDualCurrency(null, "INR", null)).toBeNull();
     expect(formatDualCurrency(null, "USD", null)).toBeNull();
   });
+
+  it("prints a disclosed zero as a figure, and never as the undisclosed treatment", () => {
+    // A nil-consideration inter-se transfer is a filed fact, and a promoter
+    // whose holding is 0% after it is among the most material things a SAST
+    // disclosure can say. `null` here means "the filing did not say" and the
+    // renderer turns it into an em dash; returning null for 0 as well would
+    // report a promoter exit as an administrative gap. The two inputs must
+    // not produce the same output — that is the whole invariant, so it is
+    // asserted as an inequality and not only as two literals.
+    expect(formatDualCurrency(0, "INR", 0)).toBe("₹0 · $0");
+    expect(formatDualCurrency(0, "USD", 0)).toBe("$0");
+    expect(formatDualCurrency(0, "INR", 0)).not.toBe(formatDualCurrency(null, "INR", null));
+    expect(formatDualCurrency(0, "USD", 0)).not.toBe(formatDualCurrency(null, "USD", null));
+
+    // And one side known is still one side known, at zero as anywhere else.
+    expect(formatDualCurrency(0, "INR", null)).toBe("₹0");
+    expect(formatDualCurrency(null, "INR", 0)).toBe("$0");
+  });
 });
 
 describe("formatMoney / formatPct / timeAgo", () => {

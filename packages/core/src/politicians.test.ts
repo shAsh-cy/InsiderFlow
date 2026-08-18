@@ -49,6 +49,17 @@ describe("formatAmountBracket", () => {
     expect(formatAmountBracket("15001.00", "50000.00")).toBe("$15,001–$50,000");
   });
 
+  it("still renders a bracket when the two bounds are the same number", () => {
+    // The one case where collapsing to a single figure looks safe — the
+    // bounds agree, so what is there to lose? The filing is what is lost.
+    // A PTR discloses a BAND; "$1,000" is a precision the document does not
+    // contain, and once printed it is indistinguishable from an exact
+    // figure. `min === max ? usd(min) : …` is the tempting simplification
+    // and this is the assertion that has to reject it.
+    expect(formatAmountBracket(1000, 1000)).toBe("$1,000–$1,000");
+    expect(formatAmountBracket("1000.00", "1000.00")).toBe("$1,000–$1,000");
+  });
+
   it("keeps an open-ended top bracket open", () => {
     // "Over $50,000,000" has no upper bound in the filing; printing
     // "$50,000,000" would assert a maximum that does not exist.
