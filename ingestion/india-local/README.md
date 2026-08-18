@@ -48,6 +48,57 @@ risk of scraping it from their own machine.
   environment. **Run the smoke first** and compare `firstRowKeys` against the
   raw-row types before trusting a real run.
 
+## Live-verification findings (2026-08-18) — residential Indian line
+
+Run from a residential connection in Asia/Calcutta, which is the network
+this runner is designed for. `pnpm --filter @insiderflow/india-local smoke`
+at `--days=7` and again at `--days=90`. Nothing was written.
+
+| Endpoint             | 7 days |  90 days | Field names                     |
+| -------------------- | -----: | -------: | ------------------------------- |
+| NSE PIT              |  **0** |    **0** | still **INFERRED**              |
+| NSE SAST             |    188 |    1,334 | **confirmed** — 25 keys         |
+| NSE bulk deals       |     70 |       70 | **confirmed** — 9 keys          |
+| NSE promoter pledges |  1,693 |    1,693 | **confirmed** — 21 keys         |
+| BSE announcements    | failed | 50 (2nd) | **confirmed** — 12 keys sampled |
+
+Three things this changes.
+
+**PIT is not a datacenter problem.** The note above attributes empty PIT
+responses to datacenter IP ranges. This line is residential and Indian and
+PIT still returns nothing — over ninety days, on an exchange with two
+thousand listed companies, which is not a quiet quarter. The response is
+`HTTP 200` with `{"acqNameList":[],"data":[]}`: the envelope is right, the
+key our parser reads is right, and it is empty. Whatever gates that
+endpoint, it is not only the IP — session fingerprint and the `Referer`
+NSE wants for `corporates-pit` are the remaining suspects. **The PIT row
+type in `india-scrape.ts` therefore remains INFERRED and unverified**, and
+so does everything downstream of it: PIT is the endpoint that carries
+actual insider trades, which makes it the one that matters most.
+
+**Two endpoints ignore the date window.** Bulk deals returned exactly 70
+rows and pledges exactly 1,693 for both a 7-day and a 90-day request. A
+window parameter that changes nothing means `--days` cannot bound those
+two, so the ingest's idempotency — not its query — is what stops repeated
+work. That is fine today because dedup keys are enforced in the schema;
+it is worth knowing before anyone reads a `--days=1` run as cheap.
+
+**BSE announcements fail intermittently.** The first attempt died with
+`Parse Error: Unexpected whitespace after header value` — Node's strict
+HTTP parser refusing a malformed response header, not a network fault and
+not a block. The second attempt, forty seconds later, returned 50 rows.
+One failure in two attempts is a source that will page somebody at 3am.
+If it recurs, `insecureHTTPParser` on the guarded request for the two
+allowlisted BSE hosts is the narrow fix; it is deliberately not applied
+pre-emptively, because relaxing a parser to work around a server that is
+usually fine trades a real protection for a rare convenience.
+
+Use `--days=N` on the smoke to tell a block apart from a quiet week:
+
+```bash
+ENABLE_INDIA_INGEST=true pnpm --filter @insiderflow/india-local smoke --days=90
+```
+
 ## Setup
 
 ```bash

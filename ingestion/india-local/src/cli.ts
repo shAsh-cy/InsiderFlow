@@ -49,11 +49,21 @@ const guardedFetch = createGuardedFetch({
   ],
 });
 
-/** Manual live smoke: prints row counts + first-row keys, writes NOTHING. */
-async function smoke(): Promise<void> {
+/**
+ * Manual live smoke: prints row counts + first-row keys, writes NOTHING.
+ *
+ * `--days` matters more than it looks. A seven-day window that returns
+ * zero PIT rows has two explanations that this tool exists to tell apart:
+ * NSE soft-failing to empty data (what it does to a datacenter IP), or a
+ * genuinely quiet week. Widening the window separates them — an empty
+ * ninety-day PIT window on an exchange of that size is not a quiet
+ * quarter, it is a block. Reported as `days` in every line so a pasted
+ * log says what it was asking for.
+ */
+async function smoke(days: number): Promise<void> {
   const session = new NseSession(guardedFetch);
   const to = new Date().toISOString().slice(0, 10);
-  const from = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 
   const targets: Array<[string, string, string]> = [
     ["pit", nsePitUrl(from, to), NSE_PIT_REFERER],
@@ -70,12 +80,15 @@ async function smoke(): Promise<void> {
       const rows = payload.data ?? [];
       jsonLogger("smoke_nse", {
         endpoint: name,
+        days,
+        window: `${from}..${to}`,
         rows: rows.length,
         firstRowKeys: rows[0] ? Object.keys(rows[0]).sort() : [],
       });
     } catch (error) {
       jsonLogger("smoke_nse_failed", {
         endpoint: name,
+        days,
         message: error instanceof Error ? error.message : String(error),
       });
     }
@@ -108,7 +121,7 @@ async function main(): Promise<void> {
   }
 
   if (process.argv.includes("--smoke")) {
-    await smoke();
+    await smoke(argValue("days") ? Number(argValue("days")) : 7);
     return;
   }
 
