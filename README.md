@@ -54,9 +54,24 @@ source that has never produced a row reads **never**, not `0`.
 `pnpm measure:edgar-latency` measures this against live EDGAR rather than
 asserting it. It separates terms that were previously added together:
 
-- **Dissemination** — EDGAR acceptance to public feed. **Theirs.** Filings accepted
-  after 17:30 ET disseminate the _next business morning_, so this term is
-  occasionally twelve hours and never ours. Reported, never asserted on.
+- **Dissemination** — EDGAR acceptance to public feed. **Theirs.** Reported,
+  never asserted on.
+
+  This bullet used to say that filings accepted after 17:30 ET disseminate "the
+  next business morning", making the term "occasionally twelve hours". **That is
+  the general EDGAR rule and it does not apply to the forms this project
+  tracks.** Section 16 filings — Forms 3, 4 and 5 — accepted between 17:30 and
+  **22:00 ET are deemed filed, and are disseminated, the SAME business day**.
+  The 17:30 cutoff that rolls a submission to the next business day governs
+  other filing types. So the twelve-hour tail was never real for Form 4, and
+  the correction moves in the direction that flatters this project, which is
+  exactly why it is worth stating plainly rather than quietly editing: the old
+  sentence excused latency this project does not actually suffer.
+
+  What remains true: dissemination is the SEC's term, not ours, and EDGAR
+  accepts nothing between 22:00 and 06:00 ET, so a filing submitted overnight
+  waits for the morning window.
+
 - **Detection** — public feed to queryable row. **Ours**, gated at 180s. **Not yet
   measured**: measuring it requires watching a filing arrive, and the 420s watch
   window on 2026-08-15 at 07:20 ET saw no new Form 4. The script exits 2 and says
@@ -123,6 +138,78 @@ That queue is the fix for a real defect: discovery used to be inseparable from p
 whatever a run could not fetch was forgotten, and under sustained load the oldest unprocessed
 filings scrolled out of EDGAR's 100-item feed window permanently. See
 [docs/architecture.md](docs/architecture.md).
+
+## How this compares
+
+**No claim below is about being better.** There is no "most accurate", no
+"fastest", and no latency SLA — this project has one measured pipeline figure
+(44.5s for 25 filings) and has never measured detection latency at all, so it
+is in no position to compare on speed with anyone. What the table compares is
+what each product **is**: what it costs, what it covers, and whether you can
+read its source or move your data out.
+
+Prices are list prices for individual plans as published by each vendor and
+they change; check before relying on one.
+
+| Product                                            | Price (individual)          | Insider (Form 4) | Congress                      | Options / dark pool    | Markets outside the US         | Source available   | Self-hostable |
+| -------------------------------------------------- | --------------------------- | ---------------- | ----------------------------- | ---------------------- | ------------------------------ | ------------------ | ------------- |
+| **InsiderFlow**                                    | Free (AGPL-3.0)             | Yes              | Pipeline built, upstream dead | No                     | India adapters, self-host only | **Yes, all of it** | **Yes**       |
+| [OpenInsider](http://openinsider.com)              | Free                        | Yes              | No                            | No                     | No                             | No                 | No            |
+| [SecForm4](https://www.secform4.com)               | Free tier; paid alerts      | Yes              | No                            | No                     | No                             | No                 | No            |
+| [InsiderScreener](https://www.insiderscreener.com) | Free tier; paid plans       | Yes              | No                            | No                     | **Yes — multi-country**        | No                 | No            |
+| [Finviz Elite](https://finviz.com/elite.ashx)      | $39.50/mo, $24.96/mo annual | Yes (a feature)  | No                            | Partial (options data) | Limited                        | No                 | No            |
+| [Unusual Whales](https://unusualwhales.com)        | $48/mo                      | Yes              | **Yes**                       | **Yes — its core**     | Limited                        | No                 | No            |
+| [Quiver Quantitative](https://www.quiverquant.com) | Free tier; paid tiers       | Yes              | **Yes**                       | Some                   | No                             | No                 | No            |
+| VerityData (formerly InsiderScore)                 | Institutional, quote-only   | **Yes, curated** | No                            | No                     | Some                           | No                 | No            |
+| [2iQ Research](https://www.2iqresearch.com)        | Institutional, quote-only   | **Yes, curated** | No                            | No                     | **~50 countries**              | No                 | No            |
+| Trendlyne / StockEdge / Tickertape                 | ₹ retail plans, free tiers  | India SAST/PIT   | No                            | Some                   | **India**                      | No                 | No            |
+
+### Where InsiderFlow is behind
+
+Written before the feature list on purpose. Every one of these is a real
+reason to use something else.
+
+- **No options flow and no dark-pool data.** Unusual Whales is built on exactly
+  that and this project has none of it, not as a gap to close but as a
+  different product.
+- **The politicians table is empty.** The STOCK Act pipeline is built and
+  tested, and the house/senate-stock-watcher S3 buckets that fed it answer
+  **403**. Quiver and Unusual Whales have working congressional coverage today
+  and this does not. The surface says so rather than showing zero rows as
+  though that were the answer.
+- **India is self-host only.** The NSE and BSE adapters are live-verified from
+  an Indian residential line, and they ship **off by default** because the
+  exchanges' terms restrict redistribution. A hosted InsiderFlow serves US data;
+  Trendlyne, StockEdge and Tickertape serve Indian retail users today.
+- **No global multi-country coverage.** 2iQ covers roughly 50 countries and
+  InsiderScreener covers many; this covers one, with EU MAR and SEDI existing
+  as normalizer stubs and no feed behind either.
+- **No five-year insider performance ranking.** VerityData's and 2iQ's value is
+  curation — an analyst deciding which insiders have been worth following over
+  years. The scoring layer here computes forward returns from a published
+  formula over the history it has ingested, which is not the same thing and is
+  much younger.
+- **No 13D/G, no 13F.** Ownership and institutional holdings are out of scope
+  today.
+- **Not deployed.** Everything above is verified against a local production
+  build and CI. There is no hosted instance to compare uptime with.
+
+### Where it is genuinely different
+
+- **The source is the product.** AGPL-3.0, and every derived number has a
+  formula at [`/docs/methodology`](/docs/methodology). Nothing here is a model
+  you have to trust — the ranking, the clustering and the anomaly detection are
+  all readable, and disagreeing with one is a pull request.
+- **You can run it.** `docker compose up` gives the whole product on one
+  machine, and the free-tier deployment path is documented end to end. Your
+  watchlist and alert rules live in your database.
+- **Honesty invariants are enforced by tests, not by intent.** Politician
+  amounts are always ranges because the STOCK Act only discloses ranges; a null
+  transaction value renders "not disclosed" and never `0`; superseded filings
+  are hidden by default; synthetic fixtures live in a reserved `ZZ*` namespace
+  that analytics excludes. Each is a test, and [the section
+  above](#known-defects-stated-rather-than-filed-away) lists what is broken with
+  the same weight as what works.
 
 ## Architecture
 
