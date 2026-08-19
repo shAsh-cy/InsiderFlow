@@ -178,3 +178,41 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- ref: \`${{ github.ref }}\` @ \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- reason: ${{ github.event.inputs.reason || 'tag push' }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── MIGRATIONS ─────────────────────────────────────────────────────
+      #
+      # The port is asserted BEFORE the migration, because getting it wrong
+      # does not fail — it HANGS. Supabase's transaction pooler (6543) has been
+      # transaction-mode-only since 2025-02-28, and drizzle-kit needs session
+      # state, so a migration pointed there sits until the job times out, 45
+      # minutes after a human approved it.
+      #
+      # The assertion prints the port and a host SHAPE and nothing else: the
+      # value it is reading is an admin credential and this log is public.
+      #
+      # Direct (db.<ref>.supabase.co:5432) is session-capable but IPv6-only
+      # without the ~$4/mo IPv4 add-on, and Actions runners are IPv4 — so the
+      # free path is the SESSION pooler, same hostname as the transaction
+      # pooler, port 5432. The script says so if it sees the direct host.
+      - name: Assert the migration connection is session-capable
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/assert-session-pooler.mjs DATABASE_URL
+
+      - name: Run migrations
+        id: migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm db:migrate
