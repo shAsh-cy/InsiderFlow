@@ -270,6 +270,54 @@ if (busy > 0.05) {
   );
 }
 
+/**
+ * REFUSE TO MEASURE A SERVER THAT IS NOT THERE.
+ *
+ * The same failure as the busy-machine one above, and it was found the same
+ * way: by producing an alarming, meaningless report. Run with nothing
+ * listening on the base URL, every Lighthouse run errors, every score comes
+ * back **0**, and the gate prints ten floor violations and a standing deficit
+ * of ten — an output identical in shape to a catastrophic regression, with
+ * nothing anywhere in it saying "there is no server".
+ *
+ * A zero is not a low score. It is the absence of a measurement, and the two
+ * must not print the same way. So the base URL is checked first, once, and a
+ * missing server aborts with its own name.
+ */
+const preflight = async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`${BASE}/api/health`, { signal: controller.signal });
+    return response.ok ? null : `answered ${response.status}`;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const unreachable = await preflight();
+if (unreachable) {
+  console.error(
+    [
+      "",
+      `LIGHTHOUSE PRE-FLIGHT FAILED — nothing is serving ${BASE} (${unreachable})`,
+      "",
+      "  Every run would error and every score would come back 0, which this",
+      "  gate would then report as ten floor violations. A missing server and a",
+      "  catastrophic regression must not print the same way.",
+      "",
+      "  Fix: start a production build first —",
+      "    pnpm --filter @insiderflow/web build",
+      "    pnpm --filter @insiderflow/web exec next start -p 3100",
+      "  or point elsewhere with --base=http://localhost:3000",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 const chrome = await launch({
   chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu"],
 });

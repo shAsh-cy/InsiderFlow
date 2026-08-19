@@ -192,7 +192,20 @@ test.describe("the public API envelope", () => {
     // unable to fail — the 503 BODY is pinned by the classifier's unit test
     // in src/lib/api/error-redaction.ts, which can produce one on demand.
     expect(response.status(), "the database is up; a 503 is a genuine failure").toBe(200);
-    for (const marker of ["insiderflow_app", "pooler.supabase.com", "ECONNREFUSED", "password"]) {
+    // `password` on its own was the first version of this list and it FAILED
+    // on a healthy response: the readiness block legitimately contains
+    // "Email+password provider disabled", which is a deployment step this
+    // project deliberately reports. A marker that matches correct output is a
+    // marker that gets deleted the first week, so the list names what a
+    // DRIVER leak actually looks like instead of a word that appears in it.
+    for (const marker of [
+      "insiderflow_app",
+      "pooler.supabase.com",
+      "ECONNREFUSED",
+      "password authentication",
+      "getaddrinfo",
+      "postgres://",
+    ]) {
       expect(text, `/api/health leaked ${marker}`).not.toContain(marker);
     }
   });
