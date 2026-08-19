@@ -222,10 +222,18 @@ const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i;
  * would be refused; that is the same fail-closed direction, with the same
  * lever, and it is not a shape this project ships.
  *
- * `SITE_URL` is the only such variable this repo defines —
- * `NEXT_PUBLIC_SITE_URL` and `VERCEL_URL` appear nowhere in it, and
- * inventing them here would create a configuration surface that no
+ * `SITE_URL` is the only origin variable the REQUEST PATH reads, and
+ * inventing others here would create a configuration surface that no
  * deployment sets and nobody would notice was broken.
+ *
+ * This used to say `NEXT_PUBLIC_SITE_URL` and `VERCEL_URL` "appear nowhere
+ * in" the repository. That was true when it was written and is not now: the
+ * r20 environment sweep found `NEXT_PUBLIC_SITE_URL` read once, in
+ * `packages/alerts/scripts/send-live-alert.mjs`, a delivery probe that falls
+ * back to a hard-coded origin. It is not in `.env.example` and nothing on
+ * the request path consults it — so the reasoning above is unchanged, but a
+ * comment claiming a variable exists nowhere is exactly the kind of claim
+ * that ages into a lie while the code around it stays correct.
  */
 export function allowedOriginsForRequest(req: Request): string[] {
   const allowed: string[] = [];

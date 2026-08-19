@@ -32,6 +32,22 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@insiderflow/core", "@insiderflow/db"],
 
   /**
+   * No `X-Powered-By: Next.js` on any response.
+   *
+   * Next defaults this to true, and the r20 leak audit found the header on
+   * every response of the production build — it had never been set here, and
+   * "we disable it" had been assumed rather than checked.
+   *
+   * Worth being honest about the size of this: it is version-free, and the
+   * framework is obvious from `/_next/static/...` in any page's HTML, so
+   * removing it buys very little against a human. What it does remove is a
+   * free filter — mass scanners select targets by exactly this header, and
+   * being absent from that list is worth one line of config. It is not worth
+   * claiming as a defence, and PRODUCTION_READINESS.md does not.
+   */
+  poweredByHeader: false,
+
+  /**
    * OFF by default, ON for a diagnostic build: `ANALYZE=1 pnpm build`.
    *
    * r17 attributed `/screener`'s 14-point Lighthouse regression to 835ms of
