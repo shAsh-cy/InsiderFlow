@@ -216,3 +216,64 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: pnpm db:migrate
+
+      # ── THE RLS GATE — BLOCKING ────────────────────────────────────────
+      #
+      # This is the deploy's most important step and it is four lines, because
+      # it does not reimplement anything. `db:app-role` and
+      # `db:bootstrap -- --check` are the SAME commands the local stack runs,
+      # the same ones CI runs between seed and suite. A release-only copy of a
+      # security check is a copy that drifts, and the half that drifts is
+      # always the half nobody reads.
+      #
+      # What the check does: creates or rotates `insiderflow_app` from
+      # APP_DB_PASSWORD and refuses to finish if the role ends up SUPERUSER or
+      # BYPASSRLS; then inserts a probe row as admin and tries to read it back
+      # over APP_DATABASE_URL with no `app.user_id` set. Zero rows with no
+      # context, one with the owner's, zero with another user's. Anything else
+      # is `rls_not_enforced` and a non-zero exit.
+      #
+      # A missing APP_DATABASE_URL is `rls_not_proven` and also non-zero —
+      # enforcement is never taken on trust, because the catalog flags were
+      # true for the whole period RLS was doing nothing.
+      #
+      # WHY IT RUNS HERE. r20 made the web app refuse to boot without
+      # APP_DATABASE_URL, which protects the request path. This protects the
+      # DEPLOY: the app could boot perfectly against a database whose policies
+      # do not bite, and nothing user-visible would look wrong. That is the
+      # exact failure this project shipped for eleven rounds.
+      #
+      # NOTE ON THE POOLER USERNAME: Supavisor routes by username, so the
+      # application role's pooled connection string uses
+      # `insiderflow_app.<project-ref>` and not a bare `insiderflow_app`.
+      # `app-role.mjs` prints a suggested string that swaps only the username,
+      # so its suggestion is wrong for Supabase. DEPLOY.md says so; the value
+      # used here is APP_DATABASE_URL from the environment secrets, built by
+      # hand.
+      - name: Create the application role
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APP_DB_PASSWORD: ${{ secrets.APP_DB_PASSWORD }}
+        run: pnpm db:app-role
+
+      - name: PROVE row-level security is enforced
+        id: rls
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APP_DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
+        run: |
+          set -o pipefail
+          if pnpm db:bootstrap -- --check 2>&1 | tee rls-check.log; then
+            echo "RLS proven against production" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error title=RLS IS NOT ENFORCED::The deploy is aborting. The web app would run with row-level security inert, and every user's watchlists and alert rules would be readable by every request. See the log above and docs/auth.md."
+            exit 1
+          fi
+          # `tee` above means the pipeline's exit status is bootstrap's, thanks
+          # to pipefail. Belt and braces: the check is also allowed to exit 0
+          # while REPORTING a failure it decided to tolerate, so the log is
+          # searched for the two verdicts that must never pass.
+          if grep -qE '"check":"(rls_not_enforced|rls_not_proven|rls_over_restrictive)"' rls-check.log; then
+            echo "::error title=RLS IS NOT ENFORCED::bootstrap exited 0 but reported a failing RLS verdict. Aborting."
+            exit 1
+          fi
