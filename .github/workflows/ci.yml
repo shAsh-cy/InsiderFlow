@@ -74,8 +74,17 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # DEPLOY_ENV: `next build` sets NODE_ENV=production, and next.config.ts
+      # refuses a production build with no APP_DATABASE_URL — such a
+      # deployment connects as the admin role and every row-level-security
+      # policy on the user tables is skipped. This runner builds an artefact
+      # and deploys nothing, so it declares that here. Setting a fake
+      # APP_DATABASE_URL instead would have made the gate pass on every future
+      # PR while proving nothing about any deployment.
       - name: Build
         run: pnpm build
+        env:
+          DEPLOY_ENV: ci
 
       # AFTER the build, because it scans the build output. `.next/static`
       # is what every visitor downloads, so a key that lands there is

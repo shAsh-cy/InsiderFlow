@@ -1,7 +1,31 @@
 import createNextIntlPlugin from "next-intl/plugin";
 import type { NextConfig } from "next";
 
+import { assertDbEnvOrExit } from "./src/lib/db-env";
 import { securityHeadersForNextConfig } from "./src/lib/security/headers";
+
+/**
+ * REFUSE TO BUILD A PRODUCTION DEPLOYMENT THAT CANNOT ENFORCE RLS.
+ *
+ * This runs before anything else in the config, on every `next build`,
+ * `next start` and `next dev`, because it is the earliest point in the
+ * process that can still say no.
+ *
+ * The runtime check in `src/lib/db.ts` is the one that actually protects a
+ * request, and it is not enough on its own: it fires on the first query, which
+ * on a serverless deployment is after the deploy succeeded, the traffic
+ * switched over and the old version was retired. Failing the BUILD means the
+ * misconfiguration never gets a URL.
+ *
+ * A build that is not a deployment says so at its own build site with
+ * DEPLOY_ENV — see db-env.ts for why the exemption lives there rather than
+ * here, and Dockerfile / playwright.config.ts / ci.yml for the three that do.
+ */
+assertDbEnvOrExit(process.env, {
+  warn: (message) => console.warn(message),
+  error: (message) => console.error(message),
+  exit: (code) => process.exit(code),
+});
 
 const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript source; Next transpiles them.

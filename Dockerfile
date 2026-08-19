@@ -54,6 +54,23 @@ FROM runner AS web
 # "<Html> should not be imported outside of pages/_document".
 ENV NODE_ENV=production
 
+# THIS IMAGE IS NOT A PRODUCTION DEPLOYMENT, AND HAS TO SAY SO.
+#
+# `next.config.ts` refuses to build when the stance is production and
+# APP_DATABASE_URL is missing, because a deployment without it connects as the
+# admin role and every row-level-security policy on the user tables is skipped.
+# The stance defaults to NODE_ENV, and the line above sets NODE_ENV=production
+# for a reason that has nothing to do with deploying: it is what makes Next
+# compile a production bundle.
+#
+# So the exemption is declared here, at the build site, in the open. This
+# image is the local `docker compose up` stack (see the header) and the
+# "run it on a small VPS" path in SCALING.md; a VPS operator who intends it as
+# a real deployment sets DEPLOY_ENV=production in their compose environment
+# and gets the check back, which is the right way round — opting IN to the
+# check is a one-line change, opting out would have been a code change here.
+ENV DEPLOY_ENV=local-container
+
 # NEXT_PUBLIC_* must be present at BUILD time, not just at run time.
 #
 # Server code reads process.env at request time, so setting these only with
