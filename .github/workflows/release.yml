@@ -420,3 +420,47 @@ jobs:
           echo "url=${url}" >> "$GITHUB_OUTPUT"
           echo "deployed: ${url}"
           echo "- web: ${url}" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── SMOKE ──────────────────────────────────────────────────────────
+      #
+      # The last thing between this build and the public, and the only gate in
+      # the pipeline that talks to the deployment as a visitor does.
+      #
+      # Every check in `scripts/smoke-production.mjs` is either something that
+      # has actually gone wrong on this project or something only a real
+      # deployment can be wrong about. In particular it re-checks the four r20
+      # findings, so they cannot come back in production without failing here:
+      # `X-Powered-By` absent; `/api/me/*` carrying no `user_id`; no body
+      # anywhere naming the application role, the pooler host or an internal
+      # address; and no source map served.
+      #
+      # A SKIP COUNTS AS A FAILURE in that script. An unchecked control is not
+      # a passing one.
+      #
+      # SITE_URL, not the deployment URL, when one is configured: every
+      # `vercel deploy` also produces a unique per-deployment hostname, and
+      # smoking that one proves the build works while proving nothing about
+      # the domain visitors actually reach — the alias, the redirect and the
+      # certificate all live on the other name.
+      - name: Smoke test the deployment
+        id: smoke
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          DEPLOYMENT_URL: ${{ steps.deploy_web.outputs.url }}
+          FORCE_FAILURE: ${{ github.event.inputs.force_smoke_failure }}
+        run: |
+          set -euo pipefail
+          target="${SITE_URL:-$DEPLOYMENT_URL}"
+          echo "smoking ${target}"
+          echo "- smoked: ${target}" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${FORCE_FAILURE}" = "true" ]; then
+            # The dry run. Points the smoke suite at a host that cannot answer
+            # so the rollback path below is exercised end to end on a real
+            # release, without breaking anything. `pnpm deploy:prod --
+            # --dry-run-rollback` sets this.
+            echo "::warning title=DRY RUN::force_smoke_failure is set. Smoke is being pointed at an unreachable host to exercise rollback. DEPLOYMENT_ACTIVE will NOT be flipped."
+            target="http://127.0.0.1:9"
+          fi
+
+          node scripts/smoke-production.mjs --base="${target}" | tee smoke.log
