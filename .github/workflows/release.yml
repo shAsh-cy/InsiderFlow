@@ -464,3 +464,41 @@ jobs:
           fi
 
           node scripts/smoke-production.mjs --base="${target}" | tee smoke.log
+
+      # ── ARM THE SCHEDULED WORKFLOWS ────────────────────────────────────
+      #
+      # `DEPLOYMENT_ACTIVE` is the repository variable that four scheduled
+      # workflows check in their job-level `if:` — nightly analytics, ops
+      # (ops-check + digest), backfill (reconcile + backfill), and the Supabase
+      # keep-alive. Until it is `true` every one of them SKIPS.
+      #
+      # It is flipped here and nowhere else, and only after smoke passed. The
+      # ordering is the point: a scheduled job firing against a deployment
+      # that failed its smoke test would be the first thing to touch
+      # production after a bad release.
+      #
+      # Each of those workflows ALSO guards on its own secret being non-empty,
+      # so flipping this does not arm a job whose credentials are missing — it
+      # reports "nothing to do" and exits 0 instead of failing twice a week.
+      #
+      # DEPLOY_PAT, not GITHUB_TOKEN: the default token cannot write repository
+      # variables. The PAT needs `repo` scope (classic) or Variables:write
+      # (fine-grained). DEPLOY.md says so.
+      #
+      # `if: success()` is explicit rather than implied. A step with no
+      # condition after a failed step does not run — but the rollback steps
+      # below carry `if: failure()`, and having both stated makes the pair
+      # readable as a pair.
+      - name: Arm the scheduled workflows
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error title=DEPLOY_PAT is not set::Smoke passed but DEPLOYMENT_ACTIVE cannot be flipped, so the four scheduled workflows stay skipped. Set the secret and re-run, or set the variable by hand: gh variable set DEPLOYMENT_ACTIVE --body true"
+            exit 1
+          fi
+          gh variable set DEPLOYMENT_ACTIVE --body true --repo "${{ github.repository }}"
+          echo "DEPLOYMENT_ACTIVE=true — nightly analytics, ops, backfill and keep-alive are now armed"
+          echo "- DEPLOYMENT_ACTIVE: **true** (4 scheduled workflows armed)" >> "$GITHUB_STEP_SUMMARY"
