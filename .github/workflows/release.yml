@@ -277,3 +277,55 @@ jobs:
             echo "::error title=RLS IS NOT ENFORCED::bootstrap exited 0 but reported a failing RLS verdict. Aborting."
             exit 1
           fi
+
+      # ── CLOUDFLARE WORKER ──────────────────────────────────────────────
+      #
+      # Deployed BEFORE the web app: ingestion against an already-migrated
+      # database changes nothing the public can see, so a failure here costs
+      # nothing except this run.
+      #
+      # cloudflare/wrangler-action@v4 rather than a local `wrangler deploy`:
+      # the action pins its own wrangler, authenticates from the API token
+      # without an interactive login, and — the reason that matters — runs the
+      # same way for anyone with the secrets, instead of the way one laptop
+      # happens to be logged in.
+      #
+      # The cron triggers live in wrangler.jsonc and are deployed with the
+      # worker: "* * * * *" (ingest → cluster flags → alert scan → dispatch)
+      # and "0 * * * *" (hourly digest flush). Two of the free plan's five per
+      # account. The step after the deploy asserts both are registered, because
+      # a worker that deploys with no schedule is a worker that silently never
+      # runs.
+      - name: Record the current worker version (rollback target)
+        id: worker_before
+        if: ${{ github.event.inputs.skip_worker != 'true' }}
+        working-directory: ingestion/edgar-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # `|| true`: on the FIRST deploy there is no previous version, and
+          # "nothing to roll back to" is a fact to record, not a failure.
+          previous=$(pnpm exec wrangler deployments list --json 2>/dev/null \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j?.[0]?.version_id??j?.deployments?.[0]?.version_id??"")}catch{console.log("")}})' || true)
+          echo "version=${previous}" >> "$GITHUB_OUTPUT"
+          if [ -n "${previous}" ]; then
+            echo "previous worker version: ${previous}"
+          else
+            echo "no previous worker version — this is a first deploy, and there is nothing to roll back to"
+          fi
+
+      - name: Deploy the worker
+        id: deploy_worker
+        if: ${{ github.event.inputs.skip_worker != 'true' }}
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ingestion/edgar-worker
+          command: deploy
+
+      # A worker with no cron is a worker that deploys green and never runs.
+      - name: Assert the cron triggers are the ones this project decided on
+        if: ${{ github.event.inputs.skip_worker != 'true' }}
+        run: node scripts/assert-worker-crons.mjs | tee -a "$GITHUB_STEP_SUMMARY"
