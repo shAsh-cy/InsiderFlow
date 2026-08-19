@@ -35,6 +35,16 @@ param(
   # Cloudflare's documented ALWAYS-PASSES test secret. Swap for the real one
   # to check a real key; never commit a real one.
   [string]$TurnstileSecret = "1x0000000000000000000000000000000AA",
+  # Which production decision the Supabase project is meant to reflect.
+  #   off        — the email provider is disabled; GitHub OAuth only. Sign-up
+  #                is refused as UNSUPPORTED.
+  #   magic-link — the provider is on for magic links, so sign-up is refused
+  #                by the CAPTCHA instead. The control that no password is
+  #                offered is then e2e/auth-providers.spec.ts and the smoke
+  #                suite, not this probe.
+  # Either way a 200 is the failure. See DEPLOY.md.
+  [ValidateSet("off", "magic-link")]
+  [string]$EmailProvider = "off",
   [switch]$SkipTurnstile,
   [switch]$SkipSupabase
 )
@@ -205,9 +215,33 @@ if (-not $SkipSupabase) {
       -Body $payload `
       -ContentType "application/json"
 
-    $refused = ($signup.Status -eq 400) -and ($signup.Body -match "captcha")
-    Write-Result "a token-less sign-up is refused" $refused `
-      "status $($signup.Status); expected 400 with a captcha error"
+    # WHAT "REFUSED" MEANS DEPENDS ON THE DECISION, and conflating the two
+    # would make this probe pass on a project configured the other way.
+    #
+    #   provider OFF        -> 400/422 with a "not enabled"/"not allowed"
+    #                          message. The captcha never gets a chance to run,
+    #                          so requiring a captcha error here would fail a
+    #                          CORRECTLY locked-down project.
+    #   provider on for
+    #   magic links         -> 400 captcha_failed, because the captcha runs
+    #                          first.
+    #
+    # A 200 is the failure in both cases: it means anyone can create an account
+    # against this project with no challenge and no OAuth.
+    if ($EmailProvider -eq "off") {
+      $refused = ($signup.Status -ge 400) -and
+                 ($signup.Body -match "(?i)not enabled|not allowed|disabled|unsupported|signups? not")
+      Write-Result "sign-up is refused because the email provider is OFF" $refused `
+        "status $($signup.Status); expected 4xx saying the provider is not enabled"
+      if (-not $refused -and $signup.Status -ge 400 -and $signup.Body -match "captcha") {
+        Write-Host "    NOTE: it was refused by the CAPTCHA, which means the email provider is still ON."
+        Write-Host "          Either disable it, or re-run with -EmailProvider magic-link. See DEPLOY.md."
+      }
+    } else {
+      $refused = ($signup.Status -eq 400) -and ($signup.Body -match "captcha")
+      Write-Result "a token-less sign-up is refused by the captcha" $refused `
+        "status $($signup.Status); expected 400 with a captcha error"
+    }
 
     # /auth/v1/otp is the endpoint this was first confirmed on. Both are
     # covered because enabling the captcha in the dashboard covers the whole

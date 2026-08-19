@@ -164,6 +164,29 @@ BODY  : {"code":400,"error_code":"captcha_failed",
          "msg":"captcha protection: request disallowed (no captcha_token found)"}
 ```
 
+**What counts as "refused" depends on the production decision**, and
+conflating the two would make this probe pass on a project configured the
+other way. Pass `-EmailProvider` to say which you chose (see
+[../DEPLOY.md](../DEPLOY.md)):
+
+| `-EmailProvider` | The project is…                             | Expected refusal                                            |
+| ---------------- | ------------------------------------------- | ----------------------------------------------------------- |
+| `off` (default)  | email provider disabled, GitHub OAuth only  | 4xx saying signups are not enabled — the captcha never runs |
+| `magic-link`     | provider on for magic links, no password UI | `400 captcha_failed` — the captcha runs first               |
+
+A `200` is the failure in both cases: it means anyone can create an account
+against the project with no challenge and no OAuth.
+
+Requiring a captcha error under `off` would fail a correctly locked-down
+project, and accepting one would hide a provider that is still enabled — so
+when `off` sees a captcha refusal it says exactly that:
+
+```
+[FAIL] sign-up is refused because the email provider is OFF -- status 400
+NOTE: it was refused by the CAPTCHA, which means the email provider is still ON.
+      Either disable it, or re-run with -EmailProvider magic-link.
+```
+
 Both are probed because enabling the captcha in the Supabase dashboard covers
 the whole Auth surface, and checking one endpoint while assuming the other is
 the habit this file exists to break. The password/e-mail probe creates nothing:
