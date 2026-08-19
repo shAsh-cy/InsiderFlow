@@ -48,7 +48,21 @@ const file = resolve(
  * section here is a deliberate act, and a typo in a banner should not
  * silently exempt a section from the check.
  */
-const RECONSTRUCTED = new Set(["r16", "r15", "r14", "r13", "r12", "r11", "r10"]);
+const RECONSTRUCTED = new Set([
+  // r18 and r19 were reconstructed in r20, for the same reason and under the
+  // same rule: no round report was written at the time, and `lint:changelog`
+  // requires the integer revisions to run contiguously, so r20 could not be
+  // recorded without them.
+  "r19",
+  "r18",
+  "r16",
+  "r15",
+  "r14",
+  "r13",
+  "r12",
+  "r11",
+  "r10",
+]);
 
 /** r10's commits are unreachable; its quotations come from the tag that saved them. */
 const EXTRA_CORPUS = { r10: ["tag", "-n99", "-l", "abandoned/ui-ledger-r10"] };

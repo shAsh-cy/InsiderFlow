@@ -46,6 +46,224 @@ Round boundaries are the branch tips, not a reading of the dates:
 tip and r17 divide across them exactly, with none left over and none
 counted twice.
 
+## r20 (2026-08-19) — the control that changed nothing observable
+
+<!-- commits: b978faa 1264d3f 02c3af8 a211783 8d46042 86a8cd0 dc61700 a7decaa b697d50 -->
+
+### A production build printed this, and carried on
+
+```json
+{ "event": "db_admin_fallback", "detail": "APP_DATABASE_URL is not set, ..." }
+```
+
+It means the web app connects as the role migrations use, which has
+`BYPASSRLS`, so the `FORCE ROW LEVEL SECURITY` policies on `user_watchlists`,
+`alert_rules`, `alert_channels` and `alerts_log` apply to nobody. The
+`insiderflow_app` role had never been created on any database this project has
+touched, including the local one. r9 wrote the policies; nothing had ever
+connected as the role they were written for.
+
+**What kept it alive for eleven rounds is that it is unobservable.** Every
+query also filters by user id in its own `WHERE` clause, so with the policies
+inert the product renders the same pages, passes the same tests and writes the
+same logs. There is no symptom to notice — which is exactly why a control like
+this has to be checked at a boundary or it is not checked at all.
+
+Now fatal in production in two places: `next.config.ts` prints `BUILD REFUSED`
+and exits 1 before compiling, and `getDb()` throws rather than serve a request
+over the connection. Below production both stay one warning, because a
+self-hoster who has not created the role yet should still get a working site.
+
+"Production" is a declaration and not `NODE_ENV`. `next build` sets
+`NODE_ENV=production` for every production build, and the Docker image, the
+Playwright harness and the CI build step deploy nothing; `VERCEL_ENV` and
+`DEPLOY_ENV` are authoritative when set, `NODE_ENV` decides otherwise, so an
+undeclared production build fails closed. The three build sites that are not
+deployments declare themselves at the site, where a reviewer sees them.
+
+### The proof existed, passed, and nothing ran it
+
+`pnpm db:bootstrap -- --check` inserts a probe row as admin and reads it back
+over `APP_DATABASE_URL` with no `app.user_id` set. Both branches were run by
+hand for the first time:
+
+```
+APP_DATABASE_URL set    check_ok rls_enforced — "no context → 0 rows;
+                        owner context → 1 row; other user → 0 rows",
+                        app_role insiderflow_app, exit 0
+APP_DATABASE_URL unset  check_failed rls_not_proven, exit 1
+```
+
+Neither had ever run in CI. The e2e job already has Postgres and the
+migrations, so it now creates the role and runs the proof between seeding and
+the suite — and `APP_DATABASE_URL` is set at job level, so all **354 e2e tests
+now run against an app connected as `insiderflow_app`** with the policies
+applying to every query. They had been running as the admin role, which is the
+configuration that must never ship.
+
+`db:app-role` also gained the guard it was missing: it refused to FINISH if the
+role ended up with `SUPERUSER` or `BYPASSRLS`, but that check ran after
+`alter role <name> password ...`, so `APP_DB_ROLE=postgres` would have reset
+the superuser's password on the way to reporting the problem.
+
+### The two handlers with no mapper were the two that leaked
+
+`e2e/api-envelope.spec.ts` has listed `userId` as forbidden since it was
+written and checked it against the **public** endpoints only. Behind that gap,
+`GET /api/me/watchlist` and `GET|POST /api/me/alert-rules` returned whole
+Drizzle rows, so both shipped `user_id`. Their sibling `/api/me/channels`
+hand-maps and did not — the handlers that name their fields did not leak and
+the handler that serializes a row did, which is a shape rather than a
+coincidence. Both now go through allowlists checked against `getTableColumns()`
+rather than against a fixture, so a new column fails the test until somebody
+writes down which side of the line it is on.
+
+`/api/health` was worse and is the worst endpoint to be worse on —
+unauthenticated, uncached, `Access-Control-Allow-Origin: *`, and the one the
+docs tell you to point an uptime monitor at. Its 503 answered with
+postgres.js's message verbatim, which names the application role, the pooler
+host, the region and the internal address. The classifier that replaced it
+never reads the message: structured fields in, one of four compile-time
+constants out, so there is no path from input text to output text.
+
+### The leak audit found one thing, and it was the one nobody had looked at
+
+`productionBrowserSourceMaps` was correctly gated on `ANALYZE === "1"` and had
+been since r17. `poweredByHeader` had never appeared in this repository at all,
+Next defaults it to true, and every response carried `X-Powered-By: Next.js`.
+Same checklist, two entries, one with a line of configuration behind it and one
+with a sentence.
+
+Everything else came back clean, against the build at this commit: 94 client
+assets scanned with no findings and zero source maps; `service_role`,
+`SUPABASE_SERVICE`, private-key blocks and `DATABASE_URL` all absent from
+`.next/static`; gitleaks over 145 commits reporting no leaks; the built image
+carrying no `.env`, no `.git`, no `.dev.vars` and not the planted decoy. The
+one `sb_secret_` hit is `@supabase/supabase-js`'s own `startsWith` classifier,
+which is why the pattern requires twenty characters of key material after it.
+
+The image audit did find `.claude/` inside the image — untracked tooling that
+`COPY . .` picked up because the build context is a developer's directory
+rather than a checkout. Same class as the `.env.local` leak, arriving from the
+other side: there a pattern was too narrow, here a directory was never named.
+
+### Verification that cannot be silent
+
+Two earlier attempts to verify things from Windows failed identically: the
+command printed nothing and nothing was read as success. `curl` is an alias for
+`Invoke-WebRequest`, so `-X` and `-d` were never curl flags; and
+`Invoke-RestMethod` in a `try/catch` leaves `$_.ErrorDetails.Message` **empty**
+on Windows PowerShell 5.1, so the catch block prints a blank line.
+
+`scripts/verify-windows.ps1` reads `$_.Exception.Response` through a
+StreamReader instead, prints STATUS and BODY on every path, reports status
+`-1` when no HTTP response came back at all, and counts a SKIPPED probe as a
+failure. 15 probes, all passing, including Turnstile enforcement confirmed on
+**both** `/auth/v1/signup` and `/auth/v1/otp` (`400 captcha_failed`, "captcha
+protection: request disallowed (no captcha_token found)") — only `/otp` had
+been checked before.
+
+### Corrections to things this project had written down
+
+- The README said filings accepted after 17:30 ET disseminate "the next
+  business morning". That is the general EDGAR rule and **does not apply to
+  Forms 3/4/5**, which are deemed filed and disseminated the same business day
+  up to 22:00 ET. The correction flatters this project, which is why it is
+  stated rather than quietly edited: the old sentence excused latency it does
+  not suffer.
+- `lib/security/csrf.ts` asserted `NEXT_PUBLIC_SITE_URL` "appear nowhere in"
+  the repository. True when written; `packages/alerts/scripts/send-live-alert.mjs`
+  reads it now.
+- quickstart's local setup never mentioned `db:app-role`, which is why the role
+  had never been created; its "only two variables are required" line was false
+  for a deployment; and it named the transaction pooler for migrations, which
+  **hangs** on DDL. Migrations need the session pooler on 5432.
+
+### Where this leaves the standing gaps
+
+`/screener` still medians 82–84 against a goal of 90, printed on every
+`pnpm lighthouse` run and floored at 78. The SSE cursor is still floored to a
+millisecond and its `test.fail()` pin in `e2e/stream-resume.spec.ts` still
+fails for the documented reason. The RLS pin is the one that closed: it was
+listed as unproven and it is now proven, by a command that runs in CI.
+
+New in [README.md](README.md): a comparison against ten other products with a
+**"Where InsiderFlow is behind"** section listing no options flow, no dark
+pool, an empty politicians table, India as self-host only, no five-year
+performance ranking, no multi-country coverage, and no deployment.
+[PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) maps every claim in this
+section to the command that checks it.
+
+---
+
+## r19 (2026-08-19) — close
+
+<!-- commits: 3e72ada b67aacb 16d622e -->
+
+> **Reconstructed in r20 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `3e72ada` docs(security): the CSRF gate covers eight handlers by decision, not by drift
+- `b67aacb` fix(perf): /design was the machine, and the gate could not tell
+- `16d622e` fix(screener): hold FilterBar's space open, and claim only the 1.2 points
+
+Figures recorded in those commits:
+
+- `3e72ada` — r12 named three routes for the gate; "The gate ships on eight."
+  The eighth is POST /auth/signout, kept because "Any page on the internet
+  could sign any visitor out." and because there is "no behavioural cost".
+  The commit also records that reading a desktop Lighthouse figure as a
+  mobile one "is exactly the error r16 made".
+- `b67aacb` — /design measured ten times: "65 67 73 71 70 63 60 70 73 70",
+  a range "THIRTEEN POINTS WIDE", so the 67 "was a low sample rather than a
+  trend". The floor stays at 66 and the sampling widens to "minRuns: 9".
+  Separately, a loaded box reported every route below its floor at once, and
+  "Five simultaneous regressions is not a thing that happens." — so the
+  runner is now measured before the pages are, aborting "above 15%" busy,
+  "Verified firing at 62% and again at 72% busy on this box."
+- `16d622e` — FilterBar's Suspense boundary had no fallback, costing "a
+  layout shift of 0.071, on every run". Reserved heights measured "across
+  eighteen viewport widths against the running build". Result: "/screener
+  CLS median of 6 0.076 -> 0.005". No score improvement is claimed —
+  "0.076 was already inside Lighthouse's good band" and the arithmetic comes
+  to "1.2 points, which is smaller than the run-to-run spread of every route
+  in the gate."
+
+---
+
+## r18 (2026-08-19) — changelog
+
+<!-- commits: 930683d f327af3 -->
+
+> **Reconstructed in r20 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `930683d` docs: reconstruct r10-r16 from git history, and gate the reconstruction
+- `f327af3` perf(screener): the regression was layout shift, not the bundle r17 blamed
+
+Figures recorded in those commits:
+
+- `930683d` — the reconstruction rule: a section "contains only commit
+  subjects, short hashes, and figures quoted VERBATIM from commit messages."
+  Enforced by `pnpm lint:changelog-quotes` over "133 fragments across 7
+  sections", proven by planting a figure that appears in no commit. It caught
+  real errors immediately: "four paraphrases that read as quotations", and
+  Prettier reformatting a wrapped line into a list bullet, "silently altering
+  a quotation inside a fenced measurement."
+- `f327af3` — r17's attribution was wrong twice. The 170 kB chunk is "NEXT'S
+  OWN App Router client runtime", and "@tanstack/react-virtual does not
+  appear at all". What /screener actually carried was motion, reaching it
+  "through a BARREL". And the bimodality "was CLS": "CLS is 25% of the mobile
+  score, so 17 against 100 is ~21 points — the entire swing." Measured after:
+  "/screener performance median 76 -> 82-84 (two sweeps of 5, an hour
+  apart)". One bug in the fix was caught only by the suite — a constant
+  exported from a `"use client"` module, where "A Server Component importing
+  a value from a client module gets a CLIENT REFERENCE, not the string".
+
+---
+
 ## r17 (2026-08-19) — the numbers this project quotes about itself
 
 <!-- commits: 867f98f 37664db 1caaa16 3238069 -->
