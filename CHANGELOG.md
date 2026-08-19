@@ -46,6 +46,143 @@ Round boundaries are the branch tips, not a reading of the dates:
 tip and r17 divide across them exactly, with none left over and none
 counted twice.
 
+## r21 (2026-08-20) — one command, and the gate it stops at
+
+<!-- commits: e3bbdec 905612b 2f0c892 6aa1ad2 9384180 854547d 04a2941 ae328a1 6502463 87fcf7e efb254b -->
+
+### `pnpm deploy:prod`, and nothing is deployed
+
+The deploy pipeline exists as of this round. **It has never been run.** No
+project is provisioned, no secret is set, no migration has touched anything but
+the local Docker Postgres, and `release.yml` has never been dispatched.
+`DEPLOYMENT_STATE.md`'s DO-NOT-DEPLOY banner stays exactly where it was.
+
+What was built is code, and it is verified the way code can be: actionlint over
+all eight workflow files, and every script in the pipeline exercised by hand
+against the local stack. That is not evidence of a deployment and the checkpoint
+says so.
+
+```
+pnpm deploy:prod
+  └─ preflight ......... no production secrets: typecheck, lint, 9 gates,
+                         705 unit tests, build, bundle scan, image scan
+  └─ ⏸ APPROVAL ........ the `production` environment's required reviewer
+  └─ release ........... migrate → PROVE RLS → worker → web → smoke
+                         → flip DEPLOYMENT_ACTIVE
+     on failure ........ roll back web + worker, never flip, print the state
+```
+
+**One job does the whole deploy**, because every job naming a protected
+environment creates its own approval prompt — split four ways that is a
+five-click gate, and a five-click gate gets approved without being read.
+
+**Preflight runs before the gate** and holds no credential. Nobody should be
+asked to approve a deploy of a tree that does not typecheck.
+
+### Three things that fail by hanging, or by looking fine
+
+The round's findings are all the same shape: a failure with no symptom.
+
+- **Migrations through the transaction pooler do not error — they HANG.**
+  Supabase's 6543 has been transaction-mode-only since 2025-02-28, and
+  `drizzle-kit migrate` needs session state, so a mis-pointed migration sits
+  there until the job times out 45 minutes after a human approved it.
+  `assert-session-pooler.mjs` refuses 6543 before drizzle-kit gets the chance,
+  notes that the direct host is IPv6-only from IPv4 runners, and prints the
+  port and a host _shape_ and nothing else — the value it reads is an admin
+  credential and the run log is public.
+- **A worker with no cron deploys green and never runs.** No error, no failed
+  invocation, no log line; ingestion just stops.
+  `assert-worker-crons.mjs` asserts EXACTLY the two this project decided on,
+  not "at least one", because a third appearing is also worth noticing.
+- **`DEPLOY_ENV` has to be set where this pipeline cannot set it.** r20 made
+  the RLS hard-fail arm on a declaration rather than on `NODE_ENV`, so builds
+  that are not deployments cannot arm it by accident. The mirror: the one build
+  where it must arm has to declare itself — and the web app builds on Vercel's
+  infrastructure, where nothing in the workflow's `env:` reaches. Missing, and
+  `NODE_ENV` decides and it still arms; set to something else and it does
+  **not**, silently. So the pipeline asserts it with `vercel env ls`, which
+  prints names and not values.
+
+### The RLS gate is four lines because it invokes rather than restates
+
+`db:app-role` then `db:bootstrap -- --check` — the same commands the local
+stack runs and CI runs between seed and suite. A release-only copy of a
+security check is a copy that drifts.
+
+It aborts on `rls_not_enforced`, `rls_not_proven` or `rls_over_restrictive`,
+with two guards rather than one: `pipefail` so `tee` cannot swallow the exit
+code, and a grep of the log in case the check ever exits 0 while reporting a
+failing verdict. Both directions run against the local database:
+`APP_DATABASE_URL` set → pass, unset → abort.
+
+r20 made the app refuse to boot without `APP_DATABASE_URL`, which protects the
+request path. This protects the deploy: the app can boot perfectly against a
+database whose policies do not bite, and nothing user-visible looks wrong.
+
+### Smoke, written as a script so it could be run before it was trusted
+
+39 checks against a live URL, re-checking all four r20 leak fixes so they
+cannot come back in production: `X-Powered-By` absent, `/api/me/*` carrying no
+`user_id`, no body naming the application role or pooler host, no source map
+served. **A SKIP exits non-zero**, like a FAIL.
+
+Running it before trusting it found two bugs in it. It grepped for
+`"Not disclosed in the filing"` and failed on a correct page — that is
+`NotDisclosed`'s DEFAULT label, and `trade-table.tsx` passes a specific one at
+three of its four call sites, so the check was asserting one of four possible
+outputs. And an attempt to prove the absence of a rendered `$0` found four hits
+on a page with no currency zero anywhere: the React Flight payload contains
+module references of the form `"$0:f:0:1:…"`. Both are the same mistake this
+project keeps finding — matching the NAME of a thing rather than its SHAPE.
+
+Verified three ways: 39/39 against a live local production build; **19 failures
+against the stale 4-day-old container**, including `no X-Powered-By — got
+"Next.js"`; and a fast, loud failure against an unreachable host, which is what
+the rollback dry run points at.
+
+### What is not rolled back, and why
+
+Web and worker are, to targets captured before each deploy. **Migrations are
+not.** An automatic down-migration against a production database, on a path
+that only runs when something has already gone wrong, is a worse risk than the
+forward state — every migration here is additive, so the previous web build
+runs against the new schema. If one ever is not, that release needs a human,
+and the always-run summary step says so rather than leaving it to be assumed.
+
+`DEPLOYMENT_ACTIVE` is flipped only on `if: success()`. A scheduled job firing
+against a deployment that just failed its smoke test would be the first thing
+to touch production after a bad release, unattended, on a cron.
+
+### Decisions written down
+
+[DEPLOY.md](DEPLOY.md) carries the secret map — four locations, split by where
+the thing that reads a value runs — and the production Supabase decisions with
+their reasoning: email provider **off**, GitHub OAuth only, because a password
+is a credential to phish, stuff, reset and store, bought for nothing on a
+product whose accounts exist to sync a watchlist. The dashboard's single switch
+controls passwords _and_ magic links, so if magic links are wanted the control
+becomes "no password field anywhere", which `auth-providers.spec.ts` asserts
+three ways. `verify-windows.ps1` now takes `-EmailProvider off|magic-link` and
+expects a different refusal for each, because requiring a captcha error under
+`off` would fail a correctly locked-down project and accepting one would hide a
+provider that is still enabled.
+
+It also records the free-tier limits as the **conditions that end them** —
+Vercel Hobby ends at commercial use, Supabase Pro is $25/month per
+*organization* with the first project included, the 5-cron limit is per
+*account* — for a realistic all-paid floor of about $50–54/month. And it
+repeats the r20 correction next to the cron budget, because that is the number
+the 1-minute trigger is sized against: **Form 4 filings accepted between 17:30
+and 22:00 ET disseminate the same business day.**
+
+### Unchanged
+
+705 unit tests, 9 gates, axe 32, and the SSE cursor pin still failing for its
+documented reason. Nothing was weakened, skipped or deleted.
+
+---
+
 ## r20 (2026-08-19) — the control that changed nothing observable
 
 <!-- commits: b978faa 1264d3f 02c3af8 a211783 8d46042 86a8cd0 dc61700 a7decaa b697d50 -->
