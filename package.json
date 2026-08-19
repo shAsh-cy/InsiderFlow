@@ -40,7 +40,10 @@
     "lint:api-schemas": "node scripts/lint-api-schemas.mjs",
     "lint:client-bundle": "node scripts/lint-client-bundle.mjs",
     "measure:edgar-latency": "pnpm --filter @insiderflow/db exec tsx scripts/measure-edgar-latency.mjs",
-    "alerts:send-live": "pnpm --filter @insiderflow/alerts exec tsx scripts/send-live-alert.mjs"
+    "alerts:send-live": "pnpm --filter @insiderflow/alerts exec tsx scripts/send-live-alert.mjs",
+    "// deploy:prod": "THE one command. Dispatches .github/workflows/release.yml; GitHub runs the deploy behind the production environment's required reviewer. See DEPLOY.md.",
+    "deploy:prod": "node scripts/deploy-prod.mjs",
+    "smoke:prod": "node scripts/smoke-production.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

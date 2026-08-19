@@ -1,0 +1,180 @@
+name: Release to production
+
+# THE ONE COMMAND, AND THE ONE CLICK.
+#
+#   pnpm deploy:prod
+#
+# dispatches this workflow. It then runs `preflight` — which touches no
+# production secret and can therefore tell you the build is bad before anyone
+# is asked to approve anything — and stops at the `production` GitHub
+# Environment, which has a required reviewer. Approving releases the
+# environment secrets and the deploy proceeds.
+#
+# ── WHY ONE JOB DOES THE WHOLE DEPLOY ─────────────────────────────────
+#
+# Every job that names a protected environment creates its OWN pending
+# deployment and its own approval prompt. Split across migrate / worker / web /
+# smoke that is five clicks, and a five-click gate is one that gets approved
+# without reading. So `release` is a single job whose steps are the pipeline,
+# and the environment is named once.
+#
+# ── WHAT ORDER, AND WHY THAT ORDER ────────────────────────────────────
+#
+#   1. migrations      — schema first: the worker and the web app both assume
+#                        it. Runs through the SESSION pooler; see the step.
+#   2. RLS proof       — BLOCKING. Not a reimplementation: it runs the same
+#                        `db:bootstrap -- --check` the local stack and CI run,
+#                        against production. Aborts on rls_not_enforced or
+#                        rls_not_proven, before anything is user-visible.
+#   3. worker          — ingestion can run against a migrated database with no
+#                        web app in front of it. Deployed before the web so a
+#                        failure here costs nothing publicly.
+#   4. web             — the only step that changes what the public sees.
+#   5. smoke           — against the live production URL.
+#   6. DEPLOYMENT_ACTIVE — flipped ONLY after smoke passes, which is what arms
+#                        the four scheduled workflows.
+#
+# Rollback runs on any failure from step 4 onward, and the flip never happens
+# on a failed run. See the rollback steps at the bottom.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this release is going out (recorded in the run summary)"
+        required: false
+        default: "manual release"
+      skip_worker:
+        description: "Skip the Cloudflare worker deploy (web-only release)"
+        type: boolean
+        required: false
+        default: false
+      force_smoke_failure:
+        description: "DRY RUN: force smoke to fail, to exercise rollback. Never flips DEPLOYMENT_ACTIVE."
+        type: boolean
+        required: false
+        default: false
+  push:
+    # A tag is the other way in, for a release cut from a tag rather than a
+    # branch tip. It lands in the same environment and waits for the same
+    # approval.
+    tags:
+      - "v*"
+
+concurrency:
+  # Never two releases at once. NOT cancel-in-progress: cancelling a run
+  # halfway through a migration is how a database ends up in a state no
+  # migration file describes.
+  group: release-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── PREFLIGHT — everything that can be known without a production secret ──
+  #
+  # Deliberately BEFORE the approval gate. A reviewer should never be asked to
+  # approve a deploy of a tree that does not typecheck, and this job costs
+  # nothing and holds no credential.
+  preflight:
+    name: Preflight (no production secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint && pnpm lint:scripts
+
+      - name: Format check
+        run: pnpm format:check
+
+      # The project-specific gates, all of them. Each exists because something
+      # got past the generic ones.
+      - name: Static gates
+        run: |
+          pnpm lint:changelog
+          pnpm lint:changelog-quotes
+          pnpm lint:e2e-locators
+          pnpm lint:e2e-assertions
+          pnpm lint:api-schemas
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      # DEPLOY_ENV=ci: `next build` sets NODE_ENV=production for every
+      # production build, and next.config.ts refuses one that declares itself
+      # production with no APP_DATABASE_URL. This runner builds an artefact and
+      # deploys nothing — the real build happens on Vercel's infrastructure,
+      # where DEPLOY_ENV=production IS set and the gate DOES arm.
+      - name: Build
+        run: pnpm build
+        env:
+          DEPLOY_ENV: ci
+
+      - name: No secrets in the client bundle
+        run: pnpm lint:client-bundle
+
+      # The image gate, decoys and all. `.dockerignore` once carried bare
+      # `.env` patterns that match only the context root, so `apps/web/.env.local`
+      # was copied in and auto-loaded by Next at runtime. Reviewing the ignore
+      # file is what failed; scanning the artefact is what catches it.
+      - name: Plant decoy secret files
+        run: |
+          printf 'TELEGRAM_BOT_TOKEN=release-decoy-must-not-ship\n' > apps/web/.env.local
+          printf 'TELEGRAM_BOT_TOKEN=release-decoy-must-not-ship\n' > .env
+          printf 'TELEGRAM_BOT_TOKEN=release-decoy-must-not-ship\n' > ingestion/edgar-worker/.dev.vars
+
+      - name: Build the image
+        run: docker build --target web -t insiderflow-web:release .
+
+      - name: Assert no secret-bearing file inside the image
+        run: |
+          found=$(docker run --rm --entrypoint sh insiderflow-web:release -c \
+            'find /app -name ".env" -o -name ".env.*" ! -name ".env.example" -o -name ".dev.vars" 2>/dev/null')
+          if [ -n "$found" ]; then
+            echo "::error title=Secrets in the image::$found"
+            exit 1
+          fi
+          if docker run --rm --entrypoint sh insiderflow-web:release -c \
+              'grep -rl "release-decoy-must-not-ship" /app 2>/dev/null | head -5' | grep -q .; then
+            echo "::error title=Decoy value present inside the image"
+            exit 1
+          fi
+          echo "OK: no .env / .dev.vars files and no decoy value in the image"
+
+  # ── RELEASE — everything from here needs the approval ────────────────────
+  release:
+    name: Release
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # THE HUMAN GATE. The `production` environment carries a required
+    # reviewer, and its secrets are not released to the runner until the
+    # review is approved. Configure it once:
+    #   Settings -> Environments -> New environment -> production
+    #   -> Required reviewers -> add yourself
+    # See DEPLOY.md.
+    environment:
+      name: production
+    steps:
+      - name: Record why
+        run: |
+          echo "### Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ref: \`${{ github.ref }}\` @ \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- reason: ${{ github.event.inputs.reason || 'tag push' }}" >> "$GITHUB_STEP_SUMMARY"
