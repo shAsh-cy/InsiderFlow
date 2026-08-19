@@ -70,6 +70,8 @@
  * Needs a server already running — deliberately, so the score belongs to a
  * production build somebody chose, not to whatever this script built.
  */
+import { cpus } from "node:os";
+
 import { launch } from "chrome-launcher";
 import lighthouse from "lighthouse";
 
@@ -82,9 +84,11 @@ const BASE = arg("base", "http://localhost:3100").replace(/\/$/, "");
 const RUNS = Number(arg("runs", "3"));
 /** "mobile" (Lighthouse default, 4x CPU throttle) or "desktop". */
 const PRESET = arg("preset", "mobile");
+/** Measure a contended machine anyway, and say the numbers are not comparable. */
+const ALLOW_BUSY = process.argv.includes("--allow-busy");
 
 /**
- * TWO NUMBERS PER ROUTE.
+ * TWO NUMBERS PER ROUTE, AND SOMETIMES A THIRD.
  *
  * `goal` is the mobile bar the original brief set: 90, which r4 measured
  * as unmet and said so. It is kept at 90 rather than the 95 r16 invented,
@@ -94,6 +98,9 @@ const PRESET = arg("preset", "mobile");
  * `floor` is the median of 5 quiet runs on 2026-08-19, minus a margin for
  * the run-to-run spread each route actually shows. The gate fails below
  * the floor and prints the gap to the goal on every run.
+ *
+ * `minRuns` raises the sample size for a route whose spread is wide enough
+ * that the DEFAULT sample cannot resolve it. See `/design` below.
  *
  *              two sweeps of 5 (spread)   goal   r4 mobile
  *   /             79, 81  (71-81)          90        75
@@ -144,6 +151,32 @@ const TARGETS = [
   // Every primitive plus a 10k-row virtualised table, by design.
   {
     route: "/design",
+    /**
+     * SAMPLED NINE TIMES, and the floor is NOT moved.
+     *
+     * r18's second sweep medianed 67 against this floor of 66 — one point of
+     * headroom, which is a gate about to fail for no reason anyone could
+     * act on. r19 asked which had drifted, the page or the machine, and
+     * measured rather than guessed.
+     *
+     * The machine. Ten runs on a quiet box: 65 67 73 71 70 63 60 70 73 70 —
+     * median 70, range 60 to 73. THIRTEEN POINTS WIDE. Across four sweeps
+     * the medians read 72, 70, 67, 70; the 67 was a low sample, not a trend.
+     * And the page is deterministically almost unchanged: First Load JS went
+     * 275 kB to 277 kB across r18, +0.7%, which does not buy five Lighthouse
+     * points in either direction. CLS is 0.000 here; the cost is TBT, ~950ms
+     * of it, which is what a 10k-row showcase is.
+     *
+     * So the sampling is widened rather than the floor lowered. A median of
+     * three, on a distribution that spans thirteen points, is a coin toss
+     * being read as a measurement — and lowering the floor to accommodate it
+     * would record a regression that did not happen and then stop mentioning
+     * it. Nine is odd (a real median, never a midpoint of two) and enough
+     * that the tail stops deciding the answer.
+     *
+     * `--runs` still wins when it asks for more.
+     */
+    minRuns: 9,
     goal: { performance: 85, accessibility: 100 },
     floor: { performance: 66, accessibility: 100 },
   },
@@ -155,6 +188,88 @@ const median = (xs) => {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
+/**
+ * "median of 5 runs each" is a lie the moment one route samples more, and a
+ * summary line that misstates its own sample size is exactly the kind of
+ * unlabelled figure this file exists to stop.
+ */
+const describeSampling = () => {
+  const extra = TARGETS.filter((t) => (t.minRuns ?? 0) > RUNS);
+  const base = `median of ${RUNS} runs each`;
+  if (extra.length === 0) return base;
+  return `${base} (${extra.map((t) => `${t.route} ${t.minRuns}`).join(", ")})`;
+};
+
+/**
+ * REFUSE TO MEASURE A BUSY MACHINE.
+ *
+ * Measured in r19, and the reason this exists: with an unrelated job holding
+ * roughly four of sixteen cores, this gate reported EVERY route below its
+ * floor — `/` 64 against 79, `/trades` 75 against 86, `/screener` 69 against
+ * 82, `/design` 61 against 70. Five simultaneous regressions is not a thing
+ * that happens; it was the box, and nothing in the output said so.
+ *
+ * That is worse than the noise it looks like. A red nobody can act on is how
+ * a team learns to re-run a gate until it passes, and the first real
+ * regression then arrives wearing the same clothes. So the machine is
+ * measured before the pages are, and a contended one aborts with a name
+ * instead of producing five false failures.
+ *
+ * `os.cpus()` carries cumulative per-core times, so two samples a second
+ * apart give the busy fraction with no dependency and no platform check.
+ */
+const cpuBusyFraction = async (ms = 1000) => {
+  const snapshot = () =>
+    cpus().reduce(
+      (acc, c) => {
+        const t = c.times;
+        return {
+          idle: acc.idle + t.idle,
+          total: acc.total + t.idle + t.user + t.nice + t.sys + t.irq,
+        };
+      },
+      { idle: 0, total: 0 },
+    );
+  const a = snapshot();
+  await new Promise((r) => setTimeout(r, ms));
+  const b = snapshot();
+  const total = b.total - a.total;
+  return total <= 0 ? 0 : 1 - (b.idle - a.idle) / total;
+};
+
+/** Above this, the scores below stop being about the pages. */
+const BUSY_ABORT = 0.15;
+const busy = await cpuBusyFraction();
+const busyPct = Math.round(busy * 100);
+
+if (busy > BUSY_ABORT && !ALLOW_BUSY) {
+  console.error(
+    [
+      "",
+      `LIGHTHOUSE PRE-FLIGHT FAILED — this machine is ${busyPct}% busy before the first run`,
+      "",
+      `  Anything above ${Math.round(BUSY_ABORT * 100)}% and the numbers describe the box, not the`,
+      "  pages. Measured in r19: at ~25% busy every route read 12 to 18 points",
+      "  under its floor, which looks exactly like five regressions and was none.",
+      "",
+      "  Fix: close what is running and re-run. On this project's own history the",
+      "  usual culprits are a concurrent `next build`, a dev server, orphaned",
+      "  headless Chrome from an earlier sweep, and an editor indexing.",
+      "",
+      "  `--allow-busy` measures anyway and marks the output as not comparable.",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+if (busy > 0.05) {
+  console.log(
+    `NOTE — machine ${busyPct}% busy before the run;` +
+      ` scores below are depressed by roughly that much and are not comparable\n`,
+  );
+}
+
 const chrome = await launch({
   chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu"],
 });
@@ -164,8 +279,12 @@ try {
   for (const target of TARGETS) {
     const url = `${BASE}${target.route}`;
     const samples = { performance: [], accessibility: [] };
+    // A route may demand more samples than the run asked for, never fewer:
+    // its spread is a property of the page, and `--runs=3` does not make a
+    // thirteen-point distribution narrower. See `minRuns` on `/design`.
+    const runs = Math.max(RUNS, target.minRuns ?? 0);
 
-    for (let run = 0; run < RUNS; run += 1) {
+    for (let run = 0; run < runs; run += 1) {
       const { lhr } = await lighthouse(url, {
         port: chrome.port,
         output: "json",
@@ -250,6 +369,6 @@ if (regressions.length > 0) {
 }
 
 console.log(
-  `OK — ${results.length} routes, ${PRESET} preset, median of ${RUNS} runs each, ` +
+  `OK — ${results.length} routes, ${PRESET} preset, ${describeSampling()}, ` +
     `none below its floor.`,
 );
