@@ -502,3 +502,79 @@ jobs:
           gh variable set DEPLOYMENT_ACTIVE --body true --repo "${{ github.repository }}"
           echo "DEPLOYMENT_ACTIVE=true — nightly analytics, ops, backfill and keep-alive are now armed"
           echo "- DEPLOYMENT_ACTIVE: **true** (4 scheduled workflows armed)" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── ROLLBACK ───────────────────────────────────────────────────────
+      #
+      # Runs when anything above failed, which by construction means smoke
+      # failed or a deploy step did. DEPLOYMENT_ACTIVE is never flipped on this
+      # path — the step above is `if: success()`, so a failed run leaves the
+      # scheduled workflows exactly as it found them.
+      #
+      # WHAT IS AND IS NOT ROLLED BACK, stated because the asymmetry is
+      # deliberate:
+      #
+      #   web     — rolled back. It is the only thing the public sees.
+      #   worker  — rolled back to the version recorded before the deploy.
+      #   MIGRATIONS — NOT rolled back, and this is not an oversight. A
+      #             down-migration run automatically, against a production
+      #             database, on a path that only executes when something has
+      #             already gone wrong, is a worse risk than the forward state.
+      #             Every migration in this project is additive; the previous
+      #             web build runs against the new schema. If one ever is not,
+      #             that is a release that needs a human, and the summary below
+      #             says so.
+      - name: Roll back the web deployment
+        if: failure() && steps.deploy_web.outcome == 'success'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          PREVIOUS: ${{ steps.web_before.outputs.url }}
+        run: |
+          if [ -z "${PREVIOUS}" ]; then
+            echo "::warning title=No rollback target::This was the first production deployment, so there is no previous one to return to. The deployment is live and failed its smoke test — take it down by hand if that is the right call."
+            exit 0
+          fi
+          echo "rolling production back to ${PREVIOUS}"
+          vercel rollback "${PREVIOUS}" --token="$VERCEL_TOKEN" --yes
+          echo "- ROLLED BACK web to ${PREVIOUS}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back the worker
+        if: failure() && steps.deploy_worker.outcome == 'success'
+        working-directory: ingestion/edgar-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS: ${{ steps.worker_before.outputs.version }}
+        run: |
+          if [ -z "${PREVIOUS}" ]; then
+            echo "::warning title=No worker rollback target::First worker deployment; nothing to return to."
+            exit 0
+          fi
+          echo "rolling the worker back to ${PREVIOUS}"
+          pnpm exec wrangler rollback "${PREVIOUS}" --message "release ${{ github.run_id }} failed smoke" --yes
+          echo "- ROLLED BACK worker to ${PREVIOUS}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Last, and unconditional, so the run never ends without saying what
+      # state production is in. A failed deploy that reports nothing is how a
+      # half-rolled-back deployment gets left overnight.
+      - name: Say what happened
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### Outcome"
+            echo ""
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "Released. Smoke passed and DEPLOYMENT_ACTIVE is true."
+            else
+              echo "**RELEASE FAILED — \`${{ job.status }}\`**"
+              echo ""
+              echo "- DEPLOYMENT_ACTIVE was **not** flipped; the scheduled workflows are unchanged."
+              echo "- Migrations were **not** reverted. They are additive by convention and the"
+              echo "  previous web build runs against the new schema — but confirm that for the"
+              echo "  migrations in this release before re-releasing."
+              echo "- Re-run after fixing, or roll further back by hand:"
+              echo "  \`vercel rollback <url>\` and \`wrangler rollback <version>\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
