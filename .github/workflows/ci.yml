@@ -124,6 +124,21 @@ jobs:
       # it is set here too for the migrate/seed/analytics steps.
       INSIDERFLOW_SHOW_SYNTHETIC: "true"
 
+      # The RLS-bound application role, for the proof step below AND for the
+      # server the suite manages — Playwright's webServer inherits this
+      # environment, so the 354 e2e tests run against an app connected as
+      # `insiderflow_app` with FORCE ROW LEVEL SECURITY applying to every
+      # query it makes. Running them as the admin role would have been
+      # testing a configuration that must never ship.
+      #
+      # The password is committed on purpose and is not a secret: this
+      # database is a container created by the step below, published on
+      # loopback only, and destroyed with the runner. The alternative — a
+      # repository secret — would make the gate silently skip on every fork,
+      # which is the failure mode that let RLS sit inert for eight rounds.
+      APP_DB_PASSWORD: ci-ephemeral-not-a-secret
+      APP_DATABASE_URL: postgres://insiderflow_app:ci-ephemeral-not-a-secret@localhost:5433/insiderflow
+
     steps:
       - uses: actions/checkout@v4
 
@@ -158,6 +173,23 @@ jobs:
 
       - name: Migrate and seed
         run: pnpm db:migrate && pnpm seed
+
+      # THE PROOF THAT HAD ONLY EVER BEEN A COMMAND.
+      #
+      # `pnpm db:bootstrap -- --check` inserts a probe row as admin and tries
+      # to read it back over APP_DATABASE_URL with no `app.user_id` set. Zero
+      # rows with no context, one row with the owner's, zero with another
+      # user's — that is enforcement, as opposed to `pg_class.relrowsecurity`,
+      # which was true for the whole period RLS was doing nothing.
+      #
+      # It existed and passed for anyone who ran it. Nothing ran it. That is
+      # the same defect as the e2e suite this job exists to fix, and it is why
+      # the fallback warning below reached a production build unnoticed: a
+      # check nobody executes is indistinguishable from one that does not
+      # exist. `db:app-role` is run first because migration 0009 creates
+      # `insiderflow_app` NOLOGIN and without a password, deliberately.
+      - name: Create the application role and PROVE row-level security
+        run: pnpm db:app-role && pnpm db:bootstrap -- --check
 
       # Migrations and the seed leave every DERIVED table empty, and the
       # heatmap, the two analytics screener presets and the leaderboard read

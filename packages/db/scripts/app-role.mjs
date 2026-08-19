@@ -40,6 +40,33 @@ if (!/^[a-z_][a-z0-9_]*$/.test(roleName)) {
   process.exit(1);
 }
 
+/**
+ * Roles that ship with SUPERUSER or BYPASSRLS. Refused BEFORE anything is
+ * altered, not after.
+ *
+ * The check at the bottom of this script already refuses to finish if the
+ * role ends up able to bypass RLS — but by then it has run
+ * `alter role <name> password ...`, and `APP_DB_ROLE=postgres` would have
+ * reset the superuser's password on the way to reporting the problem. A
+ * validation that fires after the destructive step is a report, not a guard.
+ */
+const BYPASS_ROLE_NAMES = new Set([
+  "postgres",
+  "supabase_admin",
+  "supabase_auth_admin",
+  "supabase_storage_admin",
+  "rds_superuser",
+  "rdsadmin",
+  "root",
+]);
+if (BYPASS_ROLE_NAMES.has(roleName)) {
+  console.error(
+    `APP_DB_ROLE=${roleName} is a role that bypasses row-level security on this platform. ` +
+      "The whole point of the application role is that it cannot. Refusing before altering it.",
+  );
+  process.exit(1);
+}
+
 const sql = postgres(adminUrl, { prepare: false, max: 1 });
 
 try {
