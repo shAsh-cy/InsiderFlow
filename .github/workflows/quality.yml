@@ -30,19 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: insiderflow
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready --health-interval 10s
-          --health-timeout 5s --health-retries 5
-
     env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/insiderflow
+      # 5433 is what docker-compose.yml publishes. See the compose step below
+      # for why this job does not use an Actions service container.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5433/insiderflow
       # The suite asserts against the ZZ* fixtures, which are hidden by
       # default so they can never reach a real deployment's analytics.
       INSIDERFLOW_SHOW_SYNTHETIC: "true"
@@ -57,6 +48,21 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # THIS JOB WAS BROKEN AS WRITTEN IN r16, and had never run to find out.
+      #
+      # It used an Actions `services:` container. `e2e/global-setup.ts` — which
+      # runs before the axe spec below — reaches Postgres as
+      # `docker exec insiderflow-postgres psql`, and a service container has a
+      # generated name, so the pre-flight would have aborted every run with
+      # "the database is unreachable". Scheduled weekly and never dispatched,
+      # so nothing reported it.
+      #
+      # The compose file names the container, so the pre-flight and the
+      # fixtures find it on the same path a developer's machine uses. See the
+      # longer note in ci.yml's e2e job.
+      - name: Start Postgres (the same container the fixtures talk to)
+        run: docker compose up -d --wait postgres
 
       - name: Migrate and seed
         run: pnpm db:migrate && pnpm seed

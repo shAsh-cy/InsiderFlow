@@ -76,6 +76,110 @@ jobs:
       - name: No secrets in the client bundle
         run: pnpm lint:client-bundle
 
+  # THE SUITE THAT HAD ONLY EVER RUN ON A LAPTOP.
+  #
+  # 355 tests across four projects, and until this job none of them had ever
+  # run anywhere except one developer's machine. That is the same defect r15
+  # found in the Lighthouse numbers and r16 found in the a11y bar: a gate
+  # that exists, is real, and gates nothing, because nothing automated runs
+  # it. Everything below is what it takes to make it run from a clean
+  # checkout.
+  #
+  # SEPARATE JOB, not more steps on `ci`. It needs Docker, a database, a
+  # browser and a full production build; the `ci` job is minutes and this is
+  # tens of minutes. Bolted together, every typo would wait for Chromium.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    # Generous on purpose: a cold production build is minutes before the
+    # first test runs, and the suite is capped at two workers (below).
+    timeout-minutes: 60
+
+    env:
+      # Port 5433, not 5432 — that is what docker-compose.yml publishes, and
+      # this job deliberately uses the committed compose file rather than its
+      # own definition of the database.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5433/insiderflow
+      # The suite asserts against the reserved ZZ* fixtures, which are hidden
+      # by default so synthetic rows can never reach a real deployment's
+      # analytics. playwright.config.ts sets this for the server it manages;
+      # it is set here too for the migrate/seed/analytics steps.
+      INSIDERFLOW_SHOW_SYNTHETIC: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # WHY `docker compose` AND NOT A `services:` BLOCK.
+      #
+      # `e2e/global-setup.ts` and `e2e/fixtures.ts` both reach the database
+      # as `docker exec insiderflow-postgres psql`. Actions service
+      # containers get a generated name, so `docker exec insiderflow-postgres`
+      # does not resolve and every fixture in the suite fails — which is
+      # exactly what the r16 `quality.yml` would have done had it ever run.
+      #
+      # The alternative was to rewrite `psql()` to use a client library, and
+      # that is the wrong trade: the pre-flight's whole value is that it
+      # checks the database over THE SAME PATH the fixtures use, so a
+      # container that is up but unreachable that way fails in the pre-flight
+      # rather than inside the first fixture that needs it. Using the
+      # committed compose file keeps CI and a developer's machine on one
+      # path, and gets the compose definition exercised on every PR as a
+      # side effect.
+      - name: Start Postgres (the same container the fixtures talk to)
+        run: docker compose up -d --wait postgres
+
+      - name: Migrate and seed
+        run: pnpm db:migrate && pnpm seed
+
+      # Migrations and the seed leave every DERIVED table empty, and the
+      # heatmap, the two analytics screener presets and the leaderboard read
+      # only those. docker-compose.yml runs this step for the same reason and
+      # calls it not optional. Offline steps only — `sectors`, `politicians`
+      # and `prices` call EDGAR, congressional feeds and Stooq, and a CI run
+      # must not depend on three third parties being reachable.
+      - name: Derived analytics (offline steps only)
+        run: pnpm --filter @insiderflow/analytics run nightly -- --only=clusters,scoring,anomalies
+
+      - name: Install Playwright chromium
+        run: pnpm --filter @insiderflow/web exec playwright install --with-deps chromium
+
+      # Builds and starts its own production server on :3100 — `reuseExisting
+      # Server` is false under CI, so there is nothing stale to inherit. Two
+      # workers, per the r12 measurement: eight oversubscribed the machine and
+      # failed a different handful of tests every run.
+      #
+      # Specs that need credentials this runner has not got — the Telegram
+      # webhook positive case, the Supabase cross-user isolation block —
+      # SKIP with a printed reason rather than passing quietly. Read the
+      # skip count in this step's log; a skip is an uncovered case, not a
+      # green one.
+      - name: Run the suite
+        run: pnpm test:e2e
+
+      # `trace: on-first-retry` with `retries: 2` under CI, so a test that
+      # fails twice leaves a trace. Without this they are deleted with the
+      # runner and a CI-only failure has to be guessed at.
+      - name: Upload traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: warn
+
   # A required check, not a nicety. `.dockerignore` once used bare `.env` /
   # `.env.*` patterns, which match only the build-context root — so
   # `apps/web/.env.local` was copied into the image and auto-loaded by Next at

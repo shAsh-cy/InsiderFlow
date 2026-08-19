@@ -388,6 +388,7 @@ these status checks to pass:
 | Check                           | Workflow           |
 | ------------------------------- | ------------------ |
 | `Typecheck, lint, test, build`  | `ci.yml`           |
+| `E2E (Playwright)`              | `ci.yml`           |
 | `No secrets in the built image` | `ci.yml`           |
 | `osv-scanner`                   | `supply-chain.yml` |
 | `pnpm audit`                    | `supply-chain.yml` |
@@ -396,6 +397,19 @@ these status checks to pass:
 The `ci` job is where the seven gates live — typecheck, lint, format,
 `lint:changelog`, `lint:e2e-locators`, `lint:e2e-assertions`,
 `lint:api-schemas`. Requiring the job requires all seven.
+
+`E2E (Playwright)` is the slow one — it starts the compose Postgres, migrates,
+seeds, runs the offline analytics steps, then builds and starts a production
+server for the suite. Expect tens of minutes rather than minutes. It is worth
+requiring anyway: it is the only check that exercises the artefact that ships,
+and until r17 it had never run anywhere but a laptop.
+
+Read its skip count rather than only its colour. Specs needing credentials a
+public runner has not got — the Telegram webhook positive case, the Supabase
+cross-user isolation block — skip with a printed reason. **A skip is an
+uncovered case, not a passing one**, and the two named here are uncovered on
+every CI run by design. Cover them locally, or in a runner holding those
+secrets, before trusting either.
 
 Also tick **Do not allow bypassing the above settings**, or the protection
 applies to everyone except the person most likely to be pushing at midnight.
