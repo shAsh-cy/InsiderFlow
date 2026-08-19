@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+
+import { ACCESS_NOTICE_COOKIE } from "@/lib/access-notice";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -37,6 +40,11 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
     getSessionUser(),
   ]);
   const clientParams = { ...toClientParams(parsed), ...(preset?.params ?? {}), limit: 50 };
+  // Read on the server so the banner's first paint is already correct.
+  // Rendering it on mount instead inserted 86px above the fold after
+  // hydration, which on /screener landed after first paint and scored as
+  // layout shift — see docs/performance.md.
+  const bannerDismissed = (await cookies()).has(ACCESS_NOTICE_COOKIE);
 
   return (
     <div className="flex flex-col gap-6 pb-24">
@@ -48,7 +56,7 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
         </p>
       </header>
 
-      <AccessBanner signedIn={Boolean(user)} />
+      <AccessBanner signedIn={Boolean(user)} dismissed={bannerDismissed} />
 
       {/* Pill-shaped because they are interactive; the active one is marked
           by weight and ground, not by colour. Seven oxblood chips would

@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+
+import { ACCESS_NOTICE_COOKIE } from "@/lib/access-notice";
 import { Suspense } from "react";
 
 import { AccessBanner } from "@/components/access/access-banner";
@@ -37,6 +40,11 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
   ]);
 
   const filters = toClientParams(query);
+  // Read on the server so the banner's first paint is already correct.
+  // Rendering it on mount instead inserted 86px above the fold after
+  // hydration, which on /screener landed after first paint and scored as
+  // layout shift — see docs/performance.md.
+  const bannerDismissed = (await cookies()).has(ACCESS_NOTICE_COOKIE);
 
   return (
     <div className="flex flex-col gap-6 pb-24">
@@ -47,7 +55,7 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
         </p>
       </header>
 
-      <AccessBanner signedIn={Boolean(user)} />
+      <AccessBanner signedIn={Boolean(user)} dismissed={bannerDismissed} />
 
       <Suspense>
         <FilterBar />

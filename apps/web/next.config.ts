@@ -8,6 +8,21 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@insiderflow/core", "@insiderflow/db"],
 
   /**
+   * OFF by default, ON for a diagnostic build: `ANALYZE=1 pnpm build`.
+   *
+   * r17 attributed `/screener`'s 14-point Lighthouse regression to 835ms of
+   * script evaluation inside one 170 kB chunk, and could not say WHICH
+   * modules were in it, because the chunk is minified and library
+   * fingerprints do not survive minification. Naming them needs the source
+   * map, and shipping source maps by default would publish the whole
+   * unminified source tree to every visitor for the sake of a diagnosis run
+   * a few times a year.
+   *
+   * `scripts/analyze-chunks.mjs` reads what this produces.
+   */
+  productionBrowserSourceMaps: process.env.ANALYZE === "1",
+
+  /**
    * The constant security headers, on EVERY path.
    *
    * `/:path*` rather than the middleware, because the middleware matcher

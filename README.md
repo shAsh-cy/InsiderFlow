@@ -79,11 +79,14 @@ of ours.
 - **NSE bulk deals and pledges ignore their date window** — identical row counts
   for a 7-day and a 90-day request. `--days` does not bound them; schema-level
   dedup is what makes a repeat run harmless.
-- **`/screener` regressed 14 points on mobile Lighthouse** — 76 at r4, 62 today,
-  bimodal across runs (57–76 on an unchanging build). Script evaluation and
-  hydration, not the server: TTFB is 62ms and 286 kB of First Load JS evaluates
-  for ~1.9s throttled. Diagnosed but not fixed, with the attribution that is
-  still a hypothesis named as one — [docs/performance.md](docs/performance.md).
+- **A Lighthouse score can be dominated by a term nobody plotted.** `/screener`
+  read 62 and bimodal (57–76 on an unchanging build) through r17, attributed
+  there to script evaluation. It was **layout shift** — CLS 0.41–0.49 on the
+  loads that shifted, 0.001 on the ones that did not, and CLS is 25% of the
+  mobile score. Fixed in r18 by rendering the access banner from its cookie
+  server-side instead of on mount: **84, spread 83–85**. The r17 attribution
+  named a chunk that turned out to be Next's own router runtime, loaded by
+  every route. [docs/performance.md](docs/performance.md).
 - **A retired endpoint here returns `200` with an empty envelope, not `404`.**
   NSE's `corporates-pit` did exactly that, and this project read it as an IP
   block for three rounds. The smoke now probes it permanently as a control. Any

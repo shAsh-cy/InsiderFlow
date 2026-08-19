@@ -9,16 +9,30 @@ import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
 import { useMemo } from "react";
 
-import {
-  CountryFlag,
-  CurrencyValue,
-  DataTable,
-  NotDisclosed,
-  RelevanceBadge,
-  SourceBadge,
-  TransactionCodeBadge,
-  TrendBadge,
-} from "@/components/domain";
+// DEEP IMPORTS, NOT THE `@/components/domain` BARREL.
+//
+// The barrel re-exports StatCard and LiveFeedRow, and both of those import
+// `motion/react`. Nothing here renders either of them, but importing the
+// barrel puts the whole animation engine — framer-motion plus motion-dom,
+// measured at 128 kB — into the client bundle of every route that renders a
+// TradeTable: /screener, /insider/[id] and /stock/[ticker].
+//
+// That is 62% of what `/screener` ships beyond `/trades`, and it is why
+// `/trades` — which reaches for StaticFeedRow by deep import and never
+// touches the barrel — carries no motion chunk at all. See
+// docs/performance.md for the attribution and the before/after.
+//
+// The barrel itself is fine and stays: `/design` renders every primitive
+// and should import it that way. A barrel is only a hazard where the
+// importer wants a few of its exports and the unused ones are heavy.
+import { CountryFlag } from "@/components/domain/country-flag";
+import { CurrencyValue } from "@/components/domain/currency-value";
+import { DataTable } from "@/components/domain/data-table";
+import { NotDisclosed } from "@/components/domain/not-disclosed";
+import { RelevanceBadge } from "@/components/domain/relevance-badge";
+import { SourceBadge } from "@/components/domain/source-badge";
+import { TransactionCodeBadge } from "@/components/domain/transaction-code-badge";
+import { TrendBadge } from "@/components/domain/trend-badge";
 import type { PriceContextPoint, TradeRow } from "@/lib/api/queries";
 import { pricePerShare } from "@/lib/format";
 
