@@ -171,6 +171,7 @@ jobs:
     # See DEPLOY.md.
     environment:
       name: production
+      url: ${{ steps.deploy_web.outputs.url }}
     steps:
       - name: Record why
         run: |
@@ -329,3 +330,93 @@ jobs:
       - name: Assert the cron triggers are the ones this project decided on
         if: ${{ github.event.inputs.skip_worker != 'true' }}
         run: node scripts/assert-worker-crons.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ── WEB ────────────────────────────────────────────────────────────
+      #
+      # BUILT ON VERCEL'S INFRASTRUCTURE, NOT HERE. `vercel build --prebuilt`
+      # is broken for pnpm monorepos outside Vercel's own build container — it
+      # hardcodes a PATH that does not exist elsewhere (vercel/vercel#15204) —
+      # so this runner uploads the repository and Vercel builds it. The
+      # project's Root Directory is `apps/web`; that is a project setting, not
+      # a flag, and DEPLOY.md says where to set it.
+      #
+      # ── THE CONSEQUENCE THAT MATTERS ──────────────────────────────
+      #
+      # Because the build happens THERE, nothing this workflow puts in `env:`
+      # reaches it. In particular DEPLOY_ENV: r20 made "production" a
+      # declaration rather than an inference from NODE_ENV, precisely so that
+      # a build which is not a deployment cannot accidentally arm the RLS
+      # hard-fail — and the mirror of that is that the one build where it MUST
+      # arm has to declare itself, in Vercel's own environment.
+      #
+      # If DEPLOY_ENV is missing there, `next build` sees NODE_ENV=production
+      # with no declaration, falls back to NODE_ENV, and the gate still arms.
+      # If it is set to something else, it does NOT. Either way the failure is
+      # silent at build time, so it is asserted here instead, before the
+      # upload — along with APP_DATABASE_URL, whose absence would make the
+      # deployed app refuse every request.
+      #
+      # `vercel env ls` prints NAMES and not values, so this reads the
+      # configuration without ever handling the secrets it is checking for.
+      - name: Install the Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Assert the Vercel production environment is configured
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          names=$(vercel env ls production --token="$VERCEL_TOKEN" 2>&1 || true)
+          missing=""
+          for required in DEPLOY_ENV APP_DATABASE_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
+            if ! printf '%s' "$names" | grep -qE "(^|[[:space:]])${required}([[:space:]]|$)"; then
+              missing="${missing} ${required}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error title=Vercel production environment is incomplete::Missing:${missing}. NEXT_PUBLIC_* are compiled into the browser bundle at BUILD time, and DEPLOY_ENV is what arms the RLS hard-fail on the one build where it matters. See DEPLOY.md."
+            exit 1
+          fi
+          echo "Vercel production declares DEPLOY_ENV, APP_DATABASE_URL and both NEXT_PUBLIC_* values"
+
+      - name: Record the current production deployment (rollback target)
+        id: web_before
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          # First deploy has no predecessor; that is a fact to record rather
+          # than a failure, and the rollback step reads this to decide whether
+          # it has anywhere to go.
+          previous=$(vercel ls --prod --token="$VERCEL_TOKEN" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app' | head -1 || true)
+          echo "url=${previous}" >> "$GITHUB_OUTPUT"
+          if [ -n "${previous}" ]; then
+            echo "previous production deployment: ${previous}"
+          else
+            echo "no previous production deployment — first deploy, nothing to roll back to"
+          fi
+
+      - name: Pull the production environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Deploy the web app
+        id: deploy_web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # NO --prebuilt. See the note above: it is broken for pnpm monorepos
+          # outside Vercel's build container.
+          url=$(vercel deploy --prod --token="$VERCEL_TOKEN" | tail -1)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "deployed: ${url}"
+          echo "- web: ${url}" >> "$GITHUB_STEP_SUMMARY"
