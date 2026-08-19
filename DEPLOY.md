@@ -348,3 +348,55 @@ The **keep-alive is the most load-bearing workflow in the repository** for a
 free-tier deployment: Supabase pauses free projects after 7 idle days, a paused
 project answers HTTP 540, and it stays down until someone clicks Restore. Two
 touches a week reset that timer.
+
+---
+
+## What this costs, and what each limit actually is
+
+All four services are used on free tiers, and none needs a card. The point of
+this section is the **triggers** — the specific condition that turns each free
+tier into a bill — because a limit you have not written down is one you meet
+by surprise.
+
+| Service                | Free tier                                                            | What ends it                                                                                       | Then                       |
+| ---------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------- |
+| **Vercel**             | Hobby: 100 GB bandwidth/month                                        | **Being commercial.** Hobby's terms are non-commercial — ads, subscriptions or paid tiers move you | Pro, **$20/seat/month**    |
+| **Supabase**           | 500 MB database, 50k MAU, **projects pause after 7 idle days**       | The database outgrowing 500 MB, or wanting no pause risk                                           | Pro, **$25/month per ORG** |
+| **Cloudflare Workers** | 100k requests/day, **5 cron triggers/account**, 10 ms CPU/invocation | A sixth cron on the account, or 10 ms of CPU per invocation                                        | Paid, **$5/month**         |
+| **GitHub Actions**     | unlimited on public repos; 2,000 min/month private                   | Going private                                                                                      | included in paid plans     |
+
+**Realistic all-paid floor: roughly $50–54/month** — Vercel Pro $20 + Supabase
+Pro $25 + Workers Paid $5, plus about $4 if the Supabase IPv4 add-on is needed
+for direct connections. Nothing here needs any of it today.
+
+Three of those deserve more than a row:
+
+- **Supabase Pro is per ORGANIZATION, not per project**, and the first project
+  is included. Two projects — the dev one that keeps email+password on for the
+  isolation suite, and production — do not cost twice, as long as they live in
+  one org.
+- **The 7-day pause is the free tier's real hazard**, not the 500 MB. A
+  low-traffic deployment dies about a week after launch and the first person
+  to notice is a visitor. `keepalive.yml` exists for exactly this and touches
+  the database twice a week so one failure still cannot expire the timer.
+- **The 5-cron limit is per account, not per worker.** This worker uses two
+  (`* * * * *` ingest, `0 * * * *` digest flush), and `assert-worker-crons.mjs`
+  fails the release if that number moves without the reasoning in
+  `wrangler.jsonc` moving with it. Everything without a 60-second deadline
+  runs on GitHub Actions instead, which is why there are three left.
+
+### One dissemination fact, corrected
+
+Worth stating next to the cron budget, because it is what the 1-minute trigger
+is sized against.
+
+**SEC Form 4 filings accepted between 17:30 and 22:00 ET are deemed filed, and
+disseminated, the SAME business day.** The 17:30 cutoff that rolls a submission
+to the next business day is the _general_ EDGAR rule and does not apply to
+Section 16 filings — Forms 3, 4 and 5. EDGAR accepts nothing between 22:00 and
+06:00 ET, so an overnight submission waits for the morning window; that is the
+only wait.
+
+This project's README carried the general rule as though it applied to Form 4,
+which made dissemination look "occasionally twelve hours" and quietly excused
+latency the pipeline does not actually suffer. Corrected in r20.
