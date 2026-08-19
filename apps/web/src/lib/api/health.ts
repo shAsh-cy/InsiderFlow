@@ -46,6 +46,131 @@ export interface SourceHealth {
   lastRowAt: string | null;
   ageSeconds: number | null;
   rows: number;
+  /** Human label, so a status page does not have to know the enum. */
+  label: string;
+  /**
+   * What this deployment CLAIMS about the source, independent of whether
+   * rows exist. `live` and zero rows is a fault; `off` and zero rows is
+   * the documented arrangement — and a reader cannot tell those apart
+   * from a row count alone.
+   */
+  posture: SourcePosture;
+  note: string;
+}
+
+export type SourcePosture = "live" | "off-by-default" | "upstream-dead" | "not-in-hosted-deploy";
+
+interface DeclaredSource {
+  key: string;
+  label: string;
+  posture: SourcePosture;
+  note: string;
+}
+
+/**
+ * Every source this project talks about, whether or not it has ever
+ * produced a row.
+ *
+ * ── WHY A DECLARED LIST AND NOT JUST GROUP BY ─────────────────────────
+ *
+ * `sources` used to be built purely by grouping `transactions` on
+ * `source`. That is honest about what arrived and silent about what did
+ * not: a source with zero rows was ABSENT from the response entirely.
+ *
+ * Absent and "never" are different claims, and the difference is the
+ * whole point of this page. India ingestion is off by default and
+ * politician ingestion has a dead upstream — both correct, both
+ * deliberate, and both previously invisible here. A reader saw a list
+ * containing EDGAR and concluded EDGAR was all there is, rather than
+ * learning that two other sources exist and are not currently producing.
+ *
+ * So the list is declared, the observed rows are merged onto it, and a
+ * source that has never produced reads `never` with a note saying why.
+ */
+const DECLARED_SOURCES: readonly DeclaredSource[] = [
+  {
+    key: "sec_edgar",
+    label: "SEC EDGAR (US)",
+    posture: "live",
+    note: "Form 4/3/5 ownership filings, polled continuously. The only real-time source in the hosted deployment.",
+  },
+  {
+    key: "nse_india",
+    label: "NSE (India)",
+    posture: "not-in-hosted-deploy",
+    note: "Exchange terms of use and IT Act §43 keep scraping out of the hosted build. Self-hosters can enable it with ENABLE_INDIA_INGEST; a licensed feed can be pointed at INDIA_FEED_URL. Smoked live from a residential Indian line: SAST, bulk deals and pledges confirmed 2026-08-18. PIT — the endpoint carrying the actual insider trades — was returning an empty envelope because it had been RETIRED, not blocked; it moved to an XBRL filing index (corporates-pit-gg) and its field names were confirmed against a live filing on 2026-08-19.",
+  },
+  {
+    key: "bse_india",
+    label: "BSE (India)",
+    posture: "not-in-hosted-deploy",
+    note: "Same posture as NSE. Announcements are confirmed live (2026-08-18) and carry metadata plus PDF links, never structured trade numbers; one of two attempts failed on a malformed response header. The insider-trading endpoints are not shipped.",
+  },
+  {
+    key: "politicians",
+    label: "Congressional PTRs (US)",
+    posture: "upstream-dead",
+    note: "The house/senate-stock-watcher S3 buckets now answer 403. The pipeline is built and tested; it has no upstream. HOUSE_PTR_URL / SENATE_PTR_URL are env-swappable.",
+  },
+];
+
+/**
+ * A pre-public step that is a HUMAN's to perform, not a job's.
+ *
+ * These are not health: nothing is broken, and the app is behaving as
+ * configured. They are readiness — things that must be true before this
+ * deployment is public, that no amount of correct code can make true,
+ * and that are therefore easy to carry to launch unnoticed.
+ *
+ * They live beside health rather than only in DEPLOYMENT_STATE.md for one
+ * reason: a checklist in a repository is read once, and a status page is
+ * read every time something looks wrong.
+ */
+export interface ReadinessItem {
+  name: string;
+  /** `ready` | `pending` | `unknown` — never a bare boolean; see below. */
+  state: "ready" | "pending" | "unknown";
+  detail: string;
+  /** Where the step is actually performed. */
+  where: string;
+}
+
+/**
+ * `unknown` is a distinct state from `pending`, deliberately.
+ *
+ * Turnstile can be observed from here: the site key is either compiled in
+ * or it is not. The Supabase email+password provider CANNOT — it is a
+ * setting in a dashboard this process cannot read, and reporting it as
+ * `ready` because we would like it to be would be the exact dishonesty
+ * this page exists to prevent.
+ */
+function readiness(): ReadinessItem[] {
+  const turnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+  return [
+    {
+      name: "Bot protection (Turnstile)",
+      state: turnstileConfigured ? "ready" : "pending",
+      detail: turnstileConfigured
+        ? "A site key is configured, so the auth forms render the challenge and Supabase verifies the token."
+        : "No site key. The magic-link form has no bot protection beyond Supabase's own rate limits, which are reported as inconsistently enforced. See docs/auth.md.",
+      where: "Cloudflare Turnstile + Supabase → Authentication → Attack Protection",
+    },
+    {
+      name: "Email+password provider disabled",
+      // Not observable from this process, and saying so is the point.
+      state: "unknown",
+      detail:
+        "A Supabase dashboard setting this app cannot read. It exists for the dev project so the cross-user exploitation suite can mint users, and must be OFF in production. SECURITY_CHECKLIST.md item 13 — “N/A, prod has no password” — only becomes true once it is.",
+      where: "Supabase → Authentication → Sign In / Providers",
+    },
+    {
+      name: "RLS verified against Supabase",
+      state: "unknown",
+      detail:
+        "The background-job over-read is fixed and proved locally against the real migrations, but PGlite is not Supabase: the hosted postgres role's attributes and the behaviour of SET LOCAL through the 6543 transaction pooler are unconfirmed. See DEPLOYMENT_STATE.md.",
+      where: "Deploy-time runbook, before the first public request",
+    },
+  ];
 }
 
 export interface HealthReport {
@@ -73,6 +198,8 @@ export interface HealthReport {
   ingestStuck: number;
   sources: SourceHealth[];
   checks: HealthCheck[];
+  /** Human pre-public steps; see ReadinessItem. */
+  readiness: ReadinessItem[];
   counts: {
     transactions: number;
     companies: number;
@@ -162,6 +289,7 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     scanner,
     clusterCursor,
     counts,
+    politicianRows,
     alertQueue,
     clusterFallback,
     backlogRow,
@@ -186,6 +314,12 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
         politicianTrades: sql`(select count(*) from ${politicianTrades})`.mapWith(Number),
       })
       .from(sql`(select 1) as _`),
+    db
+      .select({
+        lastRowAt: sql<Date | null>`max(${politicianTrades.createdAt})`,
+        rows: sql`count(*)`.mapWith(Number),
+      })
+      .from(politicianTrades),
     readAlertQueueDepth(db),
     clusterFlagStatus(db),
     db
@@ -310,14 +444,46 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     },
   ];
 
-  const sources: SourceHealth[] = sourceRows
-    .map((r) => ({
-      source: r.source,
-      lastRowAt: r.lastRowAt ? new Date(r.lastRowAt).toISOString() : null,
-      ageSeconds: ageOf(r.lastRowAt, now),
-      rows: r.rows,
-    }))
-    .sort((a, b) => b.rows - a.rows);
+  /**
+   * Declared sources first, then anything observed that nobody declared.
+   *
+   * The second half matters as much as the first: a source key arriving
+   * that this file does not know about is a real event — a new adapter
+   * shipped, or a value written under the wrong key — and dropping it
+   * because it is not in the list would hide exactly that.
+   */
+  const observed = new Map(sourceRows.map((r) => [r.source, r]));
+  const politicianFreshness = politicianRows[0] ?? { lastRowAt: null, rows: 0 };
+
+  const sources: SourceHealth[] = DECLARED_SOURCES.map((declared) => {
+    // Politician rows live in their own table, not in `transactions`.
+    const row =
+      declared.key === "politicians"
+        ? { lastRowAt: politicianFreshness.lastRowAt, rows: politicianFreshness.rows }
+        : (observed.get(declared.key) ?? { lastRowAt: null, rows: 0 });
+    observed.delete(declared.key);
+    return {
+      source: declared.key,
+      label: declared.label,
+      posture: declared.posture,
+      note: declared.note,
+      lastRowAt: row.lastRowAt ? new Date(row.lastRowAt).toISOString() : null,
+      ageSeconds: ageOf(row.lastRowAt, now),
+      rows: row.rows,
+    };
+  });
+
+  for (const [key, row] of observed) {
+    sources.push({
+      source: key,
+      label: key,
+      posture: "live",
+      note: "Producing rows, but not declared in lib/api/health.ts — add it there so its posture is stated rather than inferred.",
+      lastRowAt: row.lastRowAt ? new Date(row.lastRowAt).toISOString() : null,
+      ageSeconds: ageOf(row.lastRowAt, now),
+      rows: row.rows,
+    });
+  }
 
   if (alertQueue === null) {
     checks.push({
@@ -359,6 +525,7 @@ export async function buildHealthReport(db: Database): Promise<HealthReport> {
     ingestStuck,
     sources,
     checks,
+    readiness: readiness(),
     counts: {
       transactions: counts[0]?.transactions ?? 0,
       companies: counts[0]?.companies ?? 0,

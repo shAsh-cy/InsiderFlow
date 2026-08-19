@@ -121,8 +121,40 @@ means trusting a value the client can edit. `eslint.config.mjs` has a
 | `osv-scanner`       | every PR, push to `main`, and daily | every dependency, dev included, against the OSV aggregate; results upload as SARIF to the Security tab |
 | `pnpm audit --prod` | every PR and daily                  | what ships                                                                                             |
 | `pnpm audit`        | every PR and daily                  | what a contributor installs                                                                            |
-| `gitleaks`          | every PR                            | full history, default rules plus project-specific ones                                                 |
+| `gitleaks`          | every PR, push to `main`, and daily | full history AND the working tree, default rules plus project-specific ones                            |
 | Image secret gate   | every PR                            | proves no env or secret file is inside the built container, using a planted decoy                      |
+
+### If you ever commit a credential
+
+Rotate it first. Removing the commit does not un-leak anything: the object
+stays in the pack, in every clone, and in every fork, and a public repository
+is scraped within minutes. Rotation is the fix; rewriting history is cleanup.
+
+`gitleaks` is pinned to an exact version and checksum-verified before it runs,
+and it distinguishes "found a secret" (exit 2) from "the scanner failed to
+run" (any other nonzero). That distinction matters more than it looks: with
+both collapsed into exit 1, a scanner that quietly stopped working reports
+exactly like a scanner that is passing.
+
+### History verification, 2026-08-18
+
+Run before this repository was made public, at commit `6154332`:
+
+- `gitleaks git . --redact` — **102 commits scanned, no leaks found**.
+- No `.env`, `.env.local` or `.dev.vars` has ever been added in any commit
+  on any ref (`git log --all --diff-filter=A`). `.env.example` is tracked on
+  purpose and carries local-development defaults only — a localhost Postgres
+  URL and a dev password that is meaningless off your own machine.
+- No string matching the Telegram bot-token shape
+  (`[0-9]{8,10}:AA[A-Za-z0-9_-]{33}`) appears in the tree of any commit,
+  checked directly with `git grep` across `git rev-list --all` rather than
+  relying on the scanner's own rules.
+- The bot id of the token currently in local `.env.local` appears in **zero**
+  commits.
+
+That token was nonetheless exposed outside the repository and is being rotated
+separately. Nothing above makes rotation optional — the history being clean
+says the leak did not happen _here_, not that it did not happen.
 
 ## Data honesty is a security property here
 

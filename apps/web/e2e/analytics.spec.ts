@@ -53,8 +53,15 @@ test.describe("heatmap", () => {
 
     // The table is server-rendered, so it settles first; use it to decide
     // whether there is anything to draw at all.
+    // TIGHTENED in r12. This was `test.skip(rows === 0, "no insider flow
+    // in the default window")`, so the day the heatmap query returned
+    // nothing — a regression — the test reported itself as skipped rather
+    // than failed, and a skip is read as "not applicable", not as "the
+    // feature is gone". The e2e pre-flight now refuses to start a run
+    // without seeded rows inside the freshness window, so an empty table
+    // here is the product's fault and is asserted as such.
     const rows = await page.locator("table tbody tr").count();
-    test.skip(rows === 0, "no insider flow in the default window");
+    expect(rows, "a seeded database must produce insider flow to draw").toBeGreaterThan(0);
 
     // Cells must be reachable as buttons — this is also the assertion that the
     // SVG subtree stays in the accessibility tree (role=group, not role=img).

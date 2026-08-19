@@ -30,11 +30,83 @@ scoring, sector classification, and net-flow anomaly detection. **Planned**: mor
 Every derived number is computed by a formula published at [`/docs/methodology`](/docs/methodology).
 There is no proprietary model, and none of it is investment advice.
 
+## What is verified, and what is only claimed
+
+Read this before the feature list. Every row says how it was checked and when — a
+row with no measurement behind it says so, because "not measured" and "passed"
+are different facts and this project has confused them before.
+
+Live at [`/status`](/status) and `/api/health`, with per-source timestamps. A
+source that has never produced a row reads **never**, not `0`.
+
+| Source                              | State                     | How that was established                                                                                                       |
+| ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **SEC EDGAR (US)**                  | Live                      | Ingested from live EDGAR on 2026-08-15: 25 filings discovered, 21 ingested, 71 transactions, 44.5s wall clock                  |
+| **Congressional (STOCK)**           | Upstream dead             | Pipeline built and tested; the house/senate-stock-watcher S3 buckets answer **403**. Produces nothing. Env-swappable           |
+| **NSE India — SAST, bulk, pledges** | Self-host only, confirmed | Live smoke from a residential Indian line, 2026-08-18: 1,334 / 70 / 1,693 rows, field names recorded                           |
+| **NSE India — PIT**                 | Self-host only, confirmed | 2026-08-19: the endpoint had been RETIRED, not blocked. `corporates-pit-gg` returns 169 filings/week; field names now recorded |
+| **BSE India**                       | Self-host only, confirmed | Announcements returned 50 rows; metadata and PDF links only, never structured numbers. 1 of 2 attempts failed on a bad header  |
+| **Finnhub, FMP**                    | Optional, keyed           | Adapters tested against recorded payloads; not exercised live in this round                                                    |
+| **EU MAR, SEDI**                    | Stub                      | Normalizer shape only. No feed                                                                                                 |
+
+### Latency: three numbers, and only one of them is ours
+
+`pnpm measure:edgar-latency` measures this against live EDGAR rather than
+asserting it. It separates terms that were previously added together:
+
+- **Dissemination** — EDGAR acceptance to public feed. **Theirs.** Filings accepted
+  after 17:30 ET disseminate the _next business morning_, so this term is
+  occasionally twelve hours and never ours. Reported, never asserted on.
+- **Detection** — public feed to queryable row. **Ours**, gated at 180s. **Not yet
+  measured**: measuring it requires watching a filing arrive, and the 420s watch
+  window on 2026-08-15 at 07:20 ET saw no new Form 4. The script exits 2 and says
+  so rather than printing a number nobody produced.
+- **Pipeline** — run start to queryable row: **44.5s measured**, for 25 filings.
+
+The figure this section used to carry — "60–90 seconds from EDGAR acceptance" —
+was arithmetic, not a measurement, and it added a term belonging to the SEC to two
+of ours.
+
+### Known defects, stated rather than filed away
+
+- **The SSE cursor is floored to a millisecond** while `created_at` keeps
+  microseconds, so the newest row re-qualifies on every 2.5s poll tick — measured
+  at **ten deliveries of one row inside a single 25s window**, and again on
+  reconnect. The shipped web client dedupes by trade id and shows nothing twice;
+  an API consumer polling `?mode=poll` receives the tail row on every poll. The
+  fix belongs in `fetchSince`, which both paths share. Pinned by a deliberately
+  failing test in `apps/web/e2e/stream-resume.spec.ts`.
+- **NSE bulk deals and pledges ignore their date window** — identical row counts
+  for a 7-day and a 90-day request. `--days` does not bound them; schema-level
+  dedup is what makes a repeat run harmless.
+- **`/screener` regressed 14 points on mobile Lighthouse** — 76 at r4, 62 today,
+  bimodal across runs (57–76 on an unchanging build). Script evaluation and
+  hydration, not the server: TTFB is 62ms and 286 kB of First Load JS evaluates
+  for ~1.9s throttled. Diagnosed but not fixed, with the attribution that is
+  still a hypothesis named as one — [docs/performance.md](docs/performance.md).
+- **A retired endpoint here returns `200` with an empty envelope, not `404`.**
+  NSE's `corporates-pit` did exactly that, and this project read it as an IP
+  block for three rounds. The smoke now probes it permanently as a control. Any
+  source that can answer "nothing" and "nothing, because I no longer exist"
+  with the same bytes needs one.
+
+### Blocking before this deployment is public
+
+Also carried on [`/status`](/status), because a checklist is read once and a status
+page is read whenever something looks wrong.
+
+| Step                                        | State                                                             |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| Cloudflare Turnstile enabled in Supabase    | Code shipped, **dashboard step pending**                          |
+| Production email+password provider disabled | **Pending** — this process cannot read the setting                |
+| RLS verified against the real Supabase      | Implemented and tested on PGlite; **deploy-verification pending** |
+
+`SECURITY_CHECKLIST.md` item 13 records "N/A — prod has no password login". That
+becomes true when the provider is actually disabled, and not before.
+
 ### What "real time" means here, precisely
 
-A single Form 4 reaches the site in roughly **60–90 seconds** from EDGAR acceptance: up to 60s
-waiting for the next cron tick, ~12s to fetch, parse and persist, and no page cache to wait out.
-Through the cached API or the SSE stream, allow ~2 minutes.
+Through the cached API or the SSE stream, allow roughly two minutes end to end.
 
 **Bursts drain, they do not vanish.** EDGAR Form 4 volume clusters heavily after the US close, and
 a run fetches at most `MAX_FILINGS_PER_RUN` (default 25) filings. Everything discovered beyond
@@ -235,26 +307,130 @@ The entire stack runs on free tiers — **no paid services required, no credit c
 > `.github/workflows/keepalive.yml` prevents that and is the most load-bearing
 > workflow in the repo for a free deployment — do not disable it.
 
+### The `DEPLOYMENT_ACTIVE` switch
+
+Four workflows — nightly analytics, ops (digest + health check), the EDGAR
+reconcile, and the Supabase keep-alive — talk to a **production database**.
+Until one exists they have nothing to do, and a scheduled job that fails
+nightly for "the deployment does not exist yet" is worse than no job at all:
+it fills the Actions tab with red, sends failure email nobody reads, and
+trains you to ignore the run that eventually means something.
+
+So they are gated on a repository **variable** (not a secret):
+
+```bash
+# Turn them on, once the database and secrets are real:
+gh variable set DEPLOYMENT_ACTIVE --body true
+
+# Or: Settings → Secrets and variables → Actions → Variables → New variable
+#     Name: DEPLOYMENT_ACTIVE     Value: true
+
+# Turn them back off (e.g. while the project is paused):
+gh variable delete DEPLOYMENT_ACTIVE
+```
+
+**Unset is the safe default.** Those jobs report as _skipped_ — grey, not red —
+and nothing else in CI changes. A variable rather than a secret because
+`secrets.*` cannot be read in a job-level `if:` (GitHub fails the whole
+workflow with `Unrecognized named-value: 'secrets'`), while `vars.*` can.
+
+Each gated job ALSO checks that `DATABASE_URL` is actually non-empty before
+doing any work, so setting the variable before adding the secrets logs a
+notice and exits 0 rather than failing. The two layers answer different
+questions: the variable is "should this run at all", the guard is "is it
+actually configured".
+
 When each free tier stops being enough, what it costs, and what to do instead:
 **[SCALING.md](SCALING.md)**.
 
 ## Documentation
 
-| Doc                                           | What it covers                                                         |
-| --------------------------------------------- | ---------------------------------------------------------------------- |
-| [quickstart.md](docs/quickstart.md)           | Run locally in one command; deploy free, step by step                  |
-| [architecture.md](docs/architecture.md)       | How the pieces fit, and the invariants that hold it together           |
-| [adapters.md](docs/adapters.md)               | **How to add a market** — one adapter, no schema change                |
-| [api.md](docs/api.md)                         | API conventions, caching, and the null/range rules clients must handle |
-| [alerts.md](docs/alerts.md)                   | Telegram bot setup, delivery contract, idempotency                     |
-| [auth.md](docs/auth.md)                       | Supabase Auth, RLS, and the dev/prod story                             |
-| [politicians.md](docs/politicians.md)         | STOCK Act data model and source provenance                             |
-| [design-language.md](docs/design-language.md) | **Ledger** — tokens, type, motion, and the data-colour rules           |
-| [SCALING.md](SCALING.md)                      | Free-tier limits, upgrade triggers, monthly costs                      |
-| `/docs/methodology`                           | Every derived-analytics formula, published in full                     |
-| `/design`                                     | The design system, rendered — every primitive with live data           |
-| `/legal`                                      | Data sources, licences, and the disclaimers that apply                 |
-| `/status`                                     | Live ingestion lag and per-source freshness                            |
+| Doc                                           | What it covers                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------ |
+| [quickstart.md](docs/quickstart.md)           | Run locally in one command; deploy free, step by step                    |
+| [architecture.md](docs/architecture.md)       | How the pieces fit, and the invariants that hold it together             |
+| [adapters.md](docs/adapters.md)               | **How to add a market** — one adapter, no schema change                  |
+| [api.md](docs/api.md)                         | API conventions, caching, and the null/range rules clients must handle   |
+| [alerts.md](docs/alerts.md)                   | Telegram bot setup, delivery contract, idempotency                       |
+| [auth.md](docs/auth.md)                       | Supabase Auth, RLS, and the dev/prod story                               |
+| [politicians.md](docs/politicians.md)         | STOCK Act data model and source provenance                               |
+| [design-language.md](docs/design-language.md) | **Ledger** — tokens, type, motion, and the data-colour rules             |
+| [AGENT_SAFETY.md](docs/AGENT_SAFETY.md)       | Tool metadata as untrusted data, edit provenance, and the MCP audit      |
+| [performance.md](docs/performance.md)         | What Lighthouse actually measures here, and the one route that regressed |
+| [SCALING.md](SCALING.md)                      | Free-tier limits, upgrade triggers, monthly costs                        |
+| `/docs/methodology`                           | Every derived-analytics formula, published in full                       |
+| `/design`                                     | The design system, rendered — every primitive with live data             |
+| `/legal`                                      | Data sources, licences, and the disclaimers that apply                   |
+| `/status`                                     | Live ingestion lag and per-source freshness                              |
+
+## Before you make this repository public
+
+Four settings that cost nothing, take about five minutes, and are worth more
+than any check in this repo — because they act on the push, not after it.
+Nothing below weakens or replaces an existing gate; they close the gap
+between "CI caught it" and "it never got in".
+
+**1. Secret scanning and push protection** (free on public repositories)
+
+_Settings → Code security → Secret protection → enable **Secret scanning** and
+**Push protection**._
+
+`gitleaks` in CI tells you a credential is already in the history — by which
+point the fix is rotation, not deletion. Push protection refuses the push,
+which is the only outcome that leaves nothing to rotate. Enable both; they
+cover different vendors than our own rules do.
+
+**2. Branch protection on `main`**
+
+_Settings → Branches → Add rule → `main`._ Require a pull request, and require
+these status checks to pass:
+
+| Check                           | Workflow           |
+| ------------------------------- | ------------------ |
+| `Typecheck, lint, test, build`  | `ci.yml`           |
+| `E2E (Playwright)`              | `ci.yml`           |
+| `No secrets in the built image` | `ci.yml`           |
+| `osv-scanner`                   | `supply-chain.yml` |
+| `pnpm audit`                    | `supply-chain.yml` |
+| `gitleaks`                      | `supply-chain.yml` |
+
+The `ci` job is where the seven gates live — typecheck, lint, format,
+`lint:changelog`, `lint:e2e-locators`, `lint:e2e-assertions`,
+`lint:api-schemas`. Requiring the job requires all seven.
+
+`E2E (Playwright)` is the slow one — it starts the compose Postgres, migrates,
+seeds, runs the offline analytics steps, then builds and starts a production
+server for the suite. Expect tens of minutes rather than minutes. It is worth
+requiring anyway: it is the only check that exercises the artefact that ships,
+and until r17 it had never run anywhere but a laptop.
+
+Read its skip count rather than only its colour. Specs needing credentials a
+public runner has not got — the Telegram webhook positive case, the Supabase
+cross-user isolation block — skip with a printed reason. **A skip is an
+uncovered case, not a passing one**, and the two named here are uncovered on
+every CI run by design. Cover them locally, or in a runner holding those
+secrets, before trusting either.
+
+Also tick **Do not allow bypassing the above settings**, or the protection
+applies to everyone except the person most likely to be pushing at midnight.
+
+Do NOT add the deployment workflows (analytics, ops, backfill, keepalive) as
+required checks. They are gated on `DEPLOYMENT_ACTIVE` and report as skipped;
+a required check that never runs blocks every merge.
+
+**3. Dependabot**
+
+_Settings → Code security → enable **Dependabot alerts** and **security
+updates**._ `osv-scanner` and `pnpm audit` run daily and tell you an advisory
+exists; Dependabot opens the pull request that fixes it. Add
+`.github/dependabot.yml` for version updates too if the PR volume is welcome —
+the daily scanners already cover the security half.
+
+**4. Actions permissions**
+
+_Settings → Actions → General → Workflow permissions → **Read repository
+contents**._ Every workflow here declares what it needs; the repository
+default should not be write.
 
 ## Legal / data-source notice
 

@@ -2,8 +2,15 @@
  * NSE session with cookie priming. Verified live 2026-08-02:
  *  - the NSE homepage returns 403 to non-browser clients, but the
  *    corporate-filings LISTING page returns 200 and sets the cookies;
- *  - without valid cookies the APIs "soft-fail" with 200 + empty data
- *    rather than an error, so a real browser-grade session matters.
+ *  - without valid cookies the APIs answer 200 with empty data rather than
+ *    erroring, so a real browser-grade session matters.
+ *
+ * An empty payload is therefore AMBIGUOUS by construction, and r16 showed
+ * how expensive that is: `corporates-pit` returned an empty envelope for
+ * three rounds and it was read as a session or IP problem the whole time.
+ * It was neither — the endpoint is retired. When a payload comes back
+ * empty, check whether a SIBLING endpoint on the same session returns rows
+ * before concluding anything about the connection.
  *
  * Rate limit: one shared limiter across priming and API calls keeps the
  * whole session at ≤3 req/s (350ms spacing ≈ 2.86 req/s).
@@ -86,6 +93,29 @@ export class NseSession {
         Cookie: this.cookieHeader(),
       },
     });
+  }
+
+  /**
+   * GET a document body, same session and same limiter.
+   *
+   * PIT filings are XBRL, and since PIT V2.0 the index and the trades are
+   * two different fetches. Routing the second through here rather than a
+   * bare `fetch` is what keeps one index of 169 filings inside the ≤3 req/s
+   * budget the whole module promises NSE.
+   */
+  async getText(url: string, referer: string): Promise<string> {
+    if (this.cookies.size === 0) await this.prime();
+    let response = await this.request(url, referer);
+    if (response.status === 401 || response.status === 403) {
+      this.log("nse_session_reprime", { url, status: response.status });
+      this.cookies.clear();
+      await this.prime();
+      response = await this.request(url, referer);
+    }
+    if (!response.ok) {
+      throw new Error(`NSE responded ${response.status} for ${url}`);
+    }
+    return response.text();
   }
 
   /** GET JSON with automatic cookie priming and one re-prime on 401/403. */

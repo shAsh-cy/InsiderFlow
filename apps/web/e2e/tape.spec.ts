@@ -297,18 +297,40 @@ test.describe("the tape on a phone @mobile", () => {
     // hard to reach on a phone, it was absent from the page.
     const menu = row.getByTestId("row-menu");
     await expect(menu).toBeVisible();
-    const box = await menu.boundingBox();
-    expect(Math.round(box!.width)).toBeGreaterThanOrEqual(43);
-    expect(Math.round(box!.height)).toBeGreaterThanOrEqual(43);
+    // Polled, not read once. `toBeVisible` resolves as soon as the element
+    // has a box, which under load is before the row has finished settling
+    // — this read 42 in a loaded run and 44 in every isolated one, which
+    // is a measurement taken early, not a control that shrank. Same trap
+    // `mobile-shell.spec.ts` documents for the masthead targets.
+    await expect
+      .poll(
+        async () => {
+          const b = await menu.boundingBox();
+          return b ? Math.round(Math.min(b.width, b.height)) : -1;
+        },
+        { message: "the row menu never settled at a tappable size", timeout: 5000 },
+      )
+      .toBeGreaterThanOrEqual(43);
 
     await menu.tap();
     const content = page.getByTestId("row-menu-content");
     await expect(content).toBeVisible();
     await expect(content.getByTestId("row-menu-watch")).toBeVisible();
     await expect(content.getByTestId("row-menu-alert")).toBeVisible();
-    // 44px rows in the menu too.
-    const itemBox = await content.getByTestId("row-menu-watch").boundingBox();
-    expect(Math.round(itemBox!.height)).toBeGreaterThanOrEqual(43);
+    // 44px rows in the menu too — polled for the same reason as the
+    // trigger above, and this one was missed when that fix went in. The
+    // dropdown animates open, so `toBeVisible` resolves while the item is
+    // still growing: it read 42 under a full-suite run and 44 in every
+    // isolated one. Measuring mid-transition is not a smaller control.
+    await expect
+      .poll(
+        async () => {
+          const b = await content.getByTestId("row-menu-watch").boundingBox();
+          return b ? Math.round(b.height) : -1;
+        },
+        { message: "the menu row never settled at a tappable height", timeout: 5000 },
+      )
+      .toBeGreaterThanOrEqual(43);
   });
 
   test("tapping track while signed out offers sign-in rather than refusing", async ({ page }) => {

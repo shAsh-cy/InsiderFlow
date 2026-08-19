@@ -8,6 +8,34 @@ import { getDb } from "@/lib/db";
  *
  * GET renders confirmation for a human click; POST satisfies RFC 8058
  * one-click (List-Unsubscribe-Post), which mail providers call directly.
+ *
+ * ── NO ORIGIN/CSRF GATE HERE. THAT IS A DECISION ──────────────────────
+ *
+ * `/api/me/*` gained a same-origin allowlist (lib/security/csrf.ts).
+ * This route is EXEMPT, deliberately, and the exemption is not an
+ * oversight for someone to "fix" later.
+ *
+ * Two reasons, and the second is the one that bites:
+ *
+ *   - there is nothing for CSRF to steal. The route is not authenticated
+ *     by the session cookie at all; the capability token in the URL is
+ *     the entire credential, it is single-use, and the only thing it can
+ *     do is stop ITS OWN owner's emails. An attacker who can make a
+ *     victim's browser call this already has to know a token, and if
+ *     they know the token they can call it themselves from anywhere —
+ *     the victim's browser adds nothing;
+ *   - the callers are not browsers on our site. `POST` is RFC 8058
+ *     one-click, invoked server-to-server by Gmail, Outlook and friends
+ *     with no `Origin` and no `Referer`; `GET` is a top-level navigation
+ *     from a mail client, which likewise sends no `Origin` and often no
+ *     `Referer`. The allowlist refuses a request carrying neither, so
+ *     gating this would turn every real unsubscribe into a 403 — the
+ *     precise outcome CAN-SPAM and the mail providers' own bulk-sender
+ *     rules exist to prevent, and a fast route to being marked a spammer.
+ *
+ * `e2e/csrf.spec.ts` asserts both methods still work with no `Origin` at
+ * all, so a later blanket application of the gate fails a test instead of
+ * silently breaking the unsubscribe link.
  */
 async function handle(token: string | null): Promise<boolean> {
   if (!token) return false;

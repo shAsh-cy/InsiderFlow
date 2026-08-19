@@ -82,6 +82,58 @@ export async function withUserContext<T>(
   });
 }
 
+/** The NOBYPASSRLS role the migration creates. Must match `0009_rls_enforced.sql`. */
+export const APP_ROLE = "insiderflow_app";
+
+/**
+ * `withUserContext`, for a connection that is NOT already the app role.
+ *
+ * ── THE OVER-READ THIS EXISTS TO CLOSE ────────────────────────────────
+ *
+ * The web app connects as `insiderflow_app` and RLS applies to it. The
+ * BACKGROUND JOBS do not: the scanner, the digest runner and the backfill
+ * all open the admin connection, because they legitimately own tables no
+ * user owns — the ingestion cursor, the delivery lease, `alerts_log`.
+ *
+ * That connection is the table owner and, on Supabase, `postgres` is
+ * BYPASSRLS as well. So when the scanner read `alert_rules` to match new
+ * trades, every policy in `0009_rls_enforced.sql` was simply skipped and
+ * the read returned every user's rules and every user's channel
+ * destinations. Nothing was leaked OUT of the process — the query layer
+ * scoped what it did next — but the database was not the thing enforcing
+ * it, and "the query layer remembered" is precisely the guarantee RLS
+ * exists to replace.
+ *
+ * `SET LOCAL ROLE` drops the transaction to the app role, so the policies
+ * apply to the very next statement. LOCAL, not SESSION: it ends with the
+ * transaction, which is what makes it safe behind Supabase's transaction
+ * pooler where the connection is handed to somebody else immediately
+ * afterwards. A session-level `SET ROLE` there is a bug that only appears
+ * under load.
+ *
+ * The role switch is reversible by definition — an admin connection may
+ * always `SET ROLE` back — so this is not a sandbox against hostile code
+ * in the same process. It is the control that makes the DATABASE the thing
+ * deciding which rows a background job may see, rather than the job.
+ */
+export async function withUserContextAsApp<T>(
+  db: Database,
+  userId: string,
+  fn: (tx: ScopedDb) => Promise<T>,
+): Promise<T> {
+  if (!UUID_RE.test(userId)) {
+    throw new Error("withUserContextAsApp requires a UUID user id");
+  }
+  return db.transaction(async (tx) => {
+    const scoped = tx as unknown as ScopedDb;
+    // Order matters: assume the role FIRST, so that if anything below
+    // throws, no statement has run with owner privileges and the GUC set.
+    await scoped.execute(sql.raw(`SET LOCAL ROLE ${APP_ROLE}`));
+    await setLocalSetting(scoped, USER_ID_SETTING, userId);
+    return fn(scoped);
+  });
+}
+
 /**
  * Run `fn` in a transaction authorised by a bearer capability instead of a
  * session — the Telegram `/start <token>` link and one-click email

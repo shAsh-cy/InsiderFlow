@@ -6,6 +6,8 @@ import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getSupabaseBrowserClient, isAuthConfiguredClient } from "@/lib/auth/supabase-browser";
+import { captchaOption, isTurnstileEnabled } from "@/lib/auth/turnstile";
+import { TurnstileWidget } from "@/components/auth/turnstile-widget";
 import { safeRedirectPath } from "@/lib/auth/redirect";
 
 import { CallbackNotice } from "./callback-notice";
@@ -14,6 +16,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  // null until the widget solves. `captchaOption` treats that as "send no
+  // token", which is also the permanent state when Turnstile is off.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const configured = isAuthConfiguredClient();
 
   /**
@@ -33,9 +38,13 @@ export default function LoginPage() {
     const supabase = await getSupabaseBrowserClient();
     if (!supabase) return;
     setStatus("sending");
+    // `captchaOption` is `{}` unless NEXT_PUBLIC_TURNSTILE_SITE_KEY is set
+    // AND the widget has solved, so this spread is a no-op on a deployment
+    // that has not enabled Turnstile — which is every fresh clone and the
+    // e2e suite. See lib/auth/turnstile.ts.
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: callbackUrl() },
+      options: { emailRedirectTo: callbackUrl(), ...captchaOption(captchaToken) },
     });
     if (error) {
       setStatus("error");
@@ -106,7 +115,11 @@ export default function LoginPage() {
                 className="h-11 rounded-md border border-border bg-surface px-3 text-sm text-ink outline-none placeholder:text-ink-faint md:h-10"
               />
               {/* The one oxblood fill on the page. */}
-              <Button type="submit" disabled={status === "sending"}>
+              <TurnstileWidget onToken={setCaptchaToken} />
+              <Button
+                type="submit"
+                disabled={status === "sending" || (isTurnstileEnabled() && !captchaToken)}
+              >
                 {status === "sending" ? (
                   <Loader2 className="animate-spin" aria-hidden />
                 ) : (

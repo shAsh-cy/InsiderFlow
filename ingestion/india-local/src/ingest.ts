@@ -12,14 +12,15 @@ import {
   assignOccurrenceKeys,
   filterBseInsiderAnnouncements,
   indiaAdapter,
-  mapNsePitToDisclosure,
+  mapPitXbrlToDisclosures,
   normalizeBulkBlockRows,
   normalizePledgeRows,
   normalizeSastRows,
   nseBulkBlockUrl,
-  nsePitUrl,
+  nsePitIndexUrl,
   nsePledgeUrl,
   nseSastUrl,
+  parsePitXbrl,
   toUsd,
 } from "@insiderflow/core";
 import type {
@@ -27,7 +28,7 @@ import type {
   FetchLike,
   IndiaDisclosureRecord,
   NseBulkBlockRawRow,
-  NsePitRawRow,
+  NsePitIndexRow,
   NsePledgeRawRow,
   NseSastRawRow,
   PledgeRecord,
@@ -68,6 +69,8 @@ export function assertIndiaIngestEnabled(env: Record<string, string | undefined>
 
 export interface NseJsonSession {
   getJson<T>(url: string, referer: string): Promise<T>;
+  /** PIT documents are XBRL, not JSON — same session, same rate limiter. */
+  getText(url: string, referer: string): Promise<string>;
 }
 
 export interface IndiaIngestOptions {
@@ -84,7 +87,21 @@ export interface IndiaIngestOptions {
 
 export interface IndiaIngestStats {
   window: { from: string; to: string };
-  pit: { raw: number; normalized: number; inserted: number; deduped: number };
+  /**
+   * `filings` is index rows seen; `raw` is TRANSACTIONS extracted from the
+   * documents fetched. Since PIT V2.0 those are different numbers — one
+   * filing routinely carries several trades — and conflating them is how a
+   * halved tape would look healthy.
+   */
+  pit: {
+    filings: number;
+    documentsFetched: number;
+    documentsFailed: number;
+    raw: number;
+    normalized: number;
+    inserted: number;
+    deduped: number;
+  };
   sast: { raw: number; inserted: number };
   bulkBlock: { raw: number; inserted: number };
   pledge: { raw: number; inserted: number };
@@ -115,19 +132,55 @@ export async function runIndiaIngest(options: IndiaIngestOptions): Promise<India
     .toISOString()
     .slice(0, 10);
 
-  // ── 1. PIT: structured NSE rows → the licensed-feed contract → adapter ──
-  const pitResponse = await session.getJson<NseApiResponse<NsePitRawRow>>(
-    nsePitUrl(from, to),
-    NSE_PIT_REFERER,
-  );
-  const pitRaw = pitResponse.data ?? [];
-  const records = pitRaw
-    .map(mapNsePitToDisclosure)
-    .filter((r): r is IndiaDisclosureRecord => r !== null);
+  // ── 1. PIT: filing index → XBRL document → the licensed-feed contract ──
+  //
+  // Two steps, not one, since NSE's PIT V2.0 (30-04-2026). The index row is
+  // a SUBMISSION and carries no numbers; the trades are in the XBRL it
+  // links. Structurally identical to EDGAR — index, then parse — which is
+  // why `persistUnified` below is unchanged.
+  //
+  // The old one-call path is gone because it returns nothing. It was not
+  // removed for tidiness: `corporates-pit` answers HTTP 200 with an empty
+  // envelope, which this repository read as an IP block for three rounds.
+  const pitIndex =
+    (
+      await session.getJson<NseApiResponse<NsePitIndexRow>>(
+        nsePitIndexUrl(from, to),
+        NSE_PIT_REFERER,
+      )
+    ).data ?? [];
+
+  const records: IndiaDisclosureRecord[] = [];
+  let pitDocumentsFetched = 0;
+  let pitDocumentsFailed = 0;
+
+  for (const row of pitIndex) {
+    if (!row.xmlFileName) continue;
+    try {
+      // Through the session so the shared limiter applies: an index of 169
+      // filings is 169 more requests, and the whole point of one limiter is
+      // that adding a step cannot quietly double the request rate.
+      const xml = await session.getText(row.xmlFileName, NSE_PIT_REFERER);
+      records.push(...mapPitXbrlToDisclosures(parsePitXbrl(xml), row));
+      pitDocumentsFetched += 1;
+    } catch (error) {
+      // One unreadable document must not cost the other 168.
+      pitDocumentsFailed += 1;
+      log("india_pit_document_failed", {
+        symbol: row.symbol,
+        url: row.xmlFileName,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const unified = indiaAdapter.normalize({ records });
   const pitStats = await persistUnified(unified, { db, log, fxRateLookup });
   log("india_pit_ingested", {
-    raw: pitRaw.length,
+    filings: pitIndex.length,
+    documentsFetched: pitDocumentsFetched,
+    documentsFailed: pitDocumentsFailed,
+    raw: records.length,
     normalized: unified.length,
     inserted: pitStats.transactionsInserted,
     deduped: pitStats.transactionsDeduped,
@@ -141,7 +194,7 @@ export async function runIndiaIngest(options: IndiaIngestOptions): Promise<India
       bseInsiderAnnouncements = filterBseInsiderAnnouncements(announcements).length;
       log("india_bse_cross_check", {
         bseInsiderAnnouncements,
-        nsePitRows: pitRaw.length,
+        nsePitTransactions: records.length,
       });
     } catch (error) {
       log("india_bse_cross_check_failed", {
@@ -182,7 +235,10 @@ export async function runIndiaIngest(options: IndiaIngestOptions): Promise<India
   const stats: IndiaIngestStats = {
     window: { from, to },
     pit: {
-      raw: pitRaw.length,
+      filings: pitIndex.length,
+      documentsFetched: pitDocumentsFetched,
+      documentsFailed: pitDocumentsFailed,
+      raw: records.length,
       normalized: unified.length,
       inserted: pitStats.transactionsInserted,
       deduped: pitStats.transactionsDeduped,

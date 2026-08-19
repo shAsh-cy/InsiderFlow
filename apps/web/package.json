@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src",
+    "// test:integration": "Deliberately NOT part of `test`: these need a live Postgres and a running build, neither of which CI has. Kept out of the `src` glob so a clean CI run cannot go red for want of a database.",
+    "test:integration": "vitest run integration",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -41,6 +43,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/eslintrc": "^3.3.0",
     "@next/eslint-plugin-next": "15.5.22",
     "@playwright/test": "^1.50.0",

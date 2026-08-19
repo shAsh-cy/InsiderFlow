@@ -6,6 +6,7 @@ import {
   insertSyntheticTrade,
   type SyntheticCompany,
 } from "./fixtures";
+import { settledWidth } from "./measure";
 
 /**
  * THE MASTHEAD'S FOUR SMALL PROMISES (r6).
@@ -201,7 +202,7 @@ test.describe("the palette hint names a key the reader has", () => {
   test("⌘ on a Mac, and the swap costs no layout shift", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/trades");
-    const before = (await page.getByTestId("open-palette").boundingBox())!.width;
+    const before = await settledWidth(page.getByTestId("open-palette"), "palette button (before)");
 
     // BOTH sources, because the component reads `userAgentData.platform`
     // first — it is the one that is not deprecated, and Chromium answers
@@ -220,7 +221,7 @@ test.describe("the palette hint names a key the reader has", () => {
     // hydration. `min-w` is what makes that free — without it this is a
     // two-character resize of the search button, and every control to its
     // right moves.
-    const after = (await page.getByTestId("open-palette").boundingBox())!.width;
+    const after = await settledWidth(page.getByTestId("open-palette"), "palette button (after)");
     expect(Math.abs(after - before), `${before} → ${after}`).toBeLessThanOrEqual(1);
   });
 

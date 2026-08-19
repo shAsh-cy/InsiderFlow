@@ -36,10 +36,24 @@ function Section({
 }
 
 /** A stated formula. Sunken, mono and tabular so the ASCII alignment that
- *  carries the meaning survives — these blocks are read column-wise. */
-function Formula({ children }: { children: React.ReactNode }) {
+ *  carries the meaning survives — these blocks are read column-wise.
+ *
+ *  `tabIndex={0}` because `overflow-x-auto` makes this a scroll container,
+ *  and a scroll container with no focusable child cannot be scrolled from
+ *  the keyboard at all in Safari — the content past the right edge is
+ *  simply unreachable. Caught by axe (`scrollable-region-focusable`,
+ *  serious) the first time this project ran an accessibility scan that was
+ *  committed rather than kept in a scratchpad. `role="group"` with a name
+ *  keeps the stop meaningful when a screen reader lands on it, instead of
+ *  announcing an unlabelled region. */
+function Formula({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <pre className="surface-sunken num overflow-x-auto rounded-md p-4 text-xs leading-relaxed text-ink">
+    <pre
+      tabIndex={0}
+      role="group"
+      aria-label={`${label} — formula`}
+      className="surface-sunken num overflow-x-auto rounded-md p-4 text-xs leading-relaxed text-ink"
+    >
       {children}
     </pre>
   );
@@ -142,7 +156,7 @@ export default function MethodologyPage() {
           purchase), sells on{" "}
           <code className="rounded-sm bg-fill px-1 font-mono text-sm text-ink">S</code>.
         </p>
-        <Formula>{`window      = trades in the last 14 days, code P (buy) or S (sell)
+        <Formula label="Cluster detection">{`window      = trades in the last 14 days, code P (buy) or S (sell)
 insiders   = count(distinct insider_id) within the window
 cluster    = insiders >= 2
 
@@ -246,7 +260,7 @@ window_end   = max(txn_date) among those trades`}</Formula>
           <em>close</em> on or after the trade date — never the reported trade price, which can be a
           weighted average across a whole day and is not a price anyone else could have paid.
         </p>
-        <Formula>{`entry        = first close on or after txn_date        (within 7 days)
+        <Formula label="Forward returns">{`entry        = first close on or after txn_date        (within 7 days)
 exit(h)      = first close on or after txn_date + h    (within 7 days)
 return(h)    = (exit(h) − entry) / entry
 
@@ -267,7 +281,7 @@ h ∈ {30, 90, 180} calendar days`}</Formula>
           <strong className="font-semibold text-ink">The composite score.</strong> One horizon, one
           statistic, one shrinkage term:
         </p>
-        <Formula>{`score = mean(excess_90d) × n / (n + 5) × 100
+        <Formula label="Insider score">{`score = mean(excess_90d) × n / (n + 5) × 100
 
   n = number of scored trades
   5 = prior strength (PRIOR_TRADES)`}</Formula>
@@ -284,7 +298,7 @@ h ∈ {30, 90, 180} calendar days`}</Formula>
           <strong className="font-semibold text-ink">Realised round trips.</strong> Sales are
           matched against prior purchases FIFO, within each (insider, company) pair separately.
         </p>
-        <Formula>{`realised = Σ ((sell_price − buy_price) / buy_price) × shares_matched
+        <Formula label="Realised profit">{`realised = Σ ((sell_price − buy_price) / buy_price) × shares_matched
            ────────────────────────────────────────────────────────
                             Σ shares_matched`}</Formula>
         <p>
@@ -302,7 +316,7 @@ h ∈ {30, 90, 180} calendar days`}</Formula>
           rounding for a mega-cap, so there is no cross-company dollar scale on which a raw figure
           means anything.
         </p>
-        <Formula>{`net(w)    = Σ value_usd of acquisitions − Σ value_usd of disposals
+        <Formula label="Net flow anomaly">{`net(w)    = Σ value_usd of acquisitions − Σ value_usd of disposals
             over 30-day window w, opportunistic trades only
 
 current   = net(window 0)                  the last 30 days

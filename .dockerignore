@@ -49,3 +49,33 @@ test-results
 # Docs do not affect the build.
 *.md
 docs
+
+# ── Repo tooling that has no business in a runtime image ──────────────
+#
+# `.gitleaks.toml` is the reason this section exists, and the failure it
+# caused is worth writing down because it was two security controls
+# tripping over each other rather than a leak.
+#
+# ci.yml plants a decoy secret, builds the image, and greps the filesystem
+# for the decoy's literal value — a real end-to-end proof that
+# `.dockerignore` is working. `.gitleaks.toml` ALLOWLISTS that same literal,
+# so gitleaks does not flag the planted decoy. `COPY . .` then carried the
+# allowlist into the image, the grep found its own decoy string inside the
+# scanner's config, and the gate failed pointing at an image that was
+# genuinely clean.
+#
+# The fix is not to narrow the grep. It is that none of these files are
+# part of the application: they configure checks that run in CI, on a
+# checkout, and shipping them only widens what an attacker who lands a
+# shell can read about how this project defends itself.
+.gitleaks.toml
+.gitleaksignore
+.husky
+lighthouserc*
+codecov.yml
+renovate.json
+
+# NOT excluded, deliberately: eslint.config.mjs, .prettierrc and friends.
+# r12 made the production build's ESLint pass actually run, so the config
+# is a BUILD input now — dropping it here would break `next build` inside
+# the image, and the error would point at lint rather than at this file.

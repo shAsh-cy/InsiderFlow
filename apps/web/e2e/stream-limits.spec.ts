@@ -64,3 +64,32 @@ test("refuses excess concurrent streams with 503 and Retry-After", async ({ page
   const poll = await request.get("/api/stream?mode=poll");
   expect(poll.status()).toBe(200);
 });
+
+/**
+ * A hostile resume cursor is a fallback, not a 500.
+ *
+ * `parseCursor` checked `Number.isFinite`, which is true of `1e30`, and the
+ * value reached `new Date(epochMs).toISOString()`. The SSE path swallowed
+ * the RangeError; `?mode=poll` did not, and answered 500 to anyone who
+ * asked — no session required. `lib/api/stream-cursor.test.ts` owns the
+ * parsing rules; this asserts the bound is actually WIRED to the route,
+ * which a unit test on an extracted function cannot.
+ */
+test("a hostile resume cursor falls back to now rather than erroring", async ({ request }) => {
+  const zero = "00000000-0000-0000-0000-000000000000";
+  for (const cursor of [`1e30:${zero}`, `-1e30:${zero}`, `8.64e15:${zero}`]) {
+    const response = await request.get(
+      `/api/stream?mode=poll&last_event_id=${encodeURIComponent(cursor)}`,
+    );
+    expect(response.status(), `${cursor} must degrade to a normal batch, not a 500`).toBe(200);
+    // …and the fallback is a usable cursor, not the hostile one echoed back.
+    const body = (await response.json()) as { cursor: string };
+    expect(() => new Date(Number(body.cursor.split(":")[0])).toISOString()).not.toThrow();
+  }
+
+  // The same value in the header the SSE client actually resumes with.
+  const viaHeader = await request.get("/api/stream?mode=poll", {
+    headers: { "last-event-id": `1e30:${zero}` },
+  });
+  expect(viaHeader.status()).toBe(200);
+});

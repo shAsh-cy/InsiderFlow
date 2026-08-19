@@ -13,6 +13,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "lint:scripts": "eslint scripts",
+    "lighthouse": "node scripts/lighthouse.mjs",
     "lint:changelog": "node scripts/lint-changelog.mjs",
     "lint:e2e-locators": "node scripts/lint-e2e-locators.mjs",
     "// test": "Sequential: four packages spin up PGlite (Postgres in WASM), and running those WASM heaps concurrently exhausts memory on a 2-core runner (VirtualAlloc/OOM). Serial is slower but deterministic.",
@@ -32,12 +34,20 @@
     "backfill": "pnpm --filter @insiderflow/edgar-worker backfill",
     "india:ingest": "pnpm --filter @insiderflow/india-local ingest",
     "smoke:alert-insert": "node packages/db/scripts/smoke-alert-insert.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint:e2e-assertions": "node scripts/lint-e2e-assertions.mjs",
+    "lint:api-schemas": "node scripts/lint-api-schemas.mjs",
+    "lint:client-bundle": "node scripts/lint-client-bundle.mjs",
+    "measure:edgar-latency": "pnpm --filter @insiderflow/db exec tsx scripts/measure-edgar-latency.mjs",
+    "alerts:send-live": "pnpm --filter @insiderflow/alerts exec tsx scripts/send-live-alert.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
+    "chrome-launcher": "^1.2.1",
     "eslint": "^9.30.0",
+    "globals": "14.0.0",
     "husky": "^9.1.7",
+    "lighthouse": "^13.4.1",
     "lint-staged": "^16.1.0",
     "prettier": "^3.6.0",
     "typescript-eslint": "^8.35.0"

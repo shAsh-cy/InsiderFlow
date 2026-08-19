@@ -150,6 +150,47 @@ of this probe for the _application_ role (`no context → 0 rows; owner context 
 1 row; other user → 0 rows`); it does **not** currently check the admin
 direction, which is the gap this risk sits in.
 
+### r14 status: the scanner-side fix is IMPLEMENTED, not yet deploy-verified
+
+The over-read this risk describes has been closed in code, and the closure is
+proved locally against the real migrations — but not against Supabase, because
+there is no Supabase project yet. **Both halves of that sentence matter at
+resume time.**
+
+What shipped (branch `chore/r14-security-checklist`):
+
+- `withUserContextAsApp()` in `packages/db/src/user-context.ts` — `SET LOCAL
+ROLE insiderflow_app` plus `set_config('app.user_id', …, true)`, both
+  transaction-scoped so neither can outlive the transaction. That is what makes
+  it safe behind the 6543 transaction pooler; a session-level `SET ROLE` there
+  is a bug that only appears under load.
+- `packages/alerts/src/scanner.ts` — `loadRules` and `loadTimezones` now read
+  one user at a time through that helper. The only remaining cross-user read is
+  `usersWithRules()`, which selects `user_id` and nothing else.
+- `packages/db/src/scanner-scope.test.ts` — 8 tests over the real migrations:
+  only the target user's rows come back, ZERO rows when `app.user_id` is unset,
+  `alert_channels` scoped too, the app role is NOBYPASSRLS, and the context does
+  not survive its own transaction.
+
+**Run these at resume, in this order. Do not tick the RLS risk closed without
+them.**
+
+1. The `pg_roles` check above, for `postgres` AND for `insiderflow_app`.
+   `insiderflow_app` must be `rolbypassrls = false` and `rolsuper = false` on
+   the hosted project, not only in the migration.
+2. Through the **6543 transaction pooler**, not the direct 5432 connection:
+   run a scan and confirm `SET LOCAL ROLE` + `set_config(..., true)` behave as
+   they do locally. This is the one behaviour PGlite cannot speak to, and it is
+   the reason the helper uses LOCAL rather than session scope.
+3. The affirmative probe, admin direction: with `app.user_id` unset, confirm a
+   scoped read returns 0 rows on the real database.
+4. Confirm the scanner still delivers — the per-user loop is a behavioural
+   change to a cron job, and "no alerts fired" would be the failure mode.
+
+If the hosted `postgres` role is BYPASSRLS (it is, on Supabase), that is now
+EXPECTED rather than alarming: the scanner no longer reads user tables on that
+role. The mitigations below remain relevant only for whatever still does.
+
 ### Mitigations to evaluate if `rolbypassrls` is false
 
 Evaluate in this order; do not pick one without measuring first.
@@ -255,6 +296,25 @@ While this checkpoint stands:
   is worse than none, because it is trusted.
 
 ---
+
+## BLOCKING before the deployment is public (r15)
+
+Three things no amount of correct code completes. Each is also a visible row
+on `/status`, so it cannot be quietly carried to launch: the status page is
+read whenever something looks wrong, and a checklist is read once.
+
+| Step                                            | Where it is done                              | State at r15                                               |
+| ----------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------- |
+| **Enable Cloudflare Turnstile**                 | Supabase dashboard → Auth → Attack protection | Code shipped and inert until enabled (r14 item 9)          |
+| **Disable the email+password provider in prod** | Supabase dashboard → Auth → Providers → Email | **Not verified.** No process here can read that setting    |
+| **Verify RLS against the real Supabase**        | Step 1 of the runbook below                   | Implemented and tested on PGlite; deploy-verification open |
+
+`SECURITY_CHECKLIST.md` item 13 records the password-login risk as "N/A — prod
+has no password login". **That statement becomes true when the provider is
+actually disabled, and is not true before then.** It is written as N/A on the
+strength of an intended configuration, which is exactly the shape of claim r14
+was created to stop accepting — so it is repeated here, next to the step that
+makes it accurate.
 
 ## RESUME — Part 2 runbook
 

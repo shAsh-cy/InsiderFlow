@@ -147,15 +147,21 @@ test("reduced motion disables non-essential animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/", { waitUntil: "networkidle" });
 
-  // The live pulse is the system's one persistent ornament. It may be
-  // absent (the dot only pulses once the stream is actually live), so a
-  // missing element passes — but a present one must be stopped.
-  const pulseAnimation = await page
-    .getByTestId("live-dot")
-    .first()
-    .evaluate((el) => getComputedStyle(el).animationName)
-    .catch(() => "none");
-  expect(pulseAnimation).toBe("none");
+  // TIGHTENED in r12. This read `.catch(() => "none")` followed by
+  // `expect(pulseAnimation).toBe("none")`, with a comment explaining that
+  // "a missing element passes". It did — and so did a DELETED element, a
+  // renamed test id, and an `evaluate` that threw for any reason at all.
+  // The assertion could only ever fail if the dot existed AND was
+  // animating, which made it a test of the stylesheet on the days the
+  // component happened to render.
+  //
+  // The dot is on the landing page in every connection state — `status`
+  // changes which class it carries, not whether it exists — so its
+  // presence is a contract and is asserted as one.
+  const dot = page.getByTestId("live-dot").first();
+  await expect(dot, "the live dot is on the landing page in every state").toBeAttached();
+  const pulseAnimation = await dot.evaluate((el) => getComputedStyle(el).animationName);
+  expect(pulseAnimation, "under reduced motion the dot must not pulse").toBe("none");
 
   // The real contract, checked against every element rather than one
   // known decorative class: under reduced motion nothing on the page may

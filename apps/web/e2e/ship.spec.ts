@@ -171,7 +171,6 @@ test.describe("synthetic-data honesty", () => {
     // exactly the screenshot that gets mistaken for real market data.
     await page.goto("/heatmap");
     const notice = page.getByTestId("synthetic-notice");
-    const rows = await page.locator("table tbody tr").count();
 
     if (await notice.isVisible()) {
       await expect(notice).toContainText(/synthetic seed data/i);
@@ -183,7 +182,11 @@ test.describe("synthetic-data honesty", () => {
         .innerText()
         .catch(() => "")) as string;
       expect(body, "aggregates must exclude ZZ* fixtures by default").not.toMatch(/\bZZ[A-Z]/);
-      expect(rows).toBeGreaterThanOrEqual(0);
+      // REMOVED in r12: `expect(rows).toBeGreaterThanOrEqual(0)`. A row
+      // count is a non-negative integer, so that assertion was true for
+      // every possible value of the thing it named — it could not fail,
+      // and it read as coverage of the not-opted-in branch. The real
+      // claim is the one above: no synthetic ticker reaches an aggregate.
     }
   });
 });

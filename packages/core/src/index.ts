@@ -72,3 +72,13 @@ export { parseStooqCsv, stooqDailyUrl, stooqHistoryUrl } from "./prices";
 export type { DailyPriceRow } from "./prices";
 export * from "./adapters";
 export type { Market } from "./types";
+/*
+ * The outbound guard's DECISIONS only. `ssrf-fetch.ts` — which does the
+ * connecting — is deliberately not re-exported here: it imports node:dns
+ * and node:https, and this barrel is imported by the Cloudflare Worker,
+ * which has neither. Node processes reach it at `@insiderflow/core/
+ * ssrf-fetch`, so pulling a Node-only transport into a Worker bundle has
+ * to be something somebody typed.
+ */
+export { OUTBOUND_ALLOWLIST, checkOutboundUrl, classifyAddress, isBlockedAddress } from "./ssrf";
+export type { AddressVerdict, OutboundDecision } from "./ssrf";

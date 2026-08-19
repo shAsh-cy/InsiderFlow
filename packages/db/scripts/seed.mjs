@@ -308,13 +308,15 @@ try {
     insert into filings (accession_no, form_type, filed_at, issuer_company_id, source_url)
     values ('e2e-seed-0000000001', '4', now() - interval '3 days',
             ${companyIds.get("ZZHELIO")}, 'https://example.invalid/seed/original')
-    on conflict (accession_no) do update set form_type = excluded.form_type
+    on conflict (accession_no) do update set form_type = excluded.form_type,
+      filed_at = excluded.filed_at
     returning id`;
   const [amendment] = await sql`
     insert into filings (accession_no, form_type, filed_at, issuer_company_id, source_url)
     values ('e2e-seed-0000000002', '4/A', now() - interval '1 day',
             ${companyIds.get("ZZHELIO")}, 'https://example.invalid/seed/amendment')
-    on conflict (accession_no) do update set form_type = excluded.form_type
+    on conflict (accession_no) do update set form_type = excluded.form_type,
+      filed_at = excluded.filed_at
     returning id`;
   await sql`
     update filings set superseded_by_filing_id = ${amendment.id} where id = ${original.id}`;
@@ -326,6 +328,34 @@ try {
   // about a recent trade arrives more recently than one about an old
   // trade. That is how the real pipeline behaves, and it means the tape
   // sorted by `created_at` reads in a sensible order out of the box.
+  //
+  // RE-SEEDING MUST MOVE BOTH DATES, not just the arrival.
+  //
+  // `dedup_key` below encodes the day OFFSET, which is stable across runs,
+  // so a re-seed always matches the existing row and takes the ON CONFLICT
+  // branch. That branch used to update `created_at` alone: it refreshed when
+  // a filing was SEEN and left when the trade HAPPENED frozen at whatever
+  // date the database was first seeded, so every trade drifted one day
+  // further into the past for every day the database survived.
+  //
+  // Not cosmetic. The cluster detector looks back 14 days, so a fortnight
+  // after the first seed the three ZZNOVA buys that exist to form a cluster
+  // fall out of the window, `cluster_flags` goes empty, and
+  // `cold-start.spec.ts` fails its "cluster-buys returns rows" assertion.
+  // Measured on a database seeded 7 days earlier: those buys sat 13, 15 and
+  // 17 days back instead of 2, 4 and 6, and the analytics run wrote 0 flags
+  // where a clean database wrote 1.
+  //
+  // The e2e pre-flight prints `pnpm seed` as the remedy for a stale
+  // database. Until this was fixed that remedy did not actually fix it,
+  // which is the worse half: a documented cure that reports success and
+  // changes nothing.
+  //
+  // STILL STALE ON RE-SEED: the politician, SAST, deal and pledge inserts
+  // are ON CONFLICT DO NOTHING, so their dates never move either. Left
+  // alone deliberately — those rows carry honesty-sensitive columns
+  // (amount ranges above all) and turning them into an UPDATE is a design
+  // decision about what a re-seed may overwrite, not a bug fix.
   const ARRIVALS = [...TRADES].sort((a, b) => a.day - b.day);
   let n = 0;
   for (const t of TRADES) {
@@ -349,7 +379,8 @@ try {
         ${t.routine ? "routine" : "opportunistic"},
         ${`e2e-seed-${t.co}-${t.who.replaceAll(" ", "")}-${t.day}-${t.code}#0`}, ${country},
         ${createdAt})
-      on conflict (dedup_key) do update set created_at = excluded.created_at`;
+      on conflict (dedup_key) do update set created_at = excluded.created_at,
+        txn_date = excluded.txn_date`;
     n++;
   }
   // Report the figure the landing page will show, so a seed run that

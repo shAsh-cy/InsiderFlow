@@ -4,13 +4,19 @@
  * mechanics live in the runner. See that module's README for the legal
  * posture: the hosted deployment does not run any of this.
  *
- * Field-name provenance:
- *  - BSE announcement + scrip-search shapes were recorded live on
- *    2026-08-02 (see fixtures/india-samples.ts).
- *  - NSE row shapes follow the public corporates APIs as widely mirrored;
- *    NSE soft-fails to empty JSON for non-browser clients, so the exact
- *    keys could not be re-recorded here. Run `pnpm india:ingest --smoke`
- *    from a residential connection to print live keys before first use.
+ * Field-name provenance — every NSE shape here is now recorded, not
+ * inferred:
+ *  - BSE announcement + scrip-search: live 2026-08-02.
+ *  - NSE SAST, bulk deals, pledges: live 2026-08-18, residential Indian
+ *    line (1,334 / 70 / 1,693 rows).
+ *  - NSE PIT: live 2026-08-19, via `corporates-pit-gg` and the XBRL
+ *    documents it links (169 filings over seven days).
+ *
+ * The earlier note here said NSE "soft-fails to empty JSON for non-browser
+ * clients, so the exact keys could not be re-recorded". That was wrong
+ * about PIT specifically, and wrong for three rounds: `corporates-pit` is
+ * RETIRED and answers an empty envelope to everyone, from any address.
+ * See `nsePitUrl` below.
  */
 import { parseFilingNumber } from "../normalize";
 import type { IndiaDisclosureRecord } from "./india";
@@ -31,9 +37,41 @@ const ddmmyyyy = (iso: string): string => {
   return `${d}-${m}-${y}`;
 };
 
-/** SEBI PIT disclosures (structured JSON). Dates are DD-MM-YYYY. */
+/**
+ * SEBI PIT disclosures — RETIRED. Kept only so the reason is discoverable
+ * from the name someone will search for.
+ *
+ * This endpoint still answers `HTTP 200` with `{"acqNameList":[],"data":[]}`
+ * and has returned zero rows for every window tried, including ninety days
+ * from a residential Indian line. It is not a block and never was: NSE
+ * moved PIT to an XBRL-backed filing index at `corporates-pit-gg` (the
+ * documents carry `<!--PIT V2.0 (30-04-2026)-->`), and the retired path
+ * was left answering an empty envelope instead of a 404.
+ *
+ * A dead endpoint that returns 200 and no data is the worst available
+ * failure shape — it looks exactly like a quiet week — and this one was
+ * read as an IP block for three rounds. Use {@link nsePitIndexUrl}.
+ *
+ * @deprecated superseded by `nsePitIndexUrl`; returns an empty envelope.
+ */
 export function nsePitUrl(fromIso: string, toIso: string): string {
   return `${NSE_BASE}/api/corporates-pit?index=equities&from_date=${ddmmyyyy(fromIso)}&to_date=${ddmmyyyy(toIso)}`;
+}
+
+/**
+ * SEBI PIT filing index (live). Dates are DD-MM-YYYY.
+ *
+ * The name is not a guess: NSE's own insider-trading page declares it in
+ * an inline script — `activeApiName = "corporates-pit-gg"` — alongside
+ * `innerActiveTab = "equities"`, which is where the `index` value comes
+ * from too.
+ *
+ * Each row is a FILING, not a trade. The trades are in the XBRL document
+ * the row links to, which is the same two-step EDGAR uses: index first,
+ * then parse the document. See {@link parsePitXbrl}.
+ */
+export function nsePitIndexUrl(fromIso: string, toIso: string): string {
+  return `${NSE_BASE}/api/corporates-pit-gg?index=equities&from_date=${ddmmyyyy(fromIso)}&to_date=${ddmmyyyy(toIso)}`;
 }
 
 /** SAST (Reg. 29/31) disclosures. */
@@ -120,6 +158,239 @@ export function mapNsePitToDisclosure(raw: NsePitRawRow): IndiaDisclosureRecord 
     date,
     exchange: "NSE",
   };
+}
+
+// ── NSE PIT V2: filing index + XBRL document ────────────────────────────────
+
+/**
+ * A row of `corporates-pit-gg` — VERIFIED LIVE 2026-08-19 (169 rows over
+ * seven days, 353 over thirty).
+ *
+ * Every field below was read off a real payload; none is inferred. The row
+ * describes a SUBMISSION and carries no trade numbers at all — those are in
+ * the linked document.
+ */
+export interface NsePitIndexRow {
+  symbol?: string | null;
+  companyName?: string | null;
+  /** "Regulation 7 (2)" | "Regulation 7 (3)". */
+  regulation?: string | null;
+  /** "Original" | "Revision". */
+  typeOfSubmission?: string | null;
+  /** Submission id; `prevAppId` chains a revision to what it replaces. */
+  appId?: string | null;
+  prevAppId?: string | null;
+  revisionRemark?: string | null;
+  /** "00:00:00" — NSE's own broadcast-vs-dissemination lag on this filing. */
+  diff?: string | null;
+  /** "18-Aug-2026 20:38:34". */
+  broadcastDateTime?: string | null;
+  exchdisstime?: string | null;
+  /** Absolute nsearchives URLs. The XML is the machine-readable one. */
+  xmlFileName?: string | null;
+  ixbrl?: string | null;
+  xbrlFileSize?: string | null;
+  ixbrlFileSize?: string | null;
+}
+
+/** Filing-level facts — the `MainI` context of a PIT XBRL document. */
+export interface PitXbrlFiling {
+  symbol: string | null;
+  companyName: string | null;
+  isin: string | null;
+  scripCode: string | null;
+  regulation: string | null;
+  dateOfFiling: string | null;
+  /** `RevisedFilling` — NSE's spelling, kept so a grep against the source matches. */
+  revised: boolean;
+}
+
+/**
+ * One transaction — a `DisclosureN` context.
+ *
+ * Percentages are carried AS FILED. In the sample recorded here a holding
+ * of 1,105,770 shares reports `0.0383`, which reads as a fraction rather
+ * than a percent; SAST's equivalent fields are whole percents. Rather than
+ * multiply by a hundred on a hunch, the filed value is passed through and
+ * the ambiguity is named. Deciding it would need a shares-outstanding
+ * figure this document does not contain.
+ */
+export interface PitXbrlDisclosure {
+  instrument: string | null;
+  personCategory: string | null;
+  personName: string | null;
+  /** DIN for a director, CIN for a company. */
+  identificationNumber: string | null;
+  sharesBefore: number | null;
+  pctBeforeAsFiled: number | null;
+  shares: number | null;
+  /** INR. */
+  value: number | null;
+  /** "Buy" | "Sell". */
+  transactionType: string | null;
+  sharesAfter: number | null;
+  pctAfterAsFiled: number | null;
+  fromDate: string | null;
+  toDate: string | null;
+  mode: string | null;
+  intimationDate: string | null;
+  /** Per TRANSACTION, not per filing — one document can span both venues. */
+  exchange: string | null;
+}
+
+export interface ParsedPitXbrl {
+  filing: PitXbrlFiling;
+  disclosures: PitXbrlDisclosure[];
+}
+
+const XML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+const decodeXml = (s: string): string =>
+  s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&(amp|lt|gt|quot|apos);/g, (_, name: string) => XML_ENTITIES[name] ?? _);
+
+/**
+ * Facts from a PIT XBRL instance, grouped by context.
+ *
+ * Deliberately a regex and not an XML parser. The instance is flat — one
+ * level of `<in-bse-co:Name contextRef="...">value</in-bse-co:Name>` — and
+ * adding a parser dependency to `packages/core` would put it in the
+ * Cloudflare Worker bundle, which never touches India at all.
+ *
+ * The taxonomy is BSE's (`in-bse-co`) even on NSE: both exchanges consume
+ * the same SEBI PIT schema, which is why one parser serves both.
+ */
+function factsByContext(xml: string): Map<string, Map<string, string>> {
+  const contexts = new Map<string, Map<string, string>>();
+  for (const match of xml.matchAll(
+    /<in-bse-co:([A-Za-z0-9_]+)\b([^>]*)>([\s\S]*?)<\/in-bse-co:\1>/g,
+  )) {
+    const [, name, attrs, raw] = match;
+    const context = /contextRef="([^"]+)"/.exec(attrs ?? "")?.[1];
+    // No contextRef means a domain member, not a reported fact.
+    if (!context || !name) continue;
+    const bucket = contexts.get(context) ?? new Map<string, string>();
+    bucket.set(name, decodeXml((raw ?? "").trim()));
+    contexts.set(context, bucket);
+  }
+  return contexts;
+}
+
+const text = (bucket: Map<string, string> | undefined, key: string): string | null => {
+  const value = bucket?.get(key)?.trim();
+  return value ? value : null;
+};
+
+const number = (bucket: Map<string, string> | undefined, key: string): number | null =>
+  parseFilingNumber(text(bucket, key));
+
+/**
+ * Parse a PIT XBRL instance into its filing and its transactions.
+ *
+ * One document can carry SEVERAL transactions — the sample recorded for the
+ * tests has two, executed the same day on different exchanges — so this
+ * returns a list. Treating a document as one trade would have silently
+ * halved the tape.
+ */
+export function parsePitXbrl(xml: string): ParsedPitXbrl {
+  const contexts = factsByContext(xml);
+  const main = contexts.get("MainI");
+
+  const filing: PitXbrlFiling = {
+    symbol: text(main, "Symbol"),
+    companyName: text(main, "NameOfTheCompany"),
+    isin: text(main, "ISINCode"),
+    scripCode: text(main, "ScripCode"),
+    regulation: text(main, "DisclosureUnderRegulation"),
+    dateOfFiling: text(main, "DateOfFiling"),
+    revised: text(main, "RevisedFilling")?.toLowerCase() === "true",
+  };
+
+  const disclosures: PitXbrlDisclosure[] = [];
+  // Numeric order, so Disclosure10 does not sort before Disclosure2 and
+  // change the order rows are written in.
+  const keys = [...contexts.keys()]
+    .filter((k) => /^Disclosure\d+$/.test(k))
+    .sort((a, b) => Number(a.slice(10)) - Number(b.slice(10)));
+
+  for (const key of keys) {
+    const c = contexts.get(key);
+    disclosures.push({
+      instrument: text(c, "TypeOfInstrument"),
+      personCategory: text(c, "CategoryOfPerson"),
+      personName: text(c, "NameOfThePerson"),
+      identificationNumber: text(c, "IdentificationNumberOfDirectorOrCompany"),
+      sharesBefore: number(c, "SecuritiesHeldPriorToAcquisitionOrDisposalNumberOfSecurity"),
+      pctBeforeAsFiled: number(
+        c,
+        "SecuritiesHeldPriorToAcquisitionOrDisposalPercentageOfShareholding",
+      ),
+      shares: number(c, "SecuritiesAcquiredOrDisposedNumberOfSecurity"),
+      value: number(c, "SecuritiesAcquiredOrDisposedValueOfSecurity"),
+      transactionType: text(c, "SecuritiesAcquiredOrDisposedTransactionType"),
+      // NSE's taxonomy spells it "Acquistion". Reproduced exactly; a
+      // corrected spelling here reads every one of these as null.
+      sharesAfter: number(c, "SecuritiesHeldPostAcquistionOrDisposalNumberOfSecurity"),
+      pctAfterAsFiled: number(c, "SecuritiesHeldPostAcquistionOrDisposalPercentageOfShareholding"),
+      fromDate: text(c, "DateOfAllotmentAdviceOrAcquisitionOfSharesOrSaleOfSharesSpecifyFromDate"),
+      toDate: text(c, "DateOfAllotmentAdviceOrAcquisitionOfSharesOrSaleOfSharesSpecifyToDate"),
+      mode: text(c, "ModeOfAcquisitionOrDisposal"),
+      intimationDate: text(c, "DateOfIntimationToCompany"),
+      exchange: text(c, "ExchangeOnWhichTheTradeWasExecuted"),
+    });
+  }
+
+  return { filing, disclosures };
+}
+
+/**
+ * A parsed PIT document, as the operator-feed contract.
+ *
+ * Same output shape as the retired JSON path, so `indiaAdapter.normalize()`
+ * and the whole UnifiedTransaction route are unchanged — the endpoint moved,
+ * the contract did not.
+ *
+ * `index` supplies the symbol when the document omits it, which happens on
+ * filings from companies not listed on NSE under the same ticker.
+ */
+export function mapPitXbrlToDisclosures(
+  parsed: ParsedPitXbrl,
+  index: Pick<NsePitIndexRow, "symbol" | "companyName"> = {},
+): IndiaDisclosureRecord[] {
+  const symbol = parsed.filing.symbol ?? index.symbol?.trim() ?? null;
+  if (!symbol) return [];
+  const company = parsed.filing.companyName ?? index.companyName ?? null;
+
+  return parsed.disclosures.flatMap((d) => {
+    const name = d.personName?.trim();
+    // Transaction dates first: `toDate` is when it completed. Intimation is
+    // the fallback, never the preference — it is when the company was told.
+    const date = d.toDate ?? d.fromDate ?? d.intimationDate ?? null;
+    if (!name || !parseIndianDate(date)) return [];
+    return [
+      {
+        symbol,
+        company,
+        acquirerName: name,
+        personCategory: d.personCategory,
+        securityType: d.instrument,
+        quantity: d.shares,
+        value: d.value,
+        mode: d.mode,
+        transactionType: d.transactionType,
+        date,
+        exchange: d.exchange ?? "NSE",
+      },
+    ];
+  });
 }
 
 // ── NSE SAST / pledge / bulk-block → new-table structs ──────────────────────

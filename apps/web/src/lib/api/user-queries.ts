@@ -71,10 +71,21 @@ export async function addWatchlistItem(
   );
 }
 
+/**
+ * `kind` is the ENUM, not a string, and the narrowing is deliberate.
+ *
+ * This took `kind: string` and cast it (`kind as "company"`) into a
+ * comparison against the `watchlist_kind` Postgres enum, so any value the
+ * caller failed to narrow arrived at Postgres and raised 22P02 — a 500
+ * for what is a 400. The route now parses it, and this signature is what
+ * makes the next caller do the same instead of rediscovering the cast.
+ * `addWatchlistItem` above already took the union; only the delete path
+ * had the hole.
+ */
 export async function removeWatchlistItem(
   db: Database,
   userId: string,
-  kind: string,
+  kind: "company" | "insider",
   refId: string,
 ): Promise<void> {
   await withUserContext(db, userId, (tx) =>
@@ -83,7 +94,7 @@ export async function removeWatchlistItem(
       .where(
         and(
           eq(userWatchlists.userId, userId),
-          eq(userWatchlists.kind, kind as "company"),
+          eq(userWatchlists.kind, kind),
           eq(userWatchlists.refId, refId),
         ),
       ),

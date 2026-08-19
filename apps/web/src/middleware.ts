@@ -3,6 +3,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { findForbiddenInternalHeader } from "@/lib/security/internal-headers";
+import {
+  CSP_ENFORCE_HEADER,
+  CSP_REPORT_ONLY_HEADER,
+  buildCsp,
+  createNonce,
+  isLoopbackHost,
+  shouldSendCsp,
+} from "@/lib/security/csp";
 
 /**
  * LOCALE / SESSION CACHE SAFETY — how it is actually guaranteed.
@@ -85,15 +93,66 @@ export async function middleware(request: NextRequest) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return NextResponse.next();
 
-  let response = NextResponse.next({ request });
+  /**
+   * ── CSP, and why the nonce goes on the REQUEST as well ────────────────
+   *
+   * Next.js applies the nonce to its own script tags by reading the
+   * `Content-Security-Policy` header off the INCOMING request — that is
+   * the documented App Router pattern, and it is the reason the header is
+   * set in two places rather than one. Setting it only on the response
+   * produces a policy whose nonce matches nothing in the document, which
+   * fails in the least helpful way available: the page renders, and every
+   * script in it is refused.
+   *
+   * `x-nonce` is passed along too so a Server Component can nonce
+   * something of its own. Nothing does today; it costs a header and means
+   * the next person to add an inline script has the value to hand rather
+   * than a reason to reach for 'unsafe-inline'.
+   *
+   * Report-only is a deployment switch, not a default. It exists because
+   * the honest way to introduce a policy to a running site is to watch it
+   * break somewhere harmless first — but a switch left in the report-only
+   * position by default is a policy that never enforces anything, so the
+   * default here is enforcement and `CSP_REPORT_ONLY=true` is the
+   * deliberate act.
+   */
+  const requestHeaders = new Headers(request.headers);
+  const sendCsp = shouldSendCsp(request.headers);
+  let policy: string | null = null;
+  if (sendCsp) {
+    const nonce = createNonce();
+    policy = buildCsp({
+      nonce,
+      supabaseOrigin: url ? safeOrigin(url) : null,
+      upgradeInsecure: !isLoopbackHost(request.headers.get("host")),
+      // Only widens the policy when a site key is actually configured.
+      turnstile: Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY),
+    });
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set(CSP_ENFORCE_HEADER, policy);
+  }
+  const cspHeader =
+    process.env.CSP_REPORT_ONLY === "true" ? CSP_REPORT_ONLY_HEADER : CSP_ENFORCE_HEADER;
+  const withCsp = <T extends NextResponse>(response: T): T => {
+    if (policy) response.headers.set(cspHeader, policy);
+    return response;
+  };
+
+  if (!url || !anonKey) return withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
+
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
   const supabase = createServerClient(url, anonKey, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet) => {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-        response = NextResponse.next({ request });
+        // `requestHeaders`, NOT `request` — rebuilding from the original
+        // request here would drop the nonce header Next reads to stamp
+        // its script tags, and would do it only on the responses that
+        // refresh a session. That is a bug that appears once a token
+        // expires and never in a fresh browser.
+        response = NextResponse.next({ request: { headers: requestHeaders } });
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(name, value, options);
         }
@@ -106,7 +165,16 @@ export async function middleware(request: NextRequest) {
   } catch {
     // Auth outage must not take the public site down.
   }
-  return response;
+  return withCsp(response);
+}
+
+/** The origin of a configured URL, or null if it is not one. */
+function safeOrigin(raw: string): string | null {
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
 }
 
 export const config = {

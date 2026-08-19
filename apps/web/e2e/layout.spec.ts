@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 
 import {
   cleanupSyntheticCompany,
@@ -6,6 +6,7 @@ import {
   insertSyntheticTrade,
   type SyntheticCompany,
 } from "./fixtures";
+import { settledBox } from "./measure";
 
 /**
  * LAYOUT v3.1 — ONE LEFT EDGE PER SHELL. Rewritten from v3 (r5), which was
@@ -134,6 +135,19 @@ const PROSE_ROUTES = ["/docs", "/docs/methodology"];
 const STANDALONE_ROUTES = ["/", "/status", "/legal"];
 
 const ALL_ROUTES = [...APP_ROUTES, ...PROSE_ROUTES, ...STANDALONE_ROUTES];
+
+/**
+ * A bounding box, polled until the element has actually been laid out.
+ *
+ * Delegates to `./measure`, which is now the single implementation — this
+ * file and `mobile-shell.spec.ts` had grown one each independently, and
+ * that is exactly why the sites in `masthead.spec.ts` and
+ * `responsive.spec.ts` went unfixed through three separate sweeps: there
+ * was no one place to look.
+ */
+async function boxOf(locator: Locator, name: string) {
+  return settledBox(locator, name);
+}
 
 async function readShellTokens(page: Page) {
   return page.evaluate(() => {
@@ -289,8 +303,7 @@ test.describe("the landing: the masthead is the hero's own shell", () => {
       // the optically outermost ink, not to the box the text sits in.
       expect(g.brandHost, `the landing has no sidebar, so the brand is up top`).toBe("masthead");
       expect(g.accentBarLeft, "the hero opens with a rail").not.toBeNull();
-      const h1 = await page.locator("[data-content-region] h1:visible").first().boundingBox();
-      expect(h1, "the hero heading has no box").not.toBeNull();
+      const h1 = await boxOf(page.locator("[data-content-region] h1:visible").first(), "hero h1");
 
       expect(
         Math.abs(g.brandLeft! - g.accentBarLeft!),
@@ -323,9 +336,8 @@ test.describe("the landing: the masthead is the hero's own shell", () => {
       // has nothing of its own to keep in sync.
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/");
-      const h1 = await page.locator("[data-content-region] h1:visible").first().boundingBox();
-      const footer = await page.locator("[data-content-region] footer").boundingBox();
-      expect(footer, "the landing has a footer").not.toBeNull();
+      const h1 = await boxOf(page.locator("[data-content-region] h1:visible").first(), "hero h1");
+      const footer = await boxOf(page.locator("[data-content-region] footer"), "landing footer");
       expect(
         Math.abs(footer!.x - h1!.x),
         `@${width}: footer at ${Math.round(footer!.x)}, hero at ${Math.round(h1!.x)}`,
@@ -429,9 +441,9 @@ test.describe("app routes: the sidebar owns identity, the bar owns actions", () 
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/trades");
-    const side = await page.getByTestId("sidebar").boundingBox();
-    expect(side!.y, "the sidebar starts at the top of the viewport").toBeLessThanOrEqual(TOLERANCE);
-    expect(side!.height, "the sidebar runs the height of the window").toBeGreaterThan(800);
+    const side = await boxOf(page.getByTestId("sidebar"), "sidebar");
+    expect(side.y, "the sidebar starts at the top of the viewport").toBeLessThanOrEqual(TOLERANCE);
+    expect(side.height, "the sidebar runs the height of the window").toBeGreaterThan(800);
 
     // The r3 rule survives the move: three signals mean "you are here" and
     // the brand gets none of them, or it reads as a stuck highlight again.
@@ -689,7 +701,10 @@ test.describe("the standalone shell is fluid and even", () => {
   test("the landing hero keeps its 7/5 asymmetry across the fluid shell", async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto("/");
-    const hero = await page.locator("[data-content-region] > section").first().boundingBox();
+    const hero = await boxOf(
+      page.locator("[data-content-region] > section").first(),
+      "hero section",
+    );
     const cols = await page.evaluate(() => {
       const section = document.querySelector("[data-content-region] > section")!;
       return Array.from(section.children).map((c) => {
@@ -757,13 +772,12 @@ test.describe("composition inside the region", () => {
       const heading = page.locator("[data-content-region] h1:visible").first();
       if ((await heading.count()) > 0) {
         const g = await readGeometry(page);
-        const box = await heading.boundingBox();
-        expect(box, `${route}: visible h1 has no box`).not.toBeNull();
+        const box = await boxOf(heading, `${route} h1`);
         // /stock composes its heading beside a symbol tile, so the BLOCK is
         // on the edge and the heading is inset by the tile — checked above.
         if (!route.startsWith("/stock")) {
           expect(
-            Math.abs(box!.x - g.regionLeft),
+            Math.abs(box.x - g.regionLeft),
             `${route}: h1 at ${box!.x} should sit on the left edge at ${g.regionLeft}`,
           ).toBeLessThanOrEqual(TOLERANCE);
         }
@@ -850,13 +864,15 @@ test.describe("composition inside the region", () => {
       // `.rail-bleed` utility that hangs it. Every standalone shell opens
       // with exactly one, and the rule it hangs is the subject here.
       const rail = page.locator("[data-content-region] header").first();
-      const box = await rail.boundingBox();
+      const box = await boxOf(rail, `hanging rail at ${width}`);
 
-      expect(box, `no rail at ${width}`).not.toBeNull();
-      expect(box!.x, `rail should hang left of the edge at ${width}`).toBeLessThan(g.regionLeft);
-      expect(box!.x, `rail must not escape the viewport at ${width}`).toBeGreaterThanOrEqual(-1);
-      const heading = await page.locator("[data-content-region] h1").first().boundingBox();
-      expect(Math.abs(heading!.x - g.regionLeft)).toBeLessThanOrEqual(TOLERANCE);
+      expect(box.x, `rail should hang left of the edge at ${width}`).toBeLessThan(g.regionLeft);
+      expect(box.x, `rail must not escape the viewport at ${width}`).toBeGreaterThanOrEqual(-1);
+      const heading = await boxOf(
+        page.locator("[data-content-region] h1").first(),
+        `h1 at ${width}`,
+      );
+      expect(Math.abs(heading.x - g.regionLeft)).toBeLessThanOrEqual(TOLERANCE);
     }
   });
 
@@ -974,10 +990,10 @@ test.describe("identity survives the drawer @mobile", () => {
 
     // The hamburger's DRAWN icon — not its 44px hit area — starts on the
     // content's left edge, so the bar and the page share one x here too.
-    const icon = await page.locator("[data-testid='nav-drawer-trigger'] svg").boundingBox();
+    const icon = await boxOf(page.locator("[data-testid='nav-drawer-trigger'] svg"), "menu glyph");
     expect(
-      Math.abs(icon!.x - g.regionLeft),
-      `menu glyph at ${Math.round(icon!.x)}, content at ${Math.round(g.regionLeft)}`,
+      Math.abs(icon.x - g.regionLeft),
+      `menu glyph at ${Math.round(icon.x)}, content at ${Math.round(g.regionLeft)}`,
     ).toBeLessThanOrEqual(TOLERANCE);
   });
 

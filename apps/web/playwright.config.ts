@@ -66,7 +66,16 @@ export default defineConfig({
    */
   workers: process.env.CI ? 2 : 4,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? "github" : "list",
+  /**
+   * The second entry is a guard, not a report.
+   *
+   * `globalSetup` proves the server is serving this tree's build once, before
+   * the first test. `build-lock-reporter` holds that identity for the whole
+   * run and fails the run if it moves — the r16 case, where a concurrent
+   * `pnpm build` rewrote `.next` under the live server and four specs failed
+   * for reasons that had nothing to do with them. See the file.
+   */
+  reporter: [[process.env.CI ? "github" : "list"], ["./e2e/build-lock-reporter.ts"]],
   use: {
     baseURL: externalBaseUrl ?? `http://localhost:${MANAGED_PORT}`,
     trace: "on-first-retry",

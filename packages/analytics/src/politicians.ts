@@ -11,11 +11,13 @@
  */
 import {
   HOUSE_STOCK_WATCHER_URL,
+  OUTBOUND_ALLOWLIST,
   parseStockWatcherFeed,
   politicianExternalKey,
   SENATE_STOCK_WATCHER_URL,
 } from "@insiderflow/core";
 import type { Chamber, FetchLike, RawPoliticianTrade } from "@insiderflow/core";
+import { createGuardedFetch } from "@insiderflow/core/ssrf-fetch";
 import { and, companies, eq, inArray, politicians, politicianTrades, sql } from "@insiderflow/db";
 import type { Database } from "@insiderflow/db";
 
@@ -57,7 +59,6 @@ export async function ingestPoliticianTrades(
   const { db } = options;
   const now = options.now ?? new Date();
   const log = options.log ?? (() => {});
-  const fetchFn = (options.fetchFn ?? globalThis.fetch) as FetchLike;
   const sinceDays = options.sinceDays ?? 730;
   const since = new Date(now.getTime() - sinceDays * 86_400_000).toISOString().slice(0, 10);
 
@@ -73,6 +74,40 @@ export async function ingestPoliticianTrades(
     ["house", options.houseUrl ?? HOUSE_STOCK_WATCHER_URL],
     ["senate", options.senateUrl ?? SENATE_STOCK_WATCHER_URL],
   ];
+
+  /*
+   * The default fetcher is the guarded one, so this ingestion cannot be
+   * pointed at an internal address by a flag.
+   *
+   * `houseUrl` / `senateUrl` are operator overrides, so their hosts are
+   * added to the allowlist — an operator is allowed to name their own
+   * mirror, and a list compiled into `core` cannot know it. What they do
+   * NOT get to do is skip the rest: the override still has to be https on
+   * the default port with no embedded credentials, it still cannot resolve
+   * to a private, loopback, link-local or metadata address, and it still
+   * cannot redirect to one. That is the part worth having, and it is the
+   * part a bare `fetch` here gave away.
+   *
+   * `options.fetchFn` remains for tests, which is why it is not itself a
+   * hole: a test that injects a stub is not making a network request.
+   */
+  const fetchFn =
+    options.fetchFn ??
+    createGuardedFetch({
+      allowedHosts: [
+        ...OUTBOUND_ALLOWLIST,
+        ...sources.map(([, url]) => {
+          try {
+            return new URL(url).hostname;
+          } catch {
+            // An unparseable override is left off the list, and the guard
+            // refuses it a moment later with a better message than this
+            // catch could produce.
+            return "";
+          }
+        }),
+      ].filter(Boolean),
+    });
 
   let trades: RawPoliticianTrade[] = [];
   for (const [chamber, url] of sources) {

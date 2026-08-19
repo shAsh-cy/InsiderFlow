@@ -48,6 +48,32 @@ async function makeHarness(): Promise<Harness> {
     pglite as unknown as Parameters<typeof pushSchema>[1],
   );
   await apply();
+
+  /**
+   * `pushSchema` builds TABLES from the Drizzle schema objects. It does not
+   * run `drizzle/*.sql`, so the role, grants and policies that migration
+   * 0009 creates do not exist here — and the scanner now drops to that role
+   * to read `alert_rules` and `alert_channels` under RLS.
+   *
+   * The role is created here rather than switching this harness to
+   * `migrate()`, because these tests are about ALERT LOGIC and the
+   * migration path is already exercised end to end by
+   * `packages/db/src/rls.test.ts` and `scanner-scope.test.ts`. What this
+   * needs is a role the scanner can assume with enough grants to read.
+   *
+   * NOBYPASSRLS is set deliberately even though no policies exist on this
+   * fixture: if a future edit gives the harness policies, the role must not
+   * be the thing that skips them.
+   */
+  await client.exec(`
+    DO $$ BEGIN
+      CREATE ROLE insiderflow_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    GRANT USAGE ON SCHEMA public TO insiderflow_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO insiderflow_app;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO insiderflow_app;
+  `);
+
   const db = pglite as unknown as Database;
 
   await db.insert(dbExports.scannerState).values({ name: "alerts" });

@@ -22,31 +22,166 @@ risk of scraping it from their own machine.
 
 ## What it does
 
-| Dataset                    | Source                                    | Destination                                                                                                                                            |
-| -------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PIT (SEBI insider trading) | NSE `corporates-pit` (structured JSON)    | The normal `UnifiedTransaction` path — same contract as a licensed `INDIA_FEED_URL` feed (`country='IN'`, INR native + USD via FX, cross-source dedup) |
-| SAST Reg. 29/31            | NSE `corporate-sast-reg29`                | `sast_disclosures` table                                                                                                                               |
-| Bulk + block deals         | NSE `historicalOR/bulk-block-short-deals` | `bulk_block_deals` table                                                                                                                               |
-| Promoter pledges           | NSE `corporate-pledgedata`                | `pledge_disclosures` table                                                                                                                             |
-| Cross-check                | BSE `AnnSubCategoryGetData` announcements | Count of insider/SAST announcements logged against NSE coverage (metadata + PDF links only — BSE's API carries no structured trade numbers)            |
+| Dataset                    | Source                                         | Destination                                                                                                                                            |
+| -------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PIT (SEBI insider trading) | NSE `corporates-pit-gg` index → XBRL documents | The normal `UnifiedTransaction` path — same contract as a licensed `INDIA_FEED_URL` feed (`country='IN'`, INR native + USD via FX, cross-source dedup) |
+| SAST Reg. 29/31            | NSE `corporate-sast-reg29`                     | `sast_disclosures` table                                                                                                                               |
+| Bulk + block deals         | NSE `historicalOR/bulk-block-short-deals`      | `bulk_block_deals` table                                                                                                                               |
+| Promoter pledges           | NSE `corporate-pledgedata`                     | `pledge_disclosures` table                                                                                                                             |
+| Cross-check                | BSE `AnnSubCategoryGetData` announcements      | Count of insider/SAST announcements logged against NSE coverage (metadata + PDF links only — BSE's API carries no structured trade numbers)            |
 
 ## Live-verification findings (2026-08-02)
 
 - **NSE**: the homepage returns **403** to non-browser clients; the
   corporate-filings **listing page returns 200 and sets the session cookies** —
   that page is the priming target. Without browser-grade cookies the APIs
-  **soft-fail with 200 + empty `data`** instead of erroring; expect zero rows
-  from datacenter IPs. Undici/Node fetch speaks HTTP/1.1 — NSE currently
-  accepts that with realistic headers, but if you see persistent empty
-  responses on a residential line, that fingerprint is the next suspect.
+  answer 200 with empty `data` instead of erroring.
+  > **Superseded in part.** This note went on to say "expect zero rows from
+  > datacenter IPs", and that inference — empty means blocked — was wrong and
+  > cost three rounds. An empty payload here is genuinely ambiguous: it can be a
+  > session problem, a quiet week, **or an endpoint that no longer exists**. See
+  > _PIT resolved_ below.
 - **BSE**: `AnnSubCategoryGetData` works with plain `Origin`/`Referer`
   headers (no cookies). Empty date params mean "today". Responses are
   announcement metadata + PDF attachments; the scrip-search endpoint resolves
   symbols to scrip codes/ISINs.
-- **NSE row field names** in `packages/core/src/adapters/india-scrape.ts`
-  follow the public API shapes but could not be re-recorded from this
-  environment. **Run the smoke first** and compare `firstRowKeys` against the
-  raw-row types before trusting a real run.
+- **NSE row field names** in `packages/core/src/adapters/india-scrape.ts` were
+  inferred at this date and are now all RECORDED — SAST, bulk and pledges on
+  2026-08-18, PIT on 2026-08-19. **Run the smoke first anyway** and compare
+  `firstRowKeys` against the raw-row types: PIT has moved once already.
+
+## Live-verification findings (2026-08-18) — residential Indian line
+
+Run from a residential connection in Asia/Calcutta, which is the network
+this runner is designed for. `pnpm --filter @insiderflow/india-local smoke`
+at `--days=7` and again at `--days=90`. Nothing was written.
+
+| Endpoint               | 7 days |  90 days | Field names                     |
+| ---------------------- | -----: | -------: | ------------------------------- |
+| NSE PIT (retired path) |  **0** |    **0** | endpoint RETIRED — see below    |
+| NSE SAST               |    188 |    1,334 | **confirmed** — 25 keys         |
+| NSE bulk deals         |     70 |       70 | **confirmed** — 9 keys          |
+| NSE promoter pledges   |  1,693 |    1,693 | **confirmed** — 21 keys         |
+| BSE announcements      | failed | 50 (2nd) | **confirmed** — 12 keys sampled |
+
+Three things this changes.
+
+**PIT is not a datacenter problem** — and r16 found what it actually is.
+See the section below; the short version is that `corporates-pit` is
+**retired** and answers an empty envelope to everyone. The suspicion
+recorded here at the time — session fingerprint, or the `Referer` NSE
+wants — was wrong too. Both are listed as ruled out below.
+
+**Two endpoints ignore the date window.** Bulk deals returned exactly 70
+rows and pledges exactly 1,693 for both a 7-day and a 90-day request. A
+window parameter that changes nothing means `--days` cannot bound those
+two, so the ingest's idempotency — not its query — is what stops repeated
+work. That is fine today because dedup keys are enforced in the schema;
+it is worth knowing before anyone reads a `--days=1` run as cheap.
+
+**BSE announcements fail intermittently.** The first attempt died with
+`Parse Error: Unexpected whitespace after header value` — Node's strict
+HTTP parser refusing a malformed response header, not a network fault and
+not a block. The second attempt, forty seconds later, returned 50 rows.
+One failure in two attempts is a source that will page somebody at 3am.
+If it recurs, `insecureHTTPParser` on the guarded request for the two
+allowlisted BSE hosts is the narrow fix; it is deliberately not applied
+pre-emptively, because relaxing a parser to work around a server that is
+usually fine trades a real protection for a rare convenience.
+
+Use `--days=N` on the smoke to tell a block apart from a quiet week:
+
+```bash
+ENABLE_INDIA_INGEST=true pnpm --filter @insiderflow/india-local smoke --days=90
+```
+
+## PIT resolved (2026-08-19) — the endpoint was retired, not blocked
+
+`corporates-pit` is **retired**. It answers `HTTP 200` with
+`{"acqNameList":[],"data":[]}` to every caller, from any address, with any
+session. It was left returning a well-formed empty envelope instead of a
+404, which is why three rounds of investigation looked at the network
+instead of the endpoint.
+
+The live path was found in NSE's own page source. The insider-trading page
+declares what it calls, in an inline script:
+
+```html
+<script>
+  activeLeftNav = "InsiderTrading";
+  innerActiveTab = "equities";
+  activeApiName = "corporates-pit-gg";
+</script>
+```
+
+**`corporates-pit-gg` returns 169 filings over seven days and 353 over
+thirty.** Measured back to back against the retired path in one session,
+one second apart:
+
+```
+{"event":"smoke_nse","endpoint":"pit",        "rows":169,"firstRowKeys":["appId","broadcastDateTime",...]}
+{"event":"smoke_nse","endpoint":"pit-retired","rows":0,  "firstRowKeys":[]}
+```
+
+The smoke now probes both, permanently. The retired endpoint is the
+control: it is what "an empty answer that is not about you" looks like.
+
+### The shape changed too: index, then document
+
+PIT moved to XBRL — the documents carry `<!--PIT V2.0 (30-04-2026)-->`. A
+row of `corporates-pit-gg` is a **submission**, not a trade, and carries no
+numbers at all:
+
+| Field                    | Example                                                 |
+| ------------------------ | ------------------------------------------------------- |
+| `symbol` / `companyName` | `JAYSREETEA` / `JAY SHREE TEA & INDUSTRIES LTD`         |
+| `regulation`             | `Regulation 7 (2)` \| `Regulation 7 (3)`                |
+| `typeOfSubmission`       | `Original` \| `Revision`                                |
+| `appId` / `prevAppId`    | `2337` / `null` — a revision chains to what it replaces |
+| `xmlFileName`            | the XBRL instance, on `nsearchives.nseindia.com`        |
+| `ixbrl`                  | the same filing as inline-XBRL HTML, for humans         |
+
+The trades are in the XBRL, under SEBI's `in-bse-co` taxonomy (BSE's
+schema, which NSE also uses):
+`CategoryOfPerson`, `NameOfThePerson`,
+`SecuritiesHeldPriorToAcquisitionOrDisposalNumberOfSecurity`,
+`SecuritiesAcquiredOrDisposedNumberOfSecurity` / `ValueOfSecurity` /
+`TransactionType`, `SecuritiesHeldPostAcquistionOrDisposalNumberOfSecurity`
+(NSE's misspelling, reproduced exactly), `ModeOfAcquisitionOrDisposal`,
+`DateOfIntimationToCompany`, `ExchangeOnWhichTheTradeWasExecuted`.
+
+This is the same two-step EDGAR uses — index, then parse — so
+`persistUnified` and the whole UnifiedTransaction path are unchanged. **One
+document can carry several transactions**: the filing recorded as a test
+fixture has two, the same person on the same day, one on each exchange.
+
+**The PIT field names are now CONFIRMED**, recorded from a live filing in
+`packages/core/src/fixtures/india-samples.ts` and asserted in
+`packages/core/src/adapters/pit-xbrl.test.ts`.
+
+### Hypotheses tested and ruled out
+
+Recorded because a negative result that nobody writes down gets re-tested.
+
+| Hypothesis                                       | Result                                                            |
+| ------------------------------------------------ | ----------------------------------------------------------------- |
+| Datacenter IP blocking                           | **Ruled out.** Residential Indian line, same empty response       |
+| Too narrow a date window                         | **Ruled out.** 7 and 90 days both returned zero                   |
+| Wrong `index` value                              | **Ruled out.** `equities` is what the page sets, and SAST uses it |
+| Wrong `Referer`                                  | **Ruled out.** Same referer serves SAST and pledges 1,000+ rows   |
+| Cookie priming failed                            | **Ruled out.** Same session returned 188 SAST rows seconds later  |
+| Our parser reading the wrong key                 | **Ruled out.** Raw body is `{"acqNameList":[],"data":[]}` — empty |
+| Endpoint needs a symbol rather than a date range | Not needed — the replacement takes the same date range            |
+| **Endpoint retired and replaced**                | **CONFIRMED** — `corporates-pit-gg`, named by NSE's own page      |
+
+### One thing still undecided, and left as filed
+
+The XBRL reports a holding of 1,105,770 shares as `0.0383`, which reads as
+a fraction where SAST's equivalent fields are whole percents. Resolving it
+needs a shares-outstanding figure the document does not carry, so the filed
+value is stored unchanged and the field is named `pctBeforeAsFiled` /
+`pctAfterAsFiled` to say so. **Do not multiply it by a hundred on a hunch**
+— that would put a wrong number in front of a reader with no way to tell.
 
 ## Setup
 
@@ -111,9 +246,17 @@ over the network. Nothing about the hosted stack changes.
 ### 1. Smoke-test first, always
 
 Before pointing anything at production, confirm the exchanges actually answer
-_from this machine_. NSE soft-fails to empty data from datacenter IPs rather
-than returning an error, so a run that "succeeds" with zero rows is the
-signature of a blocked network, not a quiet day.
+_from this machine_. NSE returns 200 with empty `data` rather than an error
+whenever it has nothing to give you, so a run that "succeeds" with zero rows
+tells you nothing on its own.
+
+Read the endpoints **against each other**, which is what the smoke is for:
+
+- `pit` zero while `sast` and `pledge` return rows → the PIT index has moved
+  again. Check `activeApiName` in the page source.
+- `pit-retired` zero → expected, always. It is the control.
+- Everything zero → the session or the network. That is the case the
+  residential-IP advice is about, and it is the only one it covers.
 
 ```bash
 ENABLE_INDIA_INGEST=true pnpm --filter @insiderflow/india-local smoke

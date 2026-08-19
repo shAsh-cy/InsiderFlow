@@ -35,19 +35,52 @@ jobs:
   # Nightly audit of the live path. Never ingests: it reports what is missing
   # and queues it for the worker to fetch on its normal cadence.
   reconcile:
-    if: github.event_name == 'schedule'
+    # ANDed with the event filter, same pattern as ops.yml. This is the job
+    # that was going red nightly: the reconcile compares the daily full-index
+    # against what the live path ingested, and with no database there is
+    # nothing to compare it to.
+    if: ${{ vars.DEPLOYMENT_ACTIVE == 'true' && github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # ── WHY THE GUARD IS A STEP AND THE GATE IS A VARIABLE ─────────
+      #
+      # `secrets.*` is not readable in a job-level `if:` — GitHub rejects it
+      # at parse time with "Unrecognized named-value: 'secrets'", and the
+      # whole workflow errors rather than skipping. `vars.*` IS allowed
+      # there, so the repository variable DEPLOYMENT_ACTIVE gates the job
+      # and this step gates the work inside it.
+      #
+      # The secret is read through the environment rather than interpolated
+      # into the script body. `${{ secrets.X }}` inside a `run:` is expanded
+      # before the shell sees it, so a syntax error or an `set -x` would
+      # print the credential into a public run log; `$X` from `env:` cannot.
+      - name: Check for the deployment secrets
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::notice title=Nothing to do::DEPLOYMENT_ACTIVE is true but DATABASE_URL is empty, so there is no database to talk to. Exiting 0."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
       - uses: pnpm/action-setup@v4
+        if: steps.preflight.outputs.ready == 'true'
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
         with:
           node-version: 22
           cache: pnpm
       - name: Install dependencies
+        if: steps.preflight.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
       - name: Reconcile the last 3 days against the daily full-index
+        if: steps.preflight.outputs.ready == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
@@ -55,23 +88,57 @@ jobs:
         run: pnpm --filter @insiderflow/edgar-worker run backfill -- --days=3 --forms=4,3,5 --reconcile
 
   backfill:
-    if: github.event_name == 'workflow_dispatch'
+    # Gated too, though it is manual and was not failing on a schedule. The
+    # brief named only `reconcile`; leaving its sibling ungated would mean a
+    # dispatch against a deployment that does not exist still dies on
+    # `DATABASE_URL is required`, which is the exact failure this change
+    # exists to stop reporting as a defect.
+    if: ${{ vars.DEPLOYMENT_ACTIVE == 'true' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
+      # ── WHY THE GUARD IS A STEP AND THE GATE IS A VARIABLE ─────────
+      #
+      # `secrets.*` is not readable in a job-level `if:` — GitHub rejects it
+      # at parse time with "Unrecognized named-value: 'secrets'", and the
+      # whole workflow errors rather than skipping. `vars.*` IS allowed
+      # there, so the repository variable DEPLOYMENT_ACTIVE gates the job
+      # and this step gates the work inside it.
+      #
+      # The secret is read through the environment rather than interpolated
+      # into the script body. `${{ secrets.X }}` inside a `run:` is expanded
+      # before the shell sees it, so a syntax error or an `set -x` would
+      # print the credential into a public run log; `$X` from `env:` cannot.
+      - name: Check for the deployment secrets
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::notice title=Nothing to do::DEPLOYMENT_ACTIVE is true but DATABASE_URL is empty, so there is no database to talk to. Exiting 0."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
 
       - uses: pnpm/action-setup@v4
+        if: steps.preflight.outputs.ready == 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.preflight.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Run backfill
+        if: steps.preflight.outputs.ready == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}

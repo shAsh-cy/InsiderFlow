@@ -106,6 +106,20 @@ jobs:
   gitleaks:
     name: gitleaks
     runs-on: ubuntu-latest
+    # ── THE BINARY, NOT THE ACTION ────────────────────────────────────
+    #
+    # `gitleaks/gitleaks-action@v2` was failing every run. It is free only
+    # for a single personal repository and requires a paid GITLEAKS_LICENSE
+    # for organisation-owned ones, and it phones home to check — so the job
+    # fails on licensing rather than on anything about this codebase. The
+    # gitleaks CLI it wraps is MIT-licensed and has no such condition.
+    #
+    # Pinned to an exact version and checksum-verified. A supply-chain
+    # workflow that pulls an unpinned binary over the network and runs it
+    # is not in a position to lecture anyone about dependencies.
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -114,7 +128,63 @@ jobs:
           # a live credential. Scanning only the tip finds nothing.
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" -o /tmp/gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # A broken .gitleaks.toml is indistinguishable from a clean scan if
+      # nothing checks it: gitleaks would refuse to start and the job would
+      # report whatever the shell did next. Scanning an empty directory
+      # exercises the config and nothing else.
+      - name: Verify .gitleaks.toml parses
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/gitleaks-empty
+          if ! gitleaks dir /tmp/gitleaks-empty --config .gitleaks.toml --no-banner --exit-code 2; then
+            echo "::error title=gitleaks config::.gitleaks.toml did not parse. Fix the config; this is not a leak."
+            exit 1
+          fi
+          echo "OK: .gitleaks.toml parses"
+
+      - name: Scan the full history and the working tree
+        run: |
+          set -uo pipefail
+
+          # `--exit-code 2` is the load-bearing flag, and it is why this is
+          # a script rather than two plain invocations.
+          #
+          # By default gitleaks exits 1 when it finds a secret — but it also
+          # exits 1 when it cannot read a config, cannot open the repo, or
+          # fails for any other reason. Those two are opposite outcomes: one
+          # means "there is a credential in this repository", the other means
+          # "this check did not run". Collapsing them into the same exit code
+          # means a scanner that silently stopped working reads exactly like
+          # a scanner that is passing. Moving LEAKS to 2 leaves every other
+          # nonzero code meaning "the tool failed", which is a distinction
+          # the log can then state.
+          scan() {
+            mode="$1"; shift
+            echo "── gitleaks ${mode} ──────────────────────────────────────"
+            gitleaks "$mode" "$@" --config .gitleaks.toml --redact -v --no-banner --exit-code 2
+            rc=$?
+            case "$rc" in
+              0) echo "OK: no findings (${mode})" ;;
+              2) echo "::error title=Secret committed::gitleaks found a credential in ${mode} mode. The finding above is redacted — the value itself is in the repository. Rotate it first, then remove it from history."
+                 exit 1 ;;
+              *) echo "::error title=gitleaks did not run::gitleaks exited ${rc} in ${mode} mode. That is a tool or config failure, NOT a clean scan — this job is failing so it cannot be mistaken for one."
+                 exit 1 ;;
+            esac
+          }
+
+          # History, then the working tree. `git` mode walks every commit in
+          # the pack; `dir` mode reads the files as they are on disk, which
+          # catches anything staged-but-uncommitted in a PR checkout and
+          # anything a .gitignore is hiding from git mode.
+          scan git .
+          scan dir .
