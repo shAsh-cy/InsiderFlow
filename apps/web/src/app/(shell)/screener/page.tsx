@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { AccessBanner } from "@/components/access/access-banner";
-import { FilterBar } from "@/components/feed/filter-bar";
+import { FilterBar, FilterBarFallback } from "@/components/feed/filter-bar";
 import { ScreenerResults } from "@/components/screener/screener-results";
 import { queryTrades } from "@/lib/api/queries";
 import {
@@ -80,7 +80,7 @@ export default async function ScreenerPage({ searchParams }: { searchParams: Nex
         ))}
       </nav>
 
-      <Suspense>
+      <Suspense fallback={<FilterBarFallback />}>
         <FilterBar advanced />
       </Suspense>
 

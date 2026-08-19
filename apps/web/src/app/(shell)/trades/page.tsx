@@ -5,7 +5,7 @@ import { Suspense } from "react";
 
 import { AccessBanner } from "@/components/access/access-banner";
 import { CodeLegend } from "@/components/domain/code-legend";
-import { FilterBar } from "@/components/feed/filter-bar";
+import { FilterBar, FilterBarFallback } from "@/components/feed/filter-bar";
 import { HistoryFeed } from "@/components/feed/history-feed";
 import { LiveTrades } from "@/components/feed/live-trades";
 import { queryTrades } from "@/lib/api/queries";
@@ -57,7 +57,7 @@ export default async function TradesPage({ searchParams }: { searchParams: NextS
 
       <AccessBanner signedIn={Boolean(user)} dismissed={bannerDismissed} />
 
-      <Suspense>
+      <Suspense fallback={<FilterBarFallback />}>
         <FilterBar />
       </Suspense>
       <CodeLegend />

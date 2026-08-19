@@ -179,25 +179,91 @@ Only `/screener`'s floor moved, 55 → 78. The other four are untouched: this
 round did not measure an improvement on them, and a floor raised on noise is
 a false red waiting to happen.
 
-### Not fixed, and named
+## r19: the last shift, and a gate that was lying about the machine
 
-- **The `FilterBar` Suspense boundary still has no fallback**, so the 124px
-  insertion is still there. It is the smaller of the two shifts (0.080) and
-  reserving its height correctly needs the collapsed and expanded heights at
-  each breakpoint, which is a layout change rather than a one-line fix.
+### `FilterBar`'s Suspense fallback — CLS 0.076 → 0.005, worth 1.2 points
+
+`FilterBar` calls `useSearchParams`, so it sits behind a `<Suspense>` that
+had no fallback. Under **streaming SSR** the browser paints the shell with
+the fallback and patches the boundary in when it streams, so everything below
+started 124px too high and dropped when it landed — 0.071 of shift, every
+run. (`curl` shows the bar in the HTML and is misleading here: a completed
+response contains the streamed-in content; the browser painted before it
+arrived.)
+
+The reserved heights are measured across eighteen viewport widths, not
+estimated, and the measurement says no single number is right everywhere:
+
+| Width     | Height | Why                                             |
+| --------- | -----: | ----------------------------------------------- |
+| 360–767   |  100px | one scrolling chip row + the Filters button     |
+| 768–800   |  112px | chips wrap to two lines                         |
+| 900–1023  |   72px | wide enough for one line again                  |
+| 1024      |  112px | the `lg` sidebar appears and re-narrows content |
+| 1100–1536 |   72px |                                                 |
+| 1920      |   32px | everything on one row                           |
+
+So `min-h-[100px] md:min-h-[72px]`: exact across the whole mobile range where
+the shift was measured, and cutting the worst residual above `md` from 124px
+to 40px rather than pretending to eliminate it.
+
+| `/screener` CLS |        before |        after |
+| --------------- | ------------: | -----------: |
+| median of 6     |         0.076 |    **0.005** |
+| largest shift   | 0.071 (124px) | 0.003 (26px) |
+
+**No Lighthouse score improvement is claimed, because there is barely one.**
+0.076 was already inside Lighthouse's good band (`p10 = 0.1`), so the CLS
+sub-score was 95, not 24. Running its published log-normal curve: 95 → 100 on
+a 25% weight is **1.2 points**, which is smaller than the run-to-run spread
+on every route here. The fix is worth making for the reader watching the page
+settle, and it is not worth a number on a scoreboard.
+
+### `/design`: the machine drifted, not the page
+
+r18 left `/design` at a median of 67 against a floor of 66 and could not say
+whether the page or the box had moved. Measured, ten runs:
+
+```
+65 67 73 71 70 63 60 70 73 70   →  median 70, range 60–73
+```
+
+Thirteen points wide. Across four sweeps the medians read 72, 70, 67, 70 — the
+67 was a low sample, not a trend. And the page is deterministically almost
+unchanged: `/design` First Load JS went 275 kB → 277 kB across r18, **+0.7%**,
+which does not buy five Lighthouse points in either direction. CLS is 0.000;
+the cost is TBT, about 950ms of it, which is what a 10k-row showcase is.
+
+**The floor stays at 66. The sampling widened instead** — `/design` now takes
+a `minRuns: 9`. A median of three, on a distribution spanning thirteen points,
+is a coin toss being read as a measurement.
+
+### The gate now refuses to measure a busy machine
+
+Found while doing the above. With an unrelated job holding roughly four of
+sixteen cores, `pnpm lighthouse` reported **every** route below its floor —
+`/` 64 against 79, `/trades` 75 against 86, `/screener` 69 against 82,
+`/design` 61 against 70. Five simultaneous regressions is not a thing that
+happens. Nothing in the output said the box was loaded.
+
+That is worse than noise: a red nobody can act on is how a team learns to
+re-run a gate until it goes green, and the first real regression then arrives
+wearing the same clothes. The runner now samples `os.cpus()` before it
+measures anything and aborts above 15% busy with a named failure, the way the
+e2e pre-flight does. `--allow-busy` measures anyway and stamps the output as
+not comparable.
+
+### Still not fixed, and named
+
 - **The 30px element removed at the viewport bottom** —
-  `screener-results.tsx`'s centred "Load more" / "End of results" row — is
-  what turns an 86px move into a 0.408 shift. With the banner no longer
-  inserting, it no longer has a large move to amplify, and the measured CLS
-  is ≤0.006. The removal itself was not chased further.
-- **`/stock/ZZNOVA` at 71–73 and `/design` at 67–70** have not been diagnosed
-  at all. `/design` renders every primitive plus a 10k-row virtualised table
-  by design; `/stock` has not been looked at. Note that `/design`'s second
-  sweep medianed 67 against a floor of 66 — one point of headroom. That floor
-  was set in r17 from a median of 72, so either the page has drifted or the
-  machine has. It is flagged rather than moved: lowering a floor to make room
-  for a drop is how a regression stops being reported, and it has not been
-  established which of the two this is.
+  `screener-results.tsx`'s centred "Load more" / "End of results" row. With
+  the banner no longer inserting it has no large move to amplify, and the
+  measured CLS is ≤0.005. Not chased further.
+- **The residual 40px reserve mismatch above `md`** at 768–800 and at exactly
+  1024, where the real bar wraps to 112px against a 72px reserve.
+- **`/stock/ZZNOVA` at 71–73** has not been diagnosed at all.
+- **`/screener` at 82–84 against a goal of 90** is a real, open deficit. It is
+  not closed by moving the goal, and `pnpm lighthouse` prints it every run.
 
 ## Reproducing
 

@@ -269,3 +269,40 @@ export function FilterBar({ advanced = false }: { advanced?: boolean }) {
     </div>
   );
 }
+
+/**
+ * The space `FilterBar` will occupy, held open until it arrives.
+ *
+ * WHY THIS IS NEEDED AT ALL. `FilterBar` calls `useSearchParams`, so it sits
+ * behind a `<Suspense>`. Under streaming SSR the browser paints the shell
+ * with the boundary's fallback first and patches the real content in when it
+ * streams — so an EMPTY fallback means everything below the bar starts 124px
+ * too high and drops when it lands. Measured on `/screener`: a layout shift
+ * of 0.071, every run, at 1.2s to 6.4s depending on how the stream went.
+ * (`curl` shows the bar in the HTML, which is misleading: a complete response
+ * contains the streamed-in content, while a browser painted the shell before
+ * it arrived.)
+ *
+ * THE HEIGHTS ARE MEASURED, NOT ESTIMATED. Sampled across eighteen viewport
+ * widths against the running build:
+ *
+ *   360-767   100px      one scrolling chip row + the Filters trigger
+ *   768-800   112px      chips wrap to two lines
+ *   900-1023   72px      wide enough for one line again
+ *   1024      112px      the `lg` sidebar appears and re-narrows the content
+ *   1100-1536  72px
+ *   1920       32px      everything on one row
+ *
+ * So the real height is not constant WITHIN a breakpoint band, and no single
+ * reserve is exact everywhere. `100px` below `md` is exact across the whole
+ * mobile range, which is where the shift was measured and where it costs
+ * most; `72px` from `md` up is the common case and cuts the worst residual
+ * from 124px to 40px rather than pretending to eliminate it.
+ *
+ * `aria-hidden`, and no skeleton shimmer: this is empty space standing in for
+ * a control group that is about to exist, and announcing it would put a
+ * meaningless node in the accessibility tree for the length of a stream.
+ */
+export function FilterBarFallback() {
+  return <div aria-hidden className="min-h-[100px] md:min-h-[72px]" />;
+}
