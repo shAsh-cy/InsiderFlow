@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { serializeWatchlistItem } from "@/lib/api/me-serializers";
 import {
   addWatchlistItem,
   importWatchlistItems,
@@ -51,7 +52,10 @@ export async function GET(): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
   const items = await listWatchlist(getDb(), user.id);
-  return Response.json({ data: items }, { headers: noStore });
+  // Mapped, never returned raw. The row carries `user_id`, and a response
+  // assembled from a row acquires whatever the next migration adds to the
+  // table — see lib/api/me-serializers.ts.
+  return Response.json({ data: items.map(serializeWatchlistItem) }, { headers: noStore });
 }
 
 export async function POST(req: Request): Promise<Response> {

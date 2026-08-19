@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { defaultAlertMode } from "@/lib/alerts/policy";
+import { serializeAlertRule } from "@/lib/api/me-serializers";
 import {
   createAlertRule,
   deleteAlertRule,
@@ -51,7 +52,9 @@ const noStore = { "Cache-Control": "no-store" };
 export async function GET(): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return unauthorized();
-  return Response.json({ data: await listAlertRules(getDb(), user.id) }, { headers: noStore });
+  const rules = await listAlertRules(getDb(), user.id);
+  // Mapped, never returned raw — see lib/api/me-serializers.ts.
+  return Response.json({ data: rules.map(serializeAlertRule) }, { headers: noStore });
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -91,7 +94,7 @@ export async function POST(req: Request): Promise<Response> {
     mode: parsed.data.mode ?? defaultAlertMode(parsed.data.channels),
     filters,
   });
-  return Response.json({ data: rule }, { status: 201, headers: noStore });
+  return Response.json({ data: serializeAlertRule(rule) }, { status: 201, headers: noStore });
 }
 
 export async function PATCH(req: Request): Promise<Response> {

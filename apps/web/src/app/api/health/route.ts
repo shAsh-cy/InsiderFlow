@@ -1,4 +1,5 @@
 import { buildHealthReport } from "@/lib/api/health";
+import { classifyHealthError } from "@/lib/api/error-redaction";
 import { getDb } from "@/lib/db";
 
 /**
@@ -23,11 +24,18 @@ export async function GET(): Promise<Response> {
     const report = await buildHealthReport(getDb());
     return new Response(JSON.stringify(report), { status: 200, headers: noStore });
   } catch (error) {
+    // The driver's message named the application role, the pooler host and
+    // the internal address, on an unauthenticated endpoint with
+    // `Access-Control-Allow-Origin: *`. The operator still needs it, so it
+    // goes to the log — where reading it requires already being the operator
+    // — and the response carries a classification instead. See
+    // lib/api/error-redaction.ts.
+    console.error("health_check_failed", error);
     return new Response(
       JSON.stringify({
         status: "down",
         checkedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : "database unreachable",
+        error: classifyHealthError(error),
       }),
       { status: 503, headers: noStore },
     );
