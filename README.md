@@ -394,9 +394,18 @@ these status checks to pass:
 | `pnpm audit`                    | `supply-chain.yml` |
 | `gitleaks`                      | `supply-chain.yml` |
 
-The `ci` job is where the seven gates live — typecheck, lint, format,
-`lint:changelog`, `lint:e2e-locators`, `lint:e2e-assertions`,
-`lint:api-schemas`. Requiring the job requires all seven.
+The `ci` job is where the eight gates live — typecheck, lint, format,
+`lint:changelog`, `lint:changelog-quotes`, `lint:e2e-locators`,
+`lint:e2e-assertions`, `lint:api-schemas`. Requiring the job requires all
+eight.
+
+`lint:changelog-quotes` is the r18 addition. r10–r16 were reconstructed from
+git history rather than written at the time, and it holds every quotation in
+those sections to being verbatim in a commit that section claims — because a
+plausible sentence about an undocumented round is indistinguishable from a
+recorded one later on. It earned its place on its first run, catching a
+quotation Prettier had silently altered by reading a wrapped `+` as a list
+bullet.
 
 `E2E (Playwright)` is the slow one — it starts the compose Postgres, migrates,
 seeds, runs the offline analytics steps, then builds and starts a production

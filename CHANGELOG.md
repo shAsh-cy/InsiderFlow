@@ -9,6 +9,470 @@ no revision between r1 and the newest is missing — r7 through r9.2 were
 written after the fact, from git history, precisely because nothing was
 checking.
 
+**Two tiers of provenance, and the difference is marked.** r1–r9.2 and r17
+were written by the round that did the work. r10–r16 were RECONSTRUCTED in
+r18 from git history alone, because no round report was written at the
+time; each carries a banner saying so. A reconstructed section contains
+only three kinds of thing: commit subjects, short hashes, and figures
+quoted verbatim from commit messages. Nothing in one is inferred, and
+where a round's intent is not recoverable from its commits the section
+says that rather than guessing — an invented motive reads exactly like a
+recorded one a year later, which is why none are offered. Their titles are
+taken from the round's own branch name (`chore/r12-security` → "security"),
+so even the heading is traceable to something git holds.
+
+Round boundaries are the branch tips, not a reading of the dates:
+`chore/r11-housekeeping`, `chore/r12-security`, `chore/r13-ci-hygiene`,
+`chore/r14-security-checklist`, `feat/r15-functional-verification`,
+`feat/r16-gaps`, `feat/r17-measurement`. The 55 commits between the r9.2
+tip and r17 divide across them exactly, with none left over and none
+counted twice.
+
+## r17 (2026-08-19) — the numbers this project quotes about itself
+
+<!-- commits: 867f98f 37664db 1caaa16 3238069 -->
+
+### r16's performance claim is withdrawn
+
+r16 reported that this project's long-standing Lighthouse figures were "not
+true" and that performance was "nowhere near the claimed 100 on either
+preset". That was a unit error. The r4 section below records **desktop** and
+**mobile** on consecutive lines, and the mobile shortfall was measured,
+written down and explained at the time. r16 compared this runner's mobile
+medians against the desktop figure.
+
+Re-measured on a quiet machine, median of five, three configurations:
+
+| Route           | mobile | desktop preset | desktop unthrottled | r4 mobile |
+| --------------- | -----: | -------------: | ------------------: | --------: |
+| `/`             |     78 |             80 |             **100** |        75 |
+| `/trades`       |     88 |             89 |              **99** |        87 |
+| `/screener`     | **62** |             60 |                  78 |        76 |
+| `/stock/ZZNOVA` |     74 |             75 |                   — |        74 |
+| `/design`       |     72 |             70 |                   — |         — |
+
+The historical "desktop 100" reproduces exactly — which also establishes
+those runs were unthrottled, since Lighthouse's own desktop preset throttles
+and yields 80/89. The historical mobile figures reproduce on every route but
+one.
+
+### `/screener` is the one route that did regress
+
+76 → 62 mobile: fourteen points, not thirty-four. It is also the only
+bimodal route — `62 76 57 59 73` across five consecutive quiet runs on an
+unchanging build — and the only one that stops short unthrottled, reaching
+78 where `/` reaches 100. Lighthouse attributes it to script evaluation:
+947ms on the document, 835ms in one 170 kB chunk, ~430ms of it unused, TBT
+544ms, 286 kB First Load JS, against a TTFB of 62ms.
+
+Not fixed. Which module dominates that chunk is minified and unproven, and
+refactoring the screener's render path against an unproven attribution is
+how a 14-point regression becomes a 30-point one. Goals corrected to **90**,
+the number the original brief set for this preset, rather than the 95 r16
+invented. See [docs/performance.md](docs/performance.md), which also lists
+what has NOT been ruled out.
+
+### The build identity is held for the whole run, not just its start
+
+r15 added a pre-flight that proves the server about to be tested is serving
+this working tree's build. It runs once. r16 found the gap: a concurrent
+`pnpm build` rewrote `.next` under the live server mid-run and four specs
+failed for reasons unrelated to them, costing two re-runs to establish that
+nothing was wrong with the product. Third incident of that shape — r11 (dev
+server over production, fifteen tests blamed a font), r15 (stale server, 120
+false failures), r16.
+
+`e2e/build-lock-reporter.ts` re-reads `.next/BUILD_ID` at every test
+boundary. A reporter rather than a fixture because all 35 specs import
+`test` straight from `@playwright/test`. An **unreadable** id counts as a
+breach as well as a changed one, which is the early signal: `next build`
+writes into `.next` for a minute before the server's responses change.
+
+Proven by reproducing the incident — suite started, `next build` run
+underneath it 15 seconds later:
+
+```
+build lock held — OyZsv1ZDTaZ9Y-XIcTJvS
+E2E BUILD LOCK BROKEN — a rebuild is in progress underneath this run
+  29 test(s) had completed before this point.
+3 interrupted, 29 passed  →  overridden to `failed`, exit 1
+```
+
+Caught 31.9s into a three-minute run, before the build had finished. Its
+first version resolved `.next` against `FullConfig.rootDir` — which is
+`testDir` — found nothing, went inert and let a green run through; being
+unable to take the lock is now a failure rather than a shrug.
+
+### The e2e suite runs in CI
+
+355 tests that had only ever run on one machine. A separate `E2E
+(Playwright)` job, because it needs Docker, a database, a browser and a full
+production build.
+
+It starts Postgres with `docker compose up -d --wait postgres` rather than
+an Actions service container: `global-setup.ts` and `fixtures.ts` reach the
+database as `docker exec insiderflow-postgres psql`, and a service container
+has a generated name. That found r16's `quality.yml` broken as written — same
+service-container mistake, on a weekly schedule that had not yet fired, so
+nothing had reported it. Fixed with it.
+
+Specs needing credentials a public runner has not got skip with a printed
+reason. **A skip is an uncovered case, not a passing one**, and the README's
+branch-protection section now says so.
+
+### A re-seed moves the trade dates, not just the arrival times
+
+Found by the final verification: two `cold-start.spec.ts` tests failed on
+"cluster-buys returns rows" against a database seeded a week earlier, on code
+nothing had touched. `dedup_key` encodes the day OFFSET, so a re-seed always
+hits `ON CONFLICT`, and that branch updated `created_at` alone — refreshing
+when a filing was seen and leaving when the trade happened frozen at first
+seed. The cluster detector looks back 14 days, so a fortnight after the first
+seed the buys that form the cluster fall out of the window.
+
+|                     | clean db     | 7-day-old db    |
+| ------------------- | ------------ | --------------- |
+| ZZNOVA buys         | 2, 4, 6 days | 13, 15, 17 days |
+| companiesConsidered | 5            | 2               |
+| flagsWritten        | 1            | 0               |
+
+The worse half was the remedy: the pre-flight prints ``Fix: `pnpm seed` ``,
+and for this failure that instruction did nothing while reporting success.
+CI was never going to hit it — the new job builds its database from empty
+every run, which is the divergence worth naming.
+
+Still stale on re-seed, deliberately: the politician, SAST, deal and pledge
+inserts are `ON CONFLICT DO NOTHING`. Those rows carry honesty-sensitive
+columns — amount ranges above all — and deciding what a re-seed may
+overwrite there is a design decision, not a bug fix.
+
+**Verified:** 653 unit passed; 354 e2e passed with 1 declared skip (the
+Telegram webhook positive case, `mode: undeclared`); 8 static gates green.
+
+---
+
+## r16 (2026-08-19) — gaps
+
+<!-- commits: 110e82f e3e5527 bf107de -->
+
+> **Reconstructed in r18 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `110e82f` docs(security): tool metadata is data, and the r15 "injection" was a product feature
+- `e3e5527` fix(india): PIT was not blocked, it was retired — and here is the live one
+- `bf107de` test(a11y): the axe and Lighthouse bars, committed and actually measured
+
+Figures recorded in those commits:
+
+- `110e82f` — "Two r15 subagents reported instructions to abandon the
+  structured edit" tools; the commit concludes the report concerned a product
+  feature rather than an injection.
+- `e3e5527` — "`corporates-pit` is RETIRED. It answers HTTP 200 with" "a
+  well-formed empty envelope instead of a 404, which is the worst failure";
+  the same "session that returns 188 SAST rows one second later". r15 had
+  carried the PIT row shape as INFERRED on a datacentre-IP theory.
+- `bf107de` — the bars r15 went looking for and "found NEITHER — no axe
+  dependency". Axe now covers "15 routes x 2 themes, WCAG 2.1 AA, plus two
+  deliberate controls"; "non-text characters" is allowed by name "because it
+  is WCAG 1.4.11's" concern rather than 1.4.3's.
+
+---
+
+## r15 (2026-08-18) — functional verification
+
+<!-- commits: 56056b3 dee9c14 dbcba14 7ec7a59 da41aa4 d861efa f6cee04 804a846 69c989d 848c94a 1119790 c27a73d a0edaee -->
+
+> **Reconstructed in r18 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `56056b3` test(e2e): one settled-box helper, and the six sites that still read once
+- `dee9c14` feat(edgar): measure filing-to-visible latency instead of asserting it
+- `dbcba14` feat(status): a source that never produced must say "never", not vanish
+- `7ec7a59` fix(lint): lint the scripts that enforce the gates
+- `da41aa4` test(alerts): check the message against Telegram's parser, not against ours
+- `d861efa` feat(india): run the smoke from the line it was designed for, and report what came back
+- `f6cee04` docs(status): one table saying what was measured, and what was only asserted
+- `804a846` test(e2e): what /api/stream owes a client that was not connected
+- `69c989d` test(screener): compare every preset against SQL that never touches the builder
+- `848c94a` test(e2e): compare the exported file against the API, not against the exporter
+- `1119790` test(honesty): prove the invariants hold at the layer that enforces them
+- `c27a73d` fix(alerts): the tag scanner survives `<>`, which is legal input
+- `a0edaee` test(e2e): refuse to reuse a server that is not running this build
+
+Figures recorded in those commits:
+
+- `56056b3` — "This bug has been fixed four times. A sweep in r12 replaced
+  eight" single-read measurements, "a ninth surfaced in r14 two lines below
+  one of them", presenting as "`Cannot read properties of null` or a 44px
+  target measuring 42". Two sites left deliberately unchanged.
+- `dee9c14` — "~72s worst case" had been carried in the docs "for several
+  rounds"; measured instead at "44.5s to discover 25 filings and ingest 21 of
+  them (71 transactions parsed), at the shipped defaults — 250ms request
+  spacing, real fair-access User-Agent".
+- `7ec7a59` — the gate scripts "had ever declared any" lint config; "A gate
+  whose output is 93% false is a gate nobody" reads.
+- `da41aa4` — Telegram rejects "everything else with `400 Bad Request: can't
+parse entities`"; the instant template "leaves all 40 delivery tests and
+  all 12" green while "The new oracle fails on 12 of 13 cases and names the
+  offset". The live-send script "exits 2 — not 0 —" without credentials.
+- `d861efa` — "Two runs from a residential Indian connection — --days=7 and
+  --days=90"; PIT returned "HTTP 200, body `{"acqNameList":[],"data":[]}`";
+  field shapes previously "assumed from public API shapes: SAST 1,334 rows /
+  25 keys, bulk deals 70".
+- `f6cee04` — the latency claim "corrected rather than softened": "60-90
+  seconds from EDGAR acceptance" was "arithmetic — 60s of cron plus ~12s of
+  work". Records the SSE defect as "row re-qualifies on every 2.5s poll — ten
+  deliveries of one row in a" single window.
+- `804a846` — the cursor "keeps microseconds, so a row created at `…460.664`
+  always compares greater than the cursor `…460` the route itself issued for
+  it", "measured at TEN deliveries of one row inside a single 25s window, at
+  13ms through 22743ms".
+- `69c989d` — mutation results, quoted whole because a line of this one
+  wrapping onto a leading `+` is what Markdown reads as a list bullet:
+  "Dropping `code` fails 5 of 9; dropping `dip` + `cluster` + `min_value_usd` fails 4; dropping `exec_only` + `min_anomaly_z` fails 2; neutering every preset-relevant filter fails 7."
+- `848c94a` — "The 19-column contract was imported from the subject"; covered
+  now on a filtered export, "8 of 25". One assertion "was caught 2 runs in 3"
+  before the fix; "5 of 5 since".
+- `1119790` — "the same deletion fails 2 of its 3"; a mutation that turned a
+  disclosed zero into a not-disclosed one left "all nine existing
+  assertions passing".
+- `a0edaee` — "A `next start` left over from an earlier session held port
+  3100; Playwright reused it in silence; 323 tests ran against a build that
+  predated the branch. The result was 120 failures in specs the branch never
+  touched — footer geometry from r9, a treemap's ARIA role".
+
+---
+
+## r14 (2026-08-18) — security checklist
+
+<!-- commits: 7178285 532757c 0e1420d 88e090d 9b60f38 defdaa4 7a1f7ab dbe46cd c1ef9dd 1c25083 66feab5 -->
+
+> **Reconstructed in r18 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `7178285` feat(security): the constant security headers, which were not actually set
+- `532757c` ci(security): fail the build if a secret reaches the client bundle
+- `0e1420d` docs(auth): email+password is a dev-project setting, and prod has no password
+- `88e090d` test(security): keep "no file uploads" true rather than merely stated
+- `9b60f38` test(api): the public envelope says only what it is meant to say
+- `defdaa4` test(security): escaping, in the two places React is not doing it for us
+- `7a1f7ab` test(security): https is four properties, not one
+- `dbe46cd` fix(security): the alert scanner read every user's rules, and now does not
+- `c1ef9dd` feat(auth): the Turnstile code path, inert until the dashboard half is done
+- `1c25083` docs(security): SECURITY_CHECKLIST.md — control, then proof, for all twenty
+- `66feab5` test(e2e): poll the menu-row height too, which the r12 fix missed
+
+Figures recorded in those commits:
+
+- `7178285` — "r12 added the CSP and the header work stopped there."
+- `532757c` — JWTs are not matched by a literal string: "They are
+  base64url-decoded and the payload's own `role` claim is read". The scan
+  passes on a "clean production bundle (91 assets)". Called "r13's lesson
+  made mechanical".
+- `dbe46cd` — "The change broke 23 existing alerts tests, which is the useful
+  part"; scoping is "safe behind Supabase's 6543 transaction pooler".
+- `1c25083` — "Going into r14, five" items were marked done "because" they
+  had been "DISCUSSED". Adds "Twelve 2026 additions the original twenty
+  omit", including "GitHub's March 2026 Supabase secret detector".
+- `66feab5` — "r12 replaced eight single-read `boundingBox()` measurements
+  with polled" ones and missed this; "It failed the same way and only under
+  load — 42 in a full-suite run, 44 in" isolation.
+
+_Not recoverable from the commits: why this round's items were selected in
+this order. The commits state what each change does, not what prompted the
+round._
+
+---
+
+## r13 (2026-08-18) — CI hygiene
+
+<!-- commits: fd29827 6154332 d976cad 81358a3 266dc14 -->
+
+> **Reconstructed in r18 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `fd29827` ci: skip the deployment jobs until there is a deployment
+- `6154332` ci(security): run the gitleaks binary instead of the licensed action
+- `d976cad` docs(security): record what the history scan actually proved
+- `81358a3` fix(ci): stop shipping the scanner's own config into the image
+- `266dc14` docs: the four settings to turn on before this repo goes public
+
+Figures recorded in those commits:
+
+- `fd29827` — the deployment jobs "had been failing on a schedule ever since
+  they were written: Ops 38 red runs, Nightly analytics 8, Backfill 7,
+  Supabase keep-alive 2." A skipped job "logs a notice and exits 0 with
+  `ready=false`"; a paused project "answers HTTP 540 until a human clicks
+  Restore".
+- `6154332` — "`gitleaks/gitleaks-action@v2` failed every run. It is free for
+  one" case only. Pinned "to v8.30.1 and checksum-verified before it is
+  executed". "`--exit-code 2` is the load-bearing flag" — the default exit 1
+  is "indistinguishable from a scanner that is passing". Walks "all 102
+  commits in the pack".
+- `d976cad` — "gitleaks over the full pack: 102 commits, no leaks".
+- `81358a3` — the prior reasoning "did not match the run data"; the corrected
+  account has the run failing "at step 6, so the image builds, and step 5
+  passes". Notes "r12 made the production build's ESLint pass".
+
+---
+
+## r12 (2026-08-18) — security
+
+<!-- commits: 13085bf ba8c586 ad67ee2 95ab0ff 9a05ed8 318384a a2ae3a1 67dc757 5ec77b9 bc45b03 92ee031 411ba53 dea2c15 820883e d6dcda9 -->
+
+> **Reconstructed in r18 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `13085bf` test(e2e): run the suite against the artefact that ships
+- `ba8c586` fix(deps): take four advisories out of the tree, and one parser with them
+- `ad67ee2` build: make the build's lint gate actually run
+- `95ab0ff` build(deps): pin Next to 15.5.23, and force the transitive six
+- `9a05ed8` fix(security): refuse the forged middleware-subrequest header (CVE-2025-29927)
+- `318384a` test(e2e): fail fast when the database is not there
+- `a2ae3a1` fix(security): the Telegram webhook was open when its secret was unset
+- `67dc757` ci(security): three scanners, a disclosure policy, and a worker cap
+- `5ec77b9` test(e2e): assertions that could not fail, and what each was hiding
+- `bc45b03` test(e2e): make the status-array reflex a gate, not a habit
+- `92ee031` ci(api): gate handlers that read input without narrowing it
+- `411ba53` fix(security): same-origin gate on the cookie-authenticated write surface
+- `dea2c15` fix(security): sign-out was the hole in the same-origin gate
+- `820883e` fix(security): refuse outbound requests to addresses we should not reach
+- `d6dcda9` feat(security): a nonce content-security-policy, built per request
+
+Figures recorded in those commits:
+
+- `13085bf` — the e2e default "was `pnpm dev` on :3000, and that default
+  could corrupt its" own subject, because a dev server "rewrites the build
+  underneath it. It happened during the r11" sweep. "`pnpm test:e2e` now runs
+  `next build && next start -p 3100` itself."
+- `ba8c586` — "xlsx (2 HIGH: CVE-2023-30533 prototype pollution,
+  CVE-2024-22363 ReDoS)"; "drizzle-orm <0.45.2 (1 HIGH) — bumped to ^0.45.2
+  in all five packages"; "fast-xml-parser <5.7.0 (1 MODERATE) — bumped 4 → 5".
+- `95ab0ff` — "Next was `^15.5.0`, resolving to 15.5.22. A caret is not a
+  pin"; pinned to "15.5.23 — past CVE-2025-29927, -57822, -57752, -55173";
+  forced "postcss ^8.5.23, nanoid ^3.3.17 and sharp ^0.35.2" because "Next
+  pins `postcss@8.4.31` exactly".
+- `9a05ed8` — middleware "answers 400" to the forged header; "`/api/*` is
+  outside the middleware matcher entirely, so that 401 cannot" depend on it;
+  ordinary traffic "stays 200". Suite "262 e2e (257 + 5), 0 flaky".
+- `318384a` — with Postgres down "page still returned 200 — after 13 to 38
+  seconds", while "server log said ECONNREFUSED and /api/trades was answering
+  500 in 146ms"; Playwright reported it as "tests exceeding their 30s budget".
+  Separately "in r9.1, the seed aged out of its own 24-hour window overnight".
+- `a2ae3a1` — refusal is "401 rather than 403: the caller is unauthenticated,
+  not forbidden"; digests are "always 32 bytes, so the comparison has one
+  shape whatever arrives".
+- `67dc757` — "esbuild@0.18.20 (GHSA-67mh-4wv8-2f99) via the deprecated
+  @esbuild-kit/* chain under drizzle-kit, and undici@7.28.0 with five"
+  advisories; cleared by "drizzle-kit 0.31.0 → 0.31.10", "wrangler 4.20 →
+  4.123", overrides "undici ^7.29.0 and esbuild ^0.25.0". "The tree lost 50
+  packages."
+- `5ec77b9` — three named: "design-system.spec — the live dot, green since
+  r2"; "mobile-shell.spec — the 44px target, green since r4", where the check
+  "sat inside `if ((await signIn.count()) > 0)`"; "ship.spec —
+  `expect(rows).toBeGreaterThanOrEqual(0)`".
+- `bc45b03` — one assertion "keeps its `[200, 503]`"; the gate flagged
+  "`[390, 767]` and `[360, 390]` — viewport widths", so members "must now be
+  inside the real" status range.
+- `92ee031` — the linter "carries 37 self-tests that run before the tree walk
+  on every" run; the bug found was `Number.isFinite`, "true of 1e30", reaching
+  "`new Date(epochMs).toISOString()`, which throws outside +/-8.64e15", so
+  "`?mode=poll&last_event_id=1e30:<zero-uuid>` answered 500".
+- `411ba53` — "anonymous cross-origin request is 401 and not 403"; a forged
+  Host gave "200 and the row was written"; a malformed id raised "22P02 and,
+  with no try/catch and no handleApi wrapper, served a 400 as a" 500.
+- `820883e` — "OWASP 2025 A01, which absorbed the old A10 (SSRF)"; the target
+  case is "169.254.169.254"; "112 tests, weighted towards the spellings"
+  including "2130706433, 0x7f000001, 0177.0.0.1, 127.1,
+  ::ffff:169.254.169.254".
+- `d6dcda9` — the RSC flight payload arrives as inline scripts "whose
+  contents ARE the page's data — 21 of them on `/`, 13 on `/design`, 16 on"
+  another route; "48 violations across the routes" during report-only
+  rollout; "39 of 40 script" tags reached by Next's automatic stamping; a
+  "14.8 KB stylesheet at runtime with no nonce hook". Lighthouse `/` "before:
+  100, 99, 100, 99" and "after: 100, 100, 100, 100, 99, 99, 100, 96", with
+  "a11y, best-practices and SEO unchanged at 100/100/100".
+
+---
+
+## r11 (2026-08-11) — housekeeping
+
+<!-- commits: 3d091a3 85a453b 6f556c4 a0facc6 -->
+
+> **Reconstructed in r18 from git history.** No round report was written at
+> the time. Everything below is a commit subject, a short hash, or a figure
+> quoted from a commit message.
+
+- `3d091a3` docs: backfill the changelog to r9.2, and make the gap impossible
+- `85a453b` test(e2e): locate things by what they are, not by what they look like
+- `6f556c4` chore: delete the r10 branch, and keep its record
+- `a0facc6` chore: remove what nothing uses, and make lint output mean something
+
+Figures recorded in those commits:
+
+- `3d091a3` — "r7 shipped without a changelog entry, and so did r8, r9, r9.1
+  and r9.2." All five backfilled "from git history", under AGPL-3.0 "where
+  §13 puts the source in front of every user". Carries a correction: "r6
+  attributed /design's CLS 0.195 to the" wrong cause; the swap moved "errors
+  1 → 0 and best practices 96 → 100 and left CLS unchanged", the real cause
+  being "the header's 68ch paragraph reflowing 7 lines to 6 when the UI face
+  swaps". r7 also records a mobile Lighthouse "median 82 against a goal" it
+  did not reach.
+- `85a453b` — "Four components gained a `data-*` hook. No prop changed: the
+  19 domain primitives' prop APIs are byte-identical, verified against the
+  r9.2 tip." Suite: "257 e2e across all four projects, 0 unexpected, 0 flaky."
+- `6f556c4` — the r10 branch's "four — a47df1e, 3cc27e2, 6d0d06f, ba41583 —
+  merged into nothing", preserved as tag "`abandoned/ui-ledger-r10`". "The
+  objects stay reachable"; "r10 was never pushed."
+- `a0facc6` — removed "`@visx/scale` and `d3-hierarchy`", where "nothing in
+  src/ has ever named either of" them. "The lockfile loses 164 lines and no
+  build output changes." Of the 28 unused exports knip reported: "knip
+  reports are mostly deliberate public surface — the domain barrel's 19
+  primitives". Suite: "300 unit; 257 e2e across all four projects; typecheck
+  clean."
+
+---
+
+## r10 (2026-08-10) — abandoned, superseded by r9.2
+
+<!-- commits: a47df1e 3cc27e2 6d0d06f ba41583 -->
+
+> **Reconstructed in r18 from git history.** This round was ABANDONED: its
+> four commits were merged into nothing and are not in `main`'s history. They
+> survive only because `6f556c4` preserved the branch tip as the annotated
+> tag `abandoned/ui-ledger-r10` before deleting the branch. The quotations
+> below are from that tag's own message.
+
+- `a47df1e` fix(footer): put the index's ink at both shell edges, not just its tracks
+- `3cc27e2` fix(footer): flush the trailing fine-print block to the shell's right edge
+- `6d0d06f` fix(footer): centre the meta row's mark and version
+- `ba41583` test(footer): amend the layout spec to the r10 ink contract
+
+Recorded disposition, from the tag:
+
+> r10 reached both shell edges by setting the outer link groups' text-align
+> to `end` and the middle one to `center`, and by flushing the trailing
+> fine-print block right. It reached the edges — and a link list with a
+> ragged left edge cannot be scanned, which is why it was rejected in r9.1
+> and superseded in r9.2.
+
+> r9.2 hits the same two edges by moving the boxes instead of the text:
+> `justify-content: space-between` across shrink-to-fit groups, every one of
+> them still `text-align: start`.
+
+The r9.2 section below already refers to this round — it records the
+rejected fix as one that was built and thrown away, and points here for the
+disposition. Nothing from r10 ships. It is recorded because a revision that is
+absent from the changelog is indistinguishable from one that was never
+attempted, and the reasoning that rejected it is the useful part.
+
+---
+
 ## r9.2 (2026-08-10) — space-between, and the text stays put
 
 <!-- commits: 22af673 1fbaab7 -->

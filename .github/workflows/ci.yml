@@ -50,6 +50,15 @@ jobs:
       - name: Lint the changelog
         run: pnpm lint:changelog
 
+      # The other half of the changelog's honesty. `lint:changelog` proves
+      # every claimed commit is real; this proves the reconstructed sections
+      # (r10-r16, written in r18 from git history) quote those commits
+      # verbatim rather than paraphrasing them into something they did not
+      # say. Archaeology's failure mode is a plausible sentence, and a
+      # plausible sentence is indistinguishable from a recorded one later.
+      - name: Lint the reconstructed changelog quotations
+        run: pnpm lint:changelog-quotes
+
       - name: Lint e2e locators
         run: pnpm lint:e2e-locators
 
