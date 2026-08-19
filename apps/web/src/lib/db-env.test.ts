@@ -41,6 +41,7 @@ describe("which environments count as production", () => {
     expect(deploymentStance({ NODE_ENV: "production" })).toEqual({
       stance: "production",
       stanceFrom: "NODE_ENV",
+      stanceValue: "production",
     });
   });
 
@@ -60,7 +61,11 @@ describe("which environments count as production", () => {
 
   it("lets the platform's VERCEL_ENV outrank a stale DEPLOY_ENV", () => {
     const verdict = deploymentStance({ VERCEL_ENV: "production", DEPLOY_ENV: "ci" });
-    expect(verdict).toEqual({ stance: "production", stanceFrom: "VERCEL_ENV" });
+    expect(verdict).toEqual({
+      stance: "production",
+      stanceFrom: "VERCEL_ENV",
+      stanceValue: "production",
+    });
   });
 
   it("is non-production when nothing at all is set", () => {
@@ -74,6 +79,7 @@ describe("which environments count as production", () => {
     expect(deploymentStance({ NODE_ENV: "production", DEPLOY_ENV: "" })).toEqual({
       stance: "production",
       stanceFrom: "NODE_ENV",
+      stanceValue: "production",
     });
   });
 });
@@ -207,6 +213,48 @@ describe("the build-time gate", () => {
     expect(io.errors).toEqual([]);
   });
 
+  it("does NOT refuse a non-production build that has no database configured", () => {
+    // Found by `docker build`, not by this file. The web stage compiles the
+    // bundle and the connection string arrives with `docker run`; `next build`
+    // opens no connection. The first version of this gate refused on any
+    // fatal verdict and killed that build.
+    //
+    // `db_url_missing` stays fatal at RUNTIME — `getDb()` throws, as it always
+    // has. A build is not a boot.
+    const io = spy();
+    const verdict = assertDbEnvOrExit(
+      { NODE_ENV: "production", DEPLOY_ENV: "local-container" },
+      io,
+    );
+    expect(verdict.level, "still fatal for getDb()").toBe("fatal");
+    expect(io.exits, "but the build carries on").toEqual([]);
+    expect(io.warns).toHaveLength(1);
+    expect(JSON.parse(io.warns[0]!).event).toBe("db_url_missing");
+  });
+
+  it("still refuses a PRODUCTION build that has no database configured", () => {
+    const io = spy();
+    assertDbEnvOrExit({ DEPLOY_ENV: "production" }, io);
+    expect(io.exits).toEqual([1]);
+  });
+
+  it("names the stance it actually read, rather than asserting production", () => {
+    // The refusal message hardcoded the word "production" in the parenthetical
+    // and printed it for a build whose stance was `local-container`. A refusal
+    // that misreports its own reason sends the next person to fix the wrong
+    // thing.
+    const io = spy();
+    assertDbEnvOrExit({ VERCEL_ENV: "production", DATABASE_URL: ADMIN_URL }, io);
+    expect(io.errors.join("\n")).toContain("VERCEL_ENV=production");
+    expect(JSON.parse(io.errors[0]!).stance_from).toBe("VERCEL_ENV=production");
+  });
+
+  it("reports the stance variable and its value in every verdict line", () => {
+    const io = spy();
+    assertDbEnvOrExit({ NODE_ENV: "development", DATABASE_URL: ADMIN_URL }, io);
+    expect(JSON.parse(io.warns[0]!).stance_from).toBe("NODE_ENV=development");
+  });
+
   it("is actually wired into next.config.ts", () => {
     // A gate nobody calls is the failure mode this whole file exists to
     // prevent, one level up.
@@ -221,10 +269,17 @@ describe("the three build sites that are not deployments declare themselves", ()
    * Each of these runs `next build`, which sets NODE_ENV=production. Without
    * the declaration the build fails — loudly, so nobody could miss it. What
    * this asserts is the other direction: that none of them has been "fixed"
-   * by claiming to be production and handing the gate a placeholder
-   * connection string, which would leave every future run green and prove
-   * nothing about any deployment.
+   * by claiming to BE production, which would leave every future run green
+   * and prove nothing about any deployment.
+   *
+   * A committed `APP_DATABASE_URL` is fine and, in ci.yml, wanted: the e2e
+   * job creates an ephemeral container and points the suite's server at it as
+   * `insiderflow_app`, so all 354 tests run with the policies applying. What
+   * must never appear is one aimed at a REAL host — a production connection
+   * string pasted into a workflow file is the failure worth catching, and it
+   * is distinguishable by its hostname.
    */
+  const LOCAL_HOSTS = /@(localhost|127\.0\.0\.1|postgres|db)[:/]/;
   const sites: Array<[string, string]> = [
     ["Dockerfile", join(repoRoot, "Dockerfile")],
     ["playwright.config.ts", join(webRoot, "playwright.config.ts")],
@@ -247,7 +302,17 @@ describe("the three build sites that are not deployments declare themselves", ()
       );
       expect(declared.length, `${name} must declare DEPLOY_ENV`).toBeGreaterThan(0);
       for (const value of declared) expect(value).not.toBe("production");
-      expect(/APP_DATABASE_URL\s*[:=]\s*["']?postgres/i.test(code)).toBe(false);
+
+      const urls = [...code.matchAll(/APP_DATABASE_URL\s*[:=]\s*["']?(postgres[^\s"']+)/gi)].map(
+        (m) => m[1]!,
+      );
+      for (const url of urls) {
+        expect(
+          LOCAL_HOSTS.test(url),
+          `${name} points APP_DATABASE_URL at a non-local host — a real connection string ` +
+            "in a build file is a credential in the repository",
+        ).toBe(true);
+      }
     });
   }
 });

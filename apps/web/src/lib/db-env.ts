@@ -66,10 +66,17 @@ export type DeploymentStance = "production" | "non-production";
 export type DbEnvLevel = "ok" | "warn" | "fatal";
 
 export interface DbEnvVerdict {
+  /**
+   * Severity for the RUNTIME: `fatal` means `getDb()` must throw rather than
+   * hand back a connection. It is NOT the same question as "must the build
+   * stop" — see `assertDbEnvOrExit`, which asks a narrower one.
+   */
   level: DbEnvLevel;
   stance: DeploymentStance;
   /** Which variable decided the stance — quoted back so a surprising verdict is diagnosable. */
   stanceFrom: "VERCEL_ENV" | "DEPLOY_ENV" | "NODE_ENV" | "default";
+  /** The value that variable actually held. Printed, so a verdict never has to be guessed at. */
+  stanceValue: string;
   /** Stable, greppable. Log scrapers and docs key on these. */
   event:
     | "db_app_role_ok"
@@ -139,30 +146,26 @@ export function connectionRole(url: string): string | null {
 export function deploymentStance(env: DbEnvInput): {
   stance: DeploymentStance;
   stanceFrom: DbEnvVerdict["stanceFrom"];
+  stanceValue: string;
 } {
   const parsed = DbEnvSchema.parse(env);
   // Explicit beats inferred, and VERCEL_ENV beats DEPLOY_ENV because the
   // platform sets it and a stale DEPLOY_ENV in a project setting must not be
   // able to talk a real production deployment out of the check.
-  if (parsed.VERCEL_ENV) {
+  const declared: Array<[DbEnvVerdict["stanceFrom"], string | undefined]> = [
+    ["VERCEL_ENV", parsed.VERCEL_ENV],
+    ["DEPLOY_ENV", parsed.DEPLOY_ENV],
+    ["NODE_ENV", parsed.NODE_ENV],
+  ];
+  for (const [stanceFrom, value] of declared) {
+    if (!value) continue;
     return {
-      stance: parsed.VERCEL_ENV === "production" ? "production" : "non-production",
-      stanceFrom: "VERCEL_ENV",
+      stance: value === "production" ? "production" : "non-production",
+      stanceFrom,
+      stanceValue: value,
     };
   }
-  if (parsed.DEPLOY_ENV) {
-    return {
-      stance: parsed.DEPLOY_ENV === "production" ? "production" : "non-production",
-      stanceFrom: "DEPLOY_ENV",
-    };
-  }
-  if (parsed.NODE_ENV) {
-    return {
-      stance: parsed.NODE_ENV === "production" ? "production" : "non-production",
-      stanceFrom: "NODE_ENV",
-    };
-  }
-  return { stance: "non-production", stanceFrom: "default" };
+  return { stance: "non-production", stanceFrom: "default", stanceValue: "unset" };
 }
 
 const REMEDY =
@@ -175,15 +178,19 @@ const REMEDY =
  */
 export function resolveDbEnv(env: DbEnvInput): DbEnvVerdict {
   const parsed = DbEnvSchema.parse(env);
-  const { stance, stanceFrom } = deploymentStance(env);
+  const { stance, stanceFrom, stanceValue } = deploymentStance(env);
   const fatalIfProduction: DbEnvLevel = stance === "production" ? "fatal" : "warn";
-  const base = { stance, stanceFrom } as const;
+  const base = { stance, stanceFrom, stanceValue } as const;
 
   const appUrl = parsed.APP_DATABASE_URL;
   const adminUrl = parsed.DATABASE_URL;
 
-  // Nothing at all: fatal everywhere, because there is no degraded mode to
-  // fall back to. Kept as its own event so it never reads as an RLS finding.
+  // Nothing at all. Fatal at RUNTIME everywhere, because there is no degraded
+  // mode to fall back to — `getDb()` has always thrown here. Kept as its own
+  // event so it never reads as an RLS finding, which matters because the
+  // build gate treats it differently: `next build` opens no connection, and
+  // the Docker web stage legitimately builds with no database configured at
+  // all. See `assertDbEnvOrExit`.
   if (!appUrl && !adminUrl) {
     return {
       ...base,
@@ -257,7 +264,7 @@ export function formatVerdict(verdict: DbEnvVerdict): string {
     event: verdict.event,
     level: verdict.level,
     stance: verdict.stance,
-    stance_from: verdict.stanceFrom,
+    stance_from: `${verdict.stanceFrom}=${verdict.stanceValue}`,
     detail: verdict.detail,
   });
 }
@@ -276,21 +283,40 @@ export interface GateIo {
  * refused deployment. Printing the reason and exiting non-zero puts the
  * sentence a deployer needs on the last line of the build log.
  *
+ * ── IT ASKS A NARROWER QUESTION THAN `level` ANSWERS ──────────────────
+ *
+ * A build is not a boot. `next build` opens no connection — `getDb()` runs at
+ * request time — so a build with NO database configured at all is a normal
+ * build, and the Docker web stage is exactly that: it compiles the bundle and
+ * the connection string arrives with `docker run`.
+ *
+ * The first version of this gate did not make that distinction. It refused on
+ * any fatal verdict, so `docker build` died on `db_url_missing` — and the
+ * message it printed said the build "declares itself production", which was
+ * false: the stance was `DEPLOY_ENV=local-container`, and the template had
+ * hardcoded the word. A refusal that misreports its own reason sends the next
+ * person to fix the wrong thing.
+ *
+ * So the gate refuses only in a PRODUCTION stance. Everything else is a
+ * warning, including a missing database, because a missing database announces
+ * itself at the first request while an unenforced policy announces nothing
+ * ever — and that asymmetry is the entire reason this file exists.
+ *
  * `io` is injected so the test can assert the exit rather than take the
  * process down with it.
  */
 export function assertDbEnvOrExit(env: DbEnvInput, io: GateIo): DbEnvVerdict {
   const verdict = resolveDbEnv(env);
-  if (verdict.level === "fatal") {
+  if (verdict.level === "fatal" && verdict.stance === "production") {
     io.error(formatVerdict(verdict));
     io.error(
       `\nBUILD REFUSED: ${verdict.detail}\n` +
-        `This build declares itself production (${verdict.stanceFrom}=production). ` +
+        `This build declares itself production (${verdict.stanceFrom}=${verdict.stanceValue}). ` +
         "If it is not a production deployment — a local image, the e2e harness, a CI " +
         "build — set DEPLOY_ENV to something other than `production` at that build site.\n",
     );
     io.exit(1);
-  } else if (verdict.level === "warn") {
+  } else if (verdict.level !== "ok") {
     io.warn(formatVerdict(verdict));
   }
   return verdict;
