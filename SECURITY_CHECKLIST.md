@@ -74,6 +74,36 @@ protection beyond Supabase's own rate limits**, and those are the control this
 project has decided not to rely on alone. That is the largest open risk on this
 list.
 
+### One control deliberately covers more than its brief asked for
+
+**#7 — CSRF, and the eighth handler.** The r12 ruling named three routes:
+`/api/me/watchlist`, `/api/me/alert-rules` and `/api/me/channels`. The gate
+ships on **eight**. The eighth is `POST /auth/signout`, added by `dea2c15`,
+which was written as its own commit and labelled off-scope so that reverting
+it would be a one-line operation if the narrower reading was meant literally.
+
+**It is kept, deliberately, and this is the reasoning.** `supabase.auth
+.signOut()` revokes the refresh token server-side rather than merely clearing
+a cookie, and a cross-origin `<form method="post">` that submits itself is a
+_simple request_ — no preflight, no CORS, no script. Any page on the internet
+could therefore sign any visitor out. That is denial of session rather than
+loss of data, which is why it is low severity; it is not why it would be
+acceptable to leave. The module's own docstring already claimed the whole
+cookie-authenticated mutating surface, so leaving one handler out would have
+made the documentation false as well as the surface incomplete.
+
+Against that: no behavioural cost. Both real callers are same-origin form
+posts, which carry `Origin`. The gate runs _before_ the session is read on
+this route — unlike `/api/me/*`, where ordering protects an oracle — because
+`/auth/signout` answers `303` whether or not a session existed, so the refusal
+is a function of `Origin` alone and leaks nothing.
+
+Reverting a correct security fix to honour a scope boundary is the wrong
+trade. The boundary exists so that scope creep is visible and reviewable, and
+a separate commit with a written rationale is what makes it both. Recorded
+here, and in the r12 CHANGELOG section, so the eight-versus-three discrepancy
+reads as a decision rather than as drift. **Decided in r19.**
+
 ---
 
 ## 2026 additions the twenty omit

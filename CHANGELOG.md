@@ -21,6 +21,24 @@ recorded one a year later, which is why none are offered. Their titles are
 taken from the round's own branch name (`chore/r12-security` → "security"),
 so even the heading is traceable to something git holds.
 
+**Every Lighthouse figure below r10 is DESKTOP and UNTHROTTLED, and none of
+them is this project's current standing.** r3 records "performance 99–100"
+and r4 records `/leaderboard` at 90 "down from 100"; both are labelled
+desktop, both were re-measured in r17, and both reproduce — `/` still scores
+100 and `/trades` 99 with no throttling. They are true records of what was
+measured, kept because deleting a verified measurement to tidy a claim is
+its own dishonesty.
+
+What they are not is a claim about the product today. Lighthouse's own
+**desktop preset throttles** and yields 80/89 on those same routes, and the
+**mobile** preset — the one `pnpm lighthouse` gates on — has never met the
+brief's 90 on any route, which r4 said at the time. r16 read one of these
+desktop figures as a mobile one and announced a regression that did not
+exist; that error is what the r17 section documents. The measured current
+standing lives in one place, [docs/performance.md](docs/performance.md), and
+`pnpm lighthouse` prints the deficit between goal and measurement on every
+run.
+
 Round boundaries are the branch tips, not a reading of the dates:
 `chore/r11-housekeeping`, `chore/r12-security`, `chore/r13-ci-hygiene`,
 `chore/r14-security-checklist`, `feat/r15-functional-verification`,
@@ -325,8 +343,10 @@ Figures recorded in those commits:
 <!-- commits: 13085bf ba8c586 ad67ee2 95ab0ff 9a05ed8 318384a a2ae3a1 67dc757 5ec77b9 bc45b03 92ee031 411ba53 dea2c15 820883e d6dcda9 -->
 
 > **Reconstructed in r18 from git history.** No round report was written at
-> the time. Everything below is a commit subject, a short hash, or a figure
-> quoted from a commit message.
+> the time. The commit list and the figures below are commit subjects, short
+> hashes, and figures quoted from commit messages. This section also carries
+> one **dated r19 decision note** at the end, marked as such — it is the only
+> prose here that is not drawn from the commits themselves.
 
 - `13085bf` test(e2e): run the suite against the artefact that ships
 - `ba8c586` fix(deps): take four advisories out of the tree, and one parser with them
@@ -397,6 +417,34 @@ Figures recorded in those commits:
   "14.8 KB stylesheet at runtime with no nonce hook". Lighthouse `/` "before:
   100, 99, 100, 99" and "after: 100, 100, 100, 100, 99, 99, 100, 96", with
   "a11y, best-practices and SEO unchanged at 100/100/100".
+
+### r19 decision note — the CSRF gate covers eight handlers, not three
+
+Not drawn from the r12 commits. Recorded here in 2026-08-19 because the
+discrepancy is visible in the code and should read as a decision rather than
+as drift.
+
+The r12 ruling named three routes for the same-origin gate:
+`/api/me/watchlist`, `/api/me/alert-rules` and `/api/me/channels`. The gate
+ships on eight. The eighth is `POST /auth/signout`, added by `dea2c15`, which
+was deliberately written as its own commit, labelled off-scope, and closed
+with an instruction for reverting it alone if the narrower scope was meant
+literally.
+
+It is kept. Signing out revokes the refresh token server-side rather than
+merely clearing a cookie, and a cross-origin self-submitting form post is a
+simple request — no preflight, no CORS, no script — so any page on the
+internet could sign any visitor out. Denial of session rather than loss of
+data, hence low severity, which is a reason it is not urgent and not a reason
+to leave it. There is no behavioural cost: both real callers are same-origin
+form posts and carry the header the gate reads.
+
+Reverting a correct security fix to honour a scope boundary is the wrong
+trade. The boundary exists so scope creep is visible and reviewable, and a
+separate commit carrying its own rationale is what makes it both. The full
+reasoning, including why the gate runs before the session read on this route
+and not on `/api/me/*`, is in [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md)
+under item 7.
 
 ---
 
