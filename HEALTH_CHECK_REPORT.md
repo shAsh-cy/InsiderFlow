@@ -41,3 +41,39 @@ Production infrastructure (Vercel web app, Cloudflare EDGAR worker) has **never 
    - `.vercel/` directory does not exist.
    - `DEPLOYMENT_STATE.md` specifies Part 2 production deployment as "PAUSED, NOT STARTED".
    - `DEPLOY.md` only exists in unmerged branch `feat/r21-release-pipeline`, documenting that the release pipeline was never dispatched.
+
+---
+
+## 2. Supabase Post-Pause Verification
+
+### Verification Table
+
+| Check                            | Target / Endpoint                           | Status      | Evidence / Details                                                                                                                |
+| -------------------------------- | ------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Supabase Project Active**      | `https://iugwzzaexdbrdqtnibij.supabase.co`  | **PASS**    | HTTP 200 on `/auth/v1/health`: `GoTrue v2.197.0` responding; unpaused.                                                            |
+| **Session Pooler (5432)**        | `aws-0-ap-south-1.pooler.supabase.com:5432` | **PASS**    | TCP test succeeded (`TcpTestSucceeded: True`, remote IP `65.0.195.55`).                                                           |
+| **Transaction Pooler (6543)**    | `aws-0-ap-south-1.pooler.supabase.com:6543` | **PASS**    | TCP test succeeded (`TcpTestSucceeded: True`, remote IP `65.0.195.55`).                                                           |
+| **Secondary Pooler (5432/6543)** | `aws-1-ap-south-1.pooler.supabase.com`      | **PASS**    | TCP test succeeded on both 5432 and 6543 (`13.200.110.68`).                                                                       |
+| **Direct Host DNS**              | `db.iugwzzaexdbrdqtnibij.supabase.co`       | **PASS**    | Resolves AAAA `2406:da1a:82a:9d00:de46:a5d1:bbb6:6158` (AWS ap-south-1).                                                          |
+| **Supabase Remote Credentials**  | `.env.production.local` / repo secrets      | **NOT SET** | Consistent with `DEPLOYMENT_STATE.md`: `.env.production.local` was never created; no migrations ever run against remote Supabase. |
+| **RLS Isolation Proof (PGlite)** | `packages/db/src/rls.test.ts`               | **PASS**    | 13/13 tests pass. Unscoped query returns only caller rows, `FORCE RLS` verified.                                                  |
+| **Scanner Scope Proof (PGlite)** | `packages/db/src/scanner-scope.test.ts`     | **PASS**    | 8/8 tests pass. Admin `withUserContextAsApp` scopes per-user with 0 leak.                                                         |
+
+### RLS Verification Output (Verbatim from `pnpm --filter @insiderflow/db test`)
+
+```console
+$ vitest run
+ RUN  v3.2.7 C:/Users/HP/insiderflow/packages/db
+
+ ✓ src/synthetic-scope.test.ts (5 tests) 7918ms
+ ✓ src/cluster-fallback.test.ts (5 tests) 7471ms
+ ✓ src/rls.test.ts (13 tests) 1899ms
+ ✓ src/scanner-scope.test.ts (8 tests) 1931ms
+
+ Test Files  4 passed (4)
+      Tests  31 passed (31)
+   Duration  28.50s
+```
+
+_Note on Production DB row counts & `pnpm db:bootstrap -- --check`:_
+Because production deployment was paused prior to Part 2 execution (`DEPLOYMENT_STATE.md`), the remote Supabase database has never had migrations applied to it (it remains an empty project used solely for Auth sessions per `docs/auth.md` decision (b)). Remote connection credentials (`.env.production.local`) have not been provided locally. The local Docker daemon (`com.docker.service`) is currently stopped on the host.
