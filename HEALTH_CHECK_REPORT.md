@@ -77,3 +77,32 @@ $ vitest run
 
 _Note on Production DB row counts & `pnpm db:bootstrap -- --check`:_
 Because production deployment was paused prior to Part 2 execution (`DEPLOYMENT_STATE.md`), the remote Supabase database has never had migrations applied to it (it remains an empty project used solely for Auth sessions per `docs/auth.md` decision (b)). Remote connection credentials (`.env.production.local`) have not been provided locally. The local Docker daemon (`com.docker.service`) is currently stopped on the host.
+
+---
+
+## 3. Diagnose and Fix Failing Scheduled Workflows
+
+### Per-Workflow Diagnosis & Root Cause
+
+| Workflow                                  | Schedule             | Failing / Skipping | Root Cause & Analysis                                                                                                                                                                                                                                                                                 | Fix / Status                                                                                                                                                                   |
+| ----------------------------------------- | -------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Supply chain** (`supply-chain.yml`)     | Daily `17 4 * * *`   | **FAILING**        | 7 vulnerabilities found by `pnpm audit --prod --audit-level=low` in `next` (GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4, GHSA-4jqv-mc3x-m676, GHSA-mcj8-r9mp-w47p), `sharp` (GHSA-rgj7-g3m4-5g8c, GHSA-wq5f-xc86-pv6w), and `source-map-js` (GHSA-68fv-2mgg-jv7q). CodeQL action v3 deprecation warning. | **FIXED:** Upgraded Next.js to 15.5.27, sharp to ^0.35.5, source-map-js to ^1.2.2, undici to >=7.29.1, codeql-action to v4. `pnpm audit --prod` now reports 0 vulnerabilities. |
+| **Backfill** (`backfill.yml`)             | Nightly `20 7 * * *` | **SKIPPED**        | Gated on `vars.DEPLOYMENT_ACTIVE == 'true'`. Variable is unset because production is not deployed.                                                                                                                                                                                                    | **VERIFIED:** Gating logic works as designed.                                                                                                                                  |
+| **Supabase keep-alive** (`keepalive.yml`) | Every 3 days         | **SKIPPED**        | Gated on `vars.DEPLOYMENT_ACTIVE == 'true'`.                                                                                                                                                                                                                                                          | **VERIFIED:** Gating logic works as designed.                                                                                                                                  |
+| **Ops** (`ops.yml`)                       | Hourly               | **SKIPPED**        | Gated on `vars.DEPLOYMENT_ACTIVE == 'true'`.                                                                                                                                                                                                                                                          | **VERIFIED:** Gating logic works as designed.                                                                                                                                  |
+| **Nightly analytics** (`analytics.yml`)   | Nightly `0 4 * * *`  | **SKIPPED**        | Gated on `vars.DEPLOYMENT_ACTIVE == 'true'`.                                                                                                                                                                                                                                                          | **VERIFIED:** Gating logic works as designed.                                                                                                                                  |
+
+### Upstream Service & Ingestion Endpoint Re-verification
+
+1. **NSE India PIT Endpoint (`corporates-pit-gg`):**
+   - Re-verified via live smoke probe: `ENABLE_INDIA_INGEST=true pnpm --filter @insiderflow/india-local smoke`.
+   - Result:
+     - `corporates-pit-gg` returned **50 rows** (live, schema matching `["appId", "broadcastDateTime", "companyName", "symbol", "xmlFileName", ...]`).
+     - Control probe against retired path `corporates-pit` returned **0 rows** (confirming retirement status holds).
+     - SAST returned 107 rows, Bulk deals returned 70 rows.
+2. **SEC EDGAR Feed:**
+   - Probed `https://www.sec.gov/cgi-bin/browse-edgar?...&type=4&...` with User-Agent `InsiderFlow/1.0 (research; contact@insiderflow.dev)`.
+   - Result: HTTP 200 OK.
+3. **Telegram Bot Token:**
+   - Probed `https://api.telegram.org/bot<token>/getMe`.
+   - Result: HTTP 200 OK (`@insiderflowsh_bot`, ID 8567204791).
