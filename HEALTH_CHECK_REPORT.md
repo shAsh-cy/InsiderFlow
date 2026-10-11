@@ -169,3 +169,59 @@ The test count (653 passed across 49 files) matches the full unit/integration te
   ```
 - **Root Cause:** The Docker Desktop Windows Service (`com.docker.service`) is stopped on the local machine and requires administrative privileges to start.
 - **Lighthouse Runner:** Requires a running web server connected to Postgres. Mobile performance deficit on `/screener` remains documented in `README.md` and `docs/performance.md`.
+
+---
+
+## 6. Reconciliation of Planned-vs-Shipped Work
+
+### Trust Surface & Planned Work Analysis
+
+| Planned Feature / Surface             | Shipped Status        | Evidence / Location                                         | State & Gap Analysis                                                                                                                                                        |
+| ------------------------------------- | --------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`/trust` page**                     | **NOT SHIPPED**       | Route `apps/web/src/app/trust` does not exist.              | Planned in notes but never implemented as a dedicated `/trust` route.                                                                                                       |
+| **Methodology Page**                  | **SHIPPED**           | `apps/web/src/app/(shell)/docs/methodology/page.tsx`        | Comprehensive documentation of cluster formulas, SIC sector classification, performance scoring, and anomaly detection.                                                     |
+| **System Status & Freshness**         | **SHIPPED**           | `apps/web/src/app/status` and `/api/health`                 | Real-time status reporting per-source timestamps ("never" when unproduced), queue backlog depth, and oldest waiting filing.                                                 |
+| **Published Known Defects**           | **SHIPPED**           | `README.md:70-92`                                           | Explicitly documents the floored SSE millisecond cursor defect, NSE date-window disregard, /screener mobile Lighthouse deficit, and NSE empty-envelope retirement behavior. |
+| **Per-datum Provenance Links**        | **PARTIALLY SHIPPED** | Raw filings ingested with `source_url` / accession numbers. | Direct external hyperlinks on individual trade rows in the UI tables are not yet surfaced.                                                                                  |
+| **Rounds r18–r21 (Release Pipeline)** | **UNMERGED**          | Branch `feat/r21-release-pipeline`                          | Built on a separate branch (27 commits: `DEPLOY.md`, `scripts/deploy-prod.mjs`, `release.yml`, etc.) but never merged to `main` or executed.                                |
+| **Rounds r22 / r23**                  | **NOT STARTED**       | No commits, tags, or branches found.                        | Zero occurrences in git history.                                                                                                                                            |
+
+---
+
+## 7. Git Log
+
+Commits on `chore/health-check-resume` across this health check and resumption:
+
+```text
+8cf3485 docs: reconcile planned vs shipped work and complete health check report
+d8f2be3 chore: run full test suite and static gates verification
+d1c9042 chore: verify dependency audits, gitleaks, and client bundle scanner
+17ecc20 fix(supply-chain): patch CVEs in next, sharp, source-map-js, and undici
+a33f1ac chore: verify Supabase reachability, poolers, and RLS proof
+72ab8ad chore: establish ground truth deployment and CI state
+57f8608 Merge pull request #3 from shAsh-cy/feat/r17-measurement
+3238069 fix(seed): a re-seed moves the trade dates, not just the arrival times
+1caaa16 ci(e2e): run the suite that had only ever run on a laptop
+37664db fix(e2e): hold the build identity for the whole run, not just the start
+867f98f fix(perf): withdraw r16's claim, and find the one route that did regress
+```
+
+---
+
+## 8. Final Verdict: GO / NOT-YET
+
+### Verdict
+
+- **Open-Source Public Repository & Code Health:** **GO**
+  - All supply-chain vulnerabilities (7 CVEs including 2 critical Next.js RCEs) are fully patched.
+  - Gitleaks confirms zero credentials committed across all 167 commits.
+  - Client bundle secret scanner confirms zero leaked keys.
+  - All static gates and linters pass cleanly (0 errors).
+  - Complete unit/integration test suite passes: **653/653 tests green across 49 files**.
+  - Upstream APIs (NSE India PIT endpoint `corporates-pit-gg`, SEC EDGAR, Telegram bot) are live and verified.
+- **Production Hosted Deployment (Vercel / Cloudflare):** **NOT-YET**
+  - Production has never been deployed.
+  - Supabase database migrations have not been applied to the remote project.
+  - `.env.production.local` with pooler credentials has not been created by the user.
+  - Required dashboard settings (Turnstile and disabling email+password provider in production) remain pending.
+  - Rounds r18–r21 (the release pipeline in `feat/r21-release-pipeline`) must be merged to `main` and executed before setting `DEPLOYMENT_ACTIVE=true`.
