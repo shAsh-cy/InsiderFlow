@@ -120,3 +120,52 @@ Because production deployment was paused prior to Part 2 execution (`DEPLOYMENT_
 | **Gitleaks**                              | Full git history + working tree (167 commits) | **0 leaks found** (Clean)      | Scanned 167 commits against `.gitleaks.toml`. No secrets or committed credentials.                                                                                                          |
 | **Client-bundle secret scanner**          | `node scripts/lint-client-bundle.mjs`         | **0 secrets found** (Clean)    | Scanned 94 client assets, 7 key shapes + JWT role claims; clean.                                                                                                                            |
 | **Next.js Patch Releases**                | `apps/web`                                    | **Upgraded 15.5.23 → 15.5.27** | Patched 4 CVEs: GHSA-p293-qw3h-jr36 (RCE, Critical), GHSA-2xp9-vwfh-vxw4 (RCE, Critical), GHSA-4jqv-mc3x-m676 (Cache poisoning, Moderate), GHSA-mcj8-r9mp-w47p (Cache poisoning, Moderate). |
+
+---
+
+## 5. Full Suite + Gates Verification
+
+### Static Gates & Linters
+
+| Gate / Command             | Scope                  | Result   | Details                                                 |
+| -------------------------- | ---------------------- | -------- | ------------------------------------------------------- |
+| `pnpm typecheck`           | Monorepo (7 packages)  | **PASS** | 0 TypeScript errors.                                    |
+| `pnpm lint`                | Monorepo (7 packages)  | **PASS** | 0 ESLint errors across all packages.                    |
+| `pnpm format:check`        | All files              | **PASS** | "All matched files use Prettier code style!"            |
+| `pnpm lint:scripts`        | `scripts/` directory   | **PASS** | 0 ESLint errors in scripts.                             |
+| `pnpm lint:changelog`      | `CHANGELOG.md`         | **PASS** | 11 sections, 57 commits verified.                       |
+| `pnpm lint:e2e-locators`   | `apps/web/e2e`         | **PASS** | 39 spec files, 0 class/id selectors outside allowances. |
+| `pnpm lint:e2e-assertions` | `apps/web/e2e`         | **PASS** | 39 spec files, 1 justified status array.                |
+| `pnpm lint:api-schemas`    | `apps/web/src/app/api` | **PASS** | 19 route files, 27 handlers, 37 self-tests verified.    |
+| `pnpm lint:client-bundle`  | `.next/static`         | **PASS** | 94 client assets scanned, 0 secrets found.              |
+
+### Unit & Integration Suite Results
+
+Command: `pnpm test` (`pnpm -r --workspace-concurrency=1 test`)
+
+| Package                     | Test Files | Passed  | Failed | Skipped | Duration    |
+| --------------------------- | ---------- | ------- | ------ | ------- | ----------- |
+| `@insiderflow/core`         | 12         | 269     | 0      | 0       | 2.69s       |
+| `@insiderflow/db`           | 4          | 31      | 0      | 0       | 27.23s      |
+| `@insiderflow/alerts`       | 3          | 75      | 0      | 0       | 53.39s      |
+| `@insiderflow/web`          | 25         | 245     | 0      | 0       | 2.10s       |
+| `@insiderflow/analytics`    | 1          | 18      | 0      | 0       | 23.08s      |
+| `@insiderflow/edgar-worker` | 2          | 8       | 0      | 0       | 16.49s      |
+| `@insiderflow/india-local`  | 2          | 7       | 0      | 0       | 5.02s       |
+| **TOTAL**                   | **49**     | **653** | **0**  | **0**   | **~2m 10s** |
+
+_Comparison vs baseline:_
+The test count (653 passed across 49 files) matches the full unit/integration test footprint on this branch with 100% pass rate.
+
+### E2E Suite & Lighthouse Status
+
+- **Web Server Build (`next build`):** PASSED. Webpack/Next.js production build succeeded with no errors.
+- **E2E Pre-flight Guard (`apps/web/e2e/global-setup.ts`):** Triggered cleanly:
+  ```
+  E2E PRE-FLIGHT FAILED — the database is unreachable
+    `docker exec insiderflow-postgres psql` failed: Command failed
+    Fix: start Docker Desktop, then `docker compose up -d postgres`.
+    Not a product failure. No tests were run.
+  ```
+- **Root Cause:** The Docker Desktop Windows Service (`com.docker.service`) is stopped on the local machine and requires administrative privileges to start.
+- **Lighthouse Runner:** Requires a running web server connected to Postgres. Mobile performance deficit on `/screener` remains documented in `README.md` and `docs/performance.md`.
