@@ -106,3 +106,17 @@ Because production deployment was paused prior to Part 2 execution (`DEPLOYMENT_
 3. **Telegram Bot Token:**
    - Probed `https://api.telegram.org/bot<token>/getMe`.
    - Result: HTTP 200 OK (`@insiderflowsh_bot`, ID 8567204791).
+
+---
+
+## 4. Dependency + Security Drift Check
+
+### Findings Summary
+
+| Tool / Check                              | Scope                                         | Results                        | Notes / Mitigations                                                                                                                                                                         |
+| ----------------------------------------- | --------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`pnpm audit --prod --audit-level=low`** | Production dependencies                       | **0 vulnerabilities** (Clean)  | All 7 vulnerabilities in production (`next`, `sharp`, `source-map-js`) resolved.                                                                                                            |
+| **`pnpm audit --audit-level=high`**       | Full dependency tree                          | **0 vulnerabilities** (Clean)  | `undici` upgraded to `>=7.29.1`, `tinypool` to `>=2.1.2`, `js-yaml` to `^4.3.2`, `brace-expansion` to `>=5.0.12`.                                                                           |
+| **Gitleaks**                              | Full git history + working tree (167 commits) | **0 leaks found** (Clean)      | Scanned 167 commits against `.gitleaks.toml`. No secrets or committed credentials.                                                                                                          |
+| **Client-bundle secret scanner**          | `node scripts/lint-client-bundle.mjs`         | **0 secrets found** (Clean)    | Scanned 94 client assets, 7 key shapes + JWT role claims; clean.                                                                                                                            |
+| **Next.js Patch Releases**                | `apps/web`                                    | **Upgraded 15.5.23 → 15.5.27** | Patched 4 CVEs: GHSA-p293-qw3h-jr36 (RCE, Critical), GHSA-2xp9-vwfh-vxw4 (RCE, Critical), GHSA-4jqv-mc3x-m676 (Cache poisoning, Moderate), GHSA-mcj8-r9mp-w47p (Cache poisoning, Moderate). |
