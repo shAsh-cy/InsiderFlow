@@ -3,7 +3,7 @@
 **Date:** 2026-10-13  
 **Branch:** `chore/health-check-followup`  
 **Base:** `chore/health-check-resume` @ `e12c324`  
-**Status:** In Progress — Task 2 complete, proceeding to Task 3
+**Status:** COMPLETE — All 5 Tasks Verified and Documented
 
 ---
 
@@ -436,3 +436,75 @@ Scope: 7 of 8 workspace projects (executed sequentially)
 2. **`js-yaml` (`^4.3.2`) YAML Parsing:**
    - Evaluated whether any YAML parsing workflows or configs were broken.
    - Finding: `js-yaml` was overridden to `^4.3.2` to remediate transitive devDependency CVEs. Neither application code nor maintenance scripts import `js-yaml` directly. Prettier, GitHub Actions workflow parsing, and all config loaders continue to execute without issue.
+
+---
+
+## 5. Final Verdict & Merge Safety Evaluation
+
+### 5.1 GO / NOT-YET Verdict
+
+| Target Action                      | Verdict     | Rationale & Evidence                                                                                                                                                                                                                                                                                     |
+| :--------------------------------- | :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Merge to `main`**                | **GO**      | All security advisories eliminated (0 criticals/highs in prod), all 9 static gates passing, all 653 unit tests passing across 49 files, full Playwright E2E suite passing across all 4 projects (335 passed, 0 failed), RLS isolation proven on local Postgres.                                          |
+| **Production Deployment (Part 2)** | **NOT-YET** | Production deploy remains explicitly paused (`DEPLOYMENT_STATE.md`). Remote database migrations have not been run, `.env.production.local` has not been configured with production pooler secrets, and interactive cloud CLI logins (`vercel`, `wrangler`, `gh`) are required from the repository owner. |
+
+---
+
+### 5.2 Evaluation of `feat/r21-release-pipeline` Merge Safety
+
+**Question:** Is it safe to merge `feat/r21-release-pipeline` into `main`? What was holding it back, and does our live verification clear it?
+
+**Analysis:**
+
+1. **What Was Holding It Back:**
+   - The 2-month gap in active work left unverified assumptions about whether Docker, database seeds, and live Playwright E2E tests still functioned.
+   - Two critical Next.js Server Components RCE advisories (`GHSA-p293-qw3h-jr36`, `GHSA-2xp9-vwfh-vxw4`) were unpatched on `main` and causing daily GitHub Actions failure notification emails.
+   - Uncertainty surrounding whether the Supabase project was an Auth provider or a database host.
+2. **Does Live Verification Clear It:**
+   - **YES.** With this follow-up round:
+     - The Next.js RCEs and supply chain vulnerabilities are patched and independently verified clean via both `pnpm audit` and `osv-scanner v2.2.4`.
+     - The Docker Postgres container was booted, migrated (11 migrations across 19 tables), and RLS enforcement was proven against `insiderflow_app`.
+     - The Playwright test suite was executed against the live managed Next.js production server, achieving a 100% pass rate (335 passed, 0 failed) across `chromium`, `mobile`, `stream`, and `perf`.
+     - The release automation scripts in `feat/r21-release-pipeline` (`scripts/release.mjs`) include a strict automated preflight that refuses to deploy unless interactive tokens and approvals are explicitly provided, meaning merging the code to `main` carries zero risk of accidental premature deployment.
+
+---
+
+### 5.3 Overall State of the Repository Resuming After 2 Months
+
+1. **Product Health:** Exceptional. InsiderFlow remains a production-grade, highly hardened system with full end-to-end verification.
+2. **Defect Floor Integrity:**
+   - The two documented known defects in `README.md` remain strictly documented and maintained:
+     - _SSE cursor millisecond/microsecond mismatch:_ Floored to millisecond resolution (`apps/web/src/lib/api/stream-cursor.ts`), verified by `stream-resume.spec.ts`.
+     - _/screener Lighthouse performance gap:_ Kept within the documented performance floor without false claims.
+3. **Daily GitHub Actions Failures Explained:**
+   - The notification emails received by the user were triggered by `.github/workflows/supply-chain.yml`, which runs daily at 04:17 UTC and was flagging the unpatched Next.js RCEs on `main`. Once this branch merges to `main`, the daily supply-chain workflow will return to green.
+   - Workflows requiring a remote database (`analytics.yml`, `ops.yml`, `keepalive.yml`) are cleanly gated on `vars.DEPLOYMENT_ACTIVE == 'true'` and skip without failing.
+
+---
+
+### 5.4 Git Log
+
+**Full Verbatim Log of Recent Commits on `chore/health-check-followup`:**
+
+```text
+16d7b09 chore: re-verify full static gates and unit test suite
+9065499 docs: resolve and document Supabase data architecture state
+63ecd24 chore(e2e): run migrations, seed, and full playwright test suite
+83c8449 chore: independently re-verify CVE fixes with pnpm audit and osv-scanner
+e12c324 docs: reconcile planned vs shipped work and complete health check report
+d8f2be3 chore: run full test suite and static gates verification
+d1c9042 chore: verify dependency audits, gitleaks, and client bundle scanner
+17ecc20 fix(supply-chain): patch CVEs in next, sharp, source-map-js, and undici
+a33f1ac chore: verify Supabase reachability, poolers, and RLS proof
+72ab8ad chore: establish ground truth deployment and CI state
+57f8608 Merge pull request #3 from shAsh-cy/feat/r17-measurement
+3238069 fix(seed): a re-seed moves the trade dates, not just the arrival times
+1caaa16 ci(e2e): run the suite that had only ever run on a laptop
+37664db fix(e2e): hold the build identity for the whole run, not just the start
+867f98f fix(perf): withdraw r16's claim, and find the one route that did regress
+bf107de test(a11y): the axe and Lighthouse bars, committed and actually measured
+e3e5527 fix(india): PIT was not blocked, it was retired — and here is the live one
+110e82f docs(security): tool metadata is data, and the r15 "injection" was a product feature
+a0edaee test(e2e): refuse to reuse a server that is not running this build
+c27a73d fix(alerts): the tag scanner survives `<>`, which is legal input
+```
