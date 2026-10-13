@@ -1,6 +1,6 @@
 # InsiderFlow
 
-[![CI](https://github.com/insiderflow/insiderflow/actions/workflows/ci.yml/badge.svg)](https://github.com/insiderflow/insiderflow/actions/workflows/ci.yml)
+[![CI](https://github.com/shAsh-cy/InsiderFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/shAsh-cy/InsiderFlow/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 **Open-source, real-time, multi-market insider-trading tracker.**
@@ -346,7 +346,7 @@ and everything without a 60-second SLA runs on a nightly GitHub Actions schedule
 **One command, working product with data:**
 
 ```bash
-git clone https://github.com/insiderflow/insiderflow.git && cd insiderflow
+git clone https://github.com/shAsh-cy/InsiderFlow.git && cd InsiderFlow
 docker compose up          # Postgres + migrations + seed + web on :3000
 ```
 

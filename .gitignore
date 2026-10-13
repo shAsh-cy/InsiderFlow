@@ -27,3 +27,5 @@ test-results/
 .DS_Store
 .vercel
 .turbo
+.claude/
+skills-lock.json

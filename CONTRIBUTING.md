@@ -74,6 +74,12 @@ E2E tests are optional locally (`pnpm exec playwright install chromium` once, th
   `User-Agent`, max 10 requests/second, no scraping beyond published endpoints.
 - Never commit API keys or `.env` files.
 
+## Code of Conduct
+
+This project adheres to the Contributor Covenant Code of Conduct. By participating, you are expected
+to uphold this code. Please report unacceptable behavior to security@insiderflow.dev or via the
+repository maintainers. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for full text.
+
 ## License
 
 InsiderFlow is licensed under AGPL-3.0. By contributing you agree that your contributions are
