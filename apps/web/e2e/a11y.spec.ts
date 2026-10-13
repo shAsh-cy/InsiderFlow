@@ -95,6 +95,28 @@ async function visit(page: Page, route: string, theme: Theme): Promise<void> {
    * in which the question "what colour is behind this text" has an answer.
    */
   await page.emulateMedia({ reducedMotion: "reduce" });
+  /*
+   * Cloudflare Turnstile is cut off, and the reason is that this gate did
+   * not apply to the configuration that matters.
+   *
+   * With `NEXT_PUBLIC_TURNSTILE_SITE_KEY` set — which is what PRODUCTION
+   * looks like — the widget opens a `blob:https://challenges.cloudflare.com/…`
+   * request and never closes it. `networkidle` therefore never fires on
+   * `/login`, and both of its scans die on a 30s `page.goto` timeout. CI has
+   * no site key, so CI never saw it; the two routes with bot protection were
+   * the two the a11y bar could not measure.
+   *
+   * Waiting for it bought nothing anyway. The challenge renders in a
+   * cross-origin iframe, and axe cannot reach inside one — the scan below
+   * covers OUR markup, which includes the widget's own container, its label
+   * and the form around it, and covered exactly that much before. What
+   * changes is that it now runs.
+   *
+   * Scoped to the challenge host, not to third parties generally: any other
+   * external resource this product starts loading should still be waited for
+   * and still be scanned.
+   */
+  await page.route("https://challenges.cloudflare.com/**", (r) => r.abort());
   await page.goto(route, { waitUntil: "networkidle" });
   // The class is what every token in the palette keys off. If it is absent
   // the page is being scanned in the other theme and the run is a lie.

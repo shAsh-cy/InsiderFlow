@@ -173,6 +173,30 @@ if (files.length === 0) {
   process.exit(1);
 }
 
+/**
+ * SOURCE MAPS, which are not a "secret shape" but leak more than any of them.
+ *
+ * A `.map` beside a chunk republishes the unminified source tree — every
+ * identifier, every comment, every abandoned branch — to whoever loads the
+ * page. `next.config.ts` sets `productionBrowserSourceMaps` from
+ * `ANALYZE === "1"` so a diagnostic build can emit them, and the risk is
+ * precisely that: the flag is per-build, so the only thing standing between a
+ * diagnosis run and a published source tree is remembering to unset an
+ * environment variable. Assert the artefact instead of the intention.
+ */
+const maps = files.filter((file) => file.endsWith(".map"));
+if (maps.length > 0) {
+  console.error(`client bundle: ${maps.length} source map(s) in what every visitor downloads\n`);
+  for (const file of maps) {
+    console.error(`  ${relative(root, file).split(String.fromCharCode(92)).join("/")}`);
+  }
+  console.error(
+    "\nA source map publishes the unminified source tree. This is what ANALYZE=1 produces;\n" +
+      "rebuild without it before shipping. `pnpm --filter @insiderflow/web build`.",
+  );
+  process.exit(1);
+}
+
 const findings = [];
 for (const file of files) {
   const text = readFileSync(file, "utf8");
@@ -208,5 +232,6 @@ if (findings.length > 0) {
 }
 
 console.log(
-  `client bundle ok — ${files.length} client assets scanned, ${PATTERNS.length} key shapes + JWT role claims, no secrets found`,
+  `client bundle ok — ${files.length} client assets scanned, ${PATTERNS.length} key shapes + JWT role claims, ` +
+    `0 source maps, no secrets found`,
 );

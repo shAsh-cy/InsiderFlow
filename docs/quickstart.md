@@ -5,8 +5,10 @@ Two paths. Pick one.
 - **[Run it locally](#local)** — one command, working product with data, ~3 minutes.
 - **[Deploy it free](#deploy)** — Vercel + Supabase + Cloudflare, all free tiers, ~30 minutes.
 
-Only two environment variables are ever _required_: `DATABASE_URL` and
-`EDGAR_USER_AGENT`. Everything else is optional with a documented fallback —
+Two environment variables are required to run at all: `DATABASE_URL` and
+`EDGAR_USER_AGENT`. A **production deployment** requires a third,
+`APP_DATABASE_URL` — the RLS-bound `insiderflow_app` connection — and refuses
+to build without it. Everything else is optional with a documented fallback:
 the app runs as a fully public, read-only site with no auth, no alerts, and no
 third-party API keys.
 
@@ -76,8 +78,25 @@ docker compose up -d postgres          # database only
 pnpm install
 export DATABASE_URL='postgres://postgres:postgres@localhost:5433/insiderflow'
 pnpm db:migrate && pnpm seed
+
+# The RLS-bound role the web app connects as. Migration 0009 creates it
+# NOLOGIN and without a password — a credential in a migration is a
+# credential in the repository — so this step attaches one.
+export APP_DB_PASSWORD='insiderflow_local_dev'
+pnpm db:app-role
+export APP_DATABASE_URL="postgres://insiderflow_app:${APP_DB_PASSWORD}@localhost:5433/insiderflow"
+pnpm db:bootstrap -- --check           # prints check_ok: rls_enforced
+
 pnpm dev                               # http://localhost:3000
 ```
+
+**The `db:app-role` step is not optional, and it was missing here until r20.**
+Without `APP_DATABASE_URL` the app connects as `postgres`, which has
+`BYPASSRLS`, so the policies on the four user tables apply to nothing. It
+looked harmless for eight rounds because it is invisible: the query layer
+filters by user id anyway, so every page, test and log line is identical. A
+production build now refuses outright rather than warning (see
+[auth.md](auth.md)); locally it still warns, and this is how you clear it.
 
 Run the ingestion worker in a second terminal:
 
@@ -115,13 +134,14 @@ claims auth is configured on the server and unconfigured after hydration.
 
 Useful commands:
 
-| Command                        | What it does                                              |
-| ------------------------------ | --------------------------------------------------------- |
-| `pnpm seed -- --reset`         | Wipe and re-seed synthetic data (never touches real rows) |
-| `pnpm analytics:nightly`       | Clusters, sectors, scoring, anomalies, PTR ingestion      |
-| `pnpm db:bootstrap -- --check` | Verify schema, RLS, extensions without migrating          |
-| `pnpm test`                    | Unit + integration suites (PGlite, no external services)  |
-| `pnpm test:e2e`                | Playwright, against a running build                       |
+| Command                        | What it does                                                    |
+| ------------------------------ | --------------------------------------------------------------- |
+| `pnpm seed -- --reset`         | Wipe and re-seed synthetic data (never touches real rows)       |
+| `pnpm analytics:nightly`       | Clusters, sectors, scoring, anomalies, PTR ingestion            |
+| `pnpm db:app-role`             | Issue/rotate the `insiderflow_app` login from `APP_DB_PASSWORD` |
+| `pnpm db:bootstrap -- --check` | Verify schema, RLS enforcement, extensions without migrating    |
+| `pnpm test`                    | Unit + integration suites (PGlite, no external services)        |
+| `pnpm test:e2e`                | Playwright, against a running build                             |
 
 ---
 
@@ -158,15 +178,31 @@ trigger and the monthly cost for each.
    postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
    ```
 
-   Use the **transaction pooler** (port 6543), not the direct connection.
-   Serverless functions and Workers open many short-lived connections; the
-   direct port exhausts its limit quickly. The whole codebase is pooler-safe
-   (`prepare: false`, `max: 1`).
+   Use the **transaction pooler** (port 6543) for RUNTIME, not the direct
+   connection. Serverless functions and Workers open many short-lived
+   connections; the direct port exhausts its limit quickly. The whole codebase
+   is pooler-safe (`prepare: false`, `max: 1`).
 
-3. Run the migrations from your machine:
+   **Migrations need a different port, and this is measured rather than
+   assumed.** Run them against the **session pooler** — same pooler hostname,
+   port **5432**:
+
+   ```
+   postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+   ```
+
+   Three connection targets, and only one of them works for DDL:
+
+   | Target                       | Migrations                                                   |
+   | ---------------------------- | ------------------------------------------------------------ |
+   | Direct (`db.<ref>...:5432`)  | unreachable from IPv4-only runners, including GitHub Actions |
+   | Transaction pooler (`:6543`) | **hangs** — it cannot hold the session state DDL needs       |
+   | Session pooler (`:5432`)     | works; IPv4-reachable and session-capable                    |
+
+3. Run the migrations from your machine, over the **session pooler**:
 
    ```bash
-   export DATABASE_URL='<the pooler URI>'
+   export DATABASE_URL='<the SESSION pooler URI, port 5432>'
    pnpm install
    pnpm db:bootstrap
    ```
@@ -178,21 +214,47 @@ trigger and the monthly cost for each.
 
    It does **not** seed. Synthetic rows do not belong in production.
 
+4. Create the application role and prove the policies actually bite:
+
+   ```bash
+   export APP_DB_PASSWORD="$(node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))")"
+   pnpm db:app-role
+   export APP_DATABASE_URL='postgres://insiderflow_app:<that password>@<pooler host>:6543/postgres'
+   pnpm db:bootstrap -- --check
+   ```
+
+   The second command inserts a probe row as admin and tries to read it back
+   over `APP_DATABASE_URL` with no user context. Zero rows with no context, one
+   with the owner's, zero with another user's. Anything else is
+   `rls_not_enforced` and a non-zero exit.
+
+   `APP_DATABASE_URL` then goes into Vercel alongside `DATABASE_URL` in step 2.
+   Without it the deployment **will not build**: the web app would connect as
+   the migration role, which bypasses every policy.
+
 ### Step 2 — Vercel (web app)
 
 1. Import the repository at <https://vercel.com/new>. Vercel detects Next.js;
    leave the build settings alone. Set **Root Directory** to `apps/web`.
 2. Add environment variables (Settings → Environment Variables):
 
-   | Variable                        | Value                                                      |
-   | ------------------------------- | ---------------------------------------------------------- |
-   | `DATABASE_URL`                  | the Supabase pooler URI                                    |
-   | `SITE_URL`                      | your production URL, e.g. `https://insiderflow.vercel.app` |
-   | `NEXT_PUBLIC_SUPABASE_URL`      | Supabase → Settings → API → Project URL                    |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public key                |
+   | Variable                        | Value                                                              |
+   | ------------------------------- | ------------------------------------------------------------------ |
+   | `DATABASE_URL`                  | the Supabase **transaction** pooler URI (port 6543)                |
+   | `APP_DATABASE_URL`              | same host and port, as `insiderflow_app` — **required**, see below |
+   | `SITE_URL`                      | your production URL, e.g. `https://insiderflow.vercel.app`         |
+   | `NEXT_PUBLIC_SUPABASE_URL`      | Supabase → Settings → API → Project URL                            |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public key                        |
 
    Auth variables are optional. Omit them and the site runs read-only with no
    sign-in chrome — a deliberate, supported mode, not a broken one.
+
+   `APP_DATABASE_URL` is not optional, and the build enforces that: without it
+   Vercel's build step prints `BUILD REFUSED` and exits 1, because the app
+   would otherwise connect as the migration role and every row-level-security
+   policy on the user tables would be skipped. It is a build failure rather
+   than a runtime one deliberately — a runtime check fires after the deploy has
+   already taken traffic.
 
 3. Deploy, then verify edge caching is live:
 

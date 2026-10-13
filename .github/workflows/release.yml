@@ -1,0 +1,580 @@
+name: Release to production
+
+# THE ONE COMMAND, AND THE ONE CLICK.
+#
+#   pnpm deploy:prod
+#
+# dispatches this workflow. It then runs `preflight` — which touches no
+# production secret and can therefore tell you the build is bad before anyone
+# is asked to approve anything — and stops at the `production` GitHub
+# Environment, which has a required reviewer. Approving releases the
+# environment secrets and the deploy proceeds.
+#
+# ── WHY ONE JOB DOES THE WHOLE DEPLOY ─────────────────────────────────
+#
+# Every job that names a protected environment creates its OWN pending
+# deployment and its own approval prompt. Split across migrate / worker / web /
+# smoke that is five clicks, and a five-click gate is one that gets approved
+# without reading. So `release` is a single job whose steps are the pipeline,
+# and the environment is named once.
+#
+# ── WHAT ORDER, AND WHY THAT ORDER ────────────────────────────────────
+#
+#   1. migrations      — schema first: the worker and the web app both assume
+#                        it. Runs through the SESSION pooler; see the step.
+#   2. RLS proof       — BLOCKING. Not a reimplementation: it runs the same
+#                        `db:bootstrap -- --check` the local stack and CI run,
+#                        against production. Aborts on rls_not_enforced or
+#                        rls_not_proven, before anything is user-visible.
+#   3. worker          — ingestion can run against a migrated database with no
+#                        web app in front of it. Deployed before the web so a
+#                        failure here costs nothing publicly.
+#   4. web             — the only step that changes what the public sees.
+#   5. smoke           — against the live production URL.
+#   6. DEPLOYMENT_ACTIVE — flipped ONLY after smoke passes, which is what arms
+#                        the four scheduled workflows.
+#
+# Rollback runs on any failure from step 4 onward, and the flip never happens
+# on a failed run. See the rollback steps at the bottom.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this release is going out (recorded in the run summary)"
+        required: false
+        default: "manual release"
+      skip_worker:
+        description: "Skip the Cloudflare worker deploy (web-only release)"
+        type: boolean
+        required: false
+        default: false
+      force_smoke_failure:
+        description: "DRY RUN: force smoke to fail, to exercise rollback. Never flips DEPLOYMENT_ACTIVE."
+        type: boolean
+        required: false
+        default: false
+  push:
+    # A tag is the other way in, for a release cut from a tag rather than a
+    # branch tip. It lands in the same environment and waits for the same
+    # approval.
+    tags:
+      - "v*"
+
+concurrency:
+  # Never two releases at once. NOT cancel-in-progress: cancelling a run
+  # halfway through a migration is how a database ends up in a state no
+  # migration file describes.
+  group: release-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── PREFLIGHT — everything that can be known without a production secret ──
+  #
+  # Deliberately BEFORE the approval gate. A reviewer should never be asked to
+  # approve a deploy of a tree that does not typecheck, and this job costs
+  # nothing and holds no credential.
+  preflight:
+    name: Preflight (no production secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint && pnpm lint:scripts
+
+      - name: Format check
+        run: pnpm format:check
+
+      # The project-specific gates, all of them. Each exists because something
+      # got past the generic ones.
+      - name: Static gates
+        run: |
+          pnpm lint:changelog
+          pnpm lint:changelog-quotes
+          pnpm lint:e2e-locators
+          pnpm lint:e2e-assertions
+          pnpm lint:api-schemas
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      # DEPLOY_ENV=ci: `next build` sets NODE_ENV=production for every
+      # production build, and next.config.ts refuses one that declares itself
+      # production with no APP_DATABASE_URL. This runner builds an artefact and
+      # deploys nothing — the real build happens on Vercel's infrastructure,
+      # where DEPLOY_ENV=production IS set and the gate DOES arm.
+      - name: Build
+        run: pnpm build
+        env:
+          DEPLOY_ENV: ci
+
+      - name: No secrets in the client bundle
+        run: pnpm lint:client-bundle
+
+      # The image gate, decoys and all. `.dockerignore` once carried bare
+      # `.env` patterns that match only the context root, so `apps/web/.env.local`
+      # was copied in and auto-loaded by Next at runtime. Reviewing the ignore
+      # file is what failed; scanning the artefact is what catches it.
+      - name: Plant decoy secret files
+        run: |
+          printf 'TELEGRAM_BOT_TOKEN=release-decoy-must-not-ship\n' > apps/web/.env.local
+          printf 'TELEGRAM_BOT_TOKEN=release-decoy-must-not-ship\n' > .env
+          printf 'TELEGRAM_BOT_TOKEN=release-decoy-must-not-ship\n' > ingestion/edgar-worker/.dev.vars
+
+      - name: Build the image
+        run: docker build --target web -t insiderflow-web:release .
+
+      - name: Assert no secret-bearing file inside the image
+        run: |
+          found=$(docker run --rm --entrypoint sh insiderflow-web:release -c \
+            'find /app -name ".env" -o -name ".env.*" ! -name ".env.example" -o -name ".dev.vars" 2>/dev/null')
+          if [ -n "$found" ]; then
+            echo "::error title=Secrets in the image::$found"
+            exit 1
+          fi
+          if docker run --rm --entrypoint sh insiderflow-web:release -c \
+              'grep -rl "release-decoy-must-not-ship" /app 2>/dev/null | head -5' | grep -q .; then
+            echo "::error title=Decoy value present inside the image"
+            exit 1
+          fi
+          echo "OK: no .env / .dev.vars files and no decoy value in the image"
+
+  # ── RELEASE — everything from here needs the approval ────────────────────
+  release:
+    name: Release
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # THE HUMAN GATE. The `production` environment carries a required
+    # reviewer, and its secrets are not released to the runner until the
+    # review is approved. Configure it once:
+    #   Settings -> Environments -> New environment -> production
+    #   -> Required reviewers -> add yourself
+    # See DEPLOY.md.
+    environment:
+      name: production
+      url: ${{ steps.deploy_web.outputs.url }}
+    steps:
+      - name: Record why
+        run: |
+          echo "### Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ref: \`${{ github.ref }}\` @ \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- reason: ${{ github.event.inputs.reason || 'tag push' }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── MIGRATIONS ─────────────────────────────────────────────────────
+      #
+      # The port is asserted BEFORE the migration, because getting it wrong
+      # does not fail — it HANGS. Supabase's transaction pooler (6543) has been
+      # transaction-mode-only since 2025-02-28, and drizzle-kit needs session
+      # state, so a migration pointed there sits until the job times out, 45
+      # minutes after a human approved it.
+      #
+      # The assertion prints the port and a host SHAPE and nothing else: the
+      # value it is reading is an admin credential and this log is public.
+      #
+      # Direct (db.<ref>.supabase.co:5432) is session-capable but IPv6-only
+      # without the ~$4/mo IPv4 add-on, and Actions runners are IPv4 — so the
+      # free path is the SESSION pooler, same hostname as the transaction
+      # pooler, port 5432. The script says so if it sees the direct host.
+      - name: Assert the migration connection is session-capable
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/assert-session-pooler.mjs DATABASE_URL
+
+      - name: Run migrations
+        id: migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm db:migrate
+
+      # ── THE RLS GATE — BLOCKING ────────────────────────────────────────
+      #
+      # This is the deploy's most important step and it is four lines, because
+      # it does not reimplement anything. `db:app-role` and
+      # `db:bootstrap -- --check` are the SAME commands the local stack runs,
+      # the same ones CI runs between seed and suite. A release-only copy of a
+      # security check is a copy that drifts, and the half that drifts is
+      # always the half nobody reads.
+      #
+      # What the check does: creates or rotates `insiderflow_app` from
+      # APP_DB_PASSWORD and refuses to finish if the role ends up SUPERUSER or
+      # BYPASSRLS; then inserts a probe row as admin and tries to read it back
+      # over APP_DATABASE_URL with no `app.user_id` set. Zero rows with no
+      # context, one with the owner's, zero with another user's. Anything else
+      # is `rls_not_enforced` and a non-zero exit.
+      #
+      # A missing APP_DATABASE_URL is `rls_not_proven` and also non-zero —
+      # enforcement is never taken on trust, because the catalog flags were
+      # true for the whole period RLS was doing nothing.
+      #
+      # WHY IT RUNS HERE. r20 made the web app refuse to boot without
+      # APP_DATABASE_URL, which protects the request path. This protects the
+      # DEPLOY: the app could boot perfectly against a database whose policies
+      # do not bite, and nothing user-visible would look wrong. That is the
+      # exact failure this project shipped for eleven rounds.
+      #
+      # NOTE ON THE POOLER USERNAME: Supavisor routes by username, so the
+      # application role's pooled connection string uses
+      # `insiderflow_app.<project-ref>` and not a bare `insiderflow_app`.
+      # `app-role.mjs` prints a suggested string that swaps only the username,
+      # so its suggestion is wrong for Supabase. DEPLOY.md says so; the value
+      # used here is APP_DATABASE_URL from the environment secrets, built by
+      # hand.
+      - name: Create the application role
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APP_DB_PASSWORD: ${{ secrets.APP_DB_PASSWORD }}
+        run: pnpm db:app-role
+
+      - name: PROVE row-level security is enforced
+        id: rls
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APP_DATABASE_URL: ${{ secrets.APP_DATABASE_URL }}
+        run: |
+          set -o pipefail
+          if pnpm db:bootstrap -- --check 2>&1 | tee rls-check.log; then
+            echo "RLS proven against production" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error title=RLS IS NOT ENFORCED::The deploy is aborting. The web app would run with row-level security inert, and every user's watchlists and alert rules would be readable by every request. See the log above and docs/auth.md."
+            exit 1
+          fi
+          # `tee` above means the pipeline's exit status is bootstrap's, thanks
+          # to pipefail. Belt and braces: the check is also allowed to exit 0
+          # while REPORTING a failure it decided to tolerate, so the log is
+          # searched for the two verdicts that must never pass.
+          if grep -qE '"check":"(rls_not_enforced|rls_not_proven|rls_over_restrictive)"' rls-check.log; then
+            echo "::error title=RLS IS NOT ENFORCED::bootstrap exited 0 but reported a failing RLS verdict. Aborting."
+            exit 1
+          fi
+
+      # ── CLOUDFLARE WORKER ──────────────────────────────────────────────
+      #
+      # Deployed BEFORE the web app: ingestion against an already-migrated
+      # database changes nothing the public can see, so a failure here costs
+      # nothing except this run.
+      #
+      # cloudflare/wrangler-action@v4 rather than a local `wrangler deploy`:
+      # the action pins its own wrangler, authenticates from the API token
+      # without an interactive login, and — the reason that matters — runs the
+      # same way for anyone with the secrets, instead of the way one laptop
+      # happens to be logged in.
+      #
+      # The cron triggers live in wrangler.jsonc and are deployed with the
+      # worker: "* * * * *" (ingest → cluster flags → alert scan → dispatch)
+      # and "0 * * * *" (hourly digest flush). Two of the free plan's five per
+      # account. The step after the deploy asserts both are registered, because
+      # a worker that deploys with no schedule is a worker that silently never
+      # runs.
+      - name: Record the current worker version (rollback target)
+        id: worker_before
+        if: ${{ github.event.inputs.skip_worker != 'true' }}
+        working-directory: ingestion/edgar-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # `|| true`: on the FIRST deploy there is no previous version, and
+          # "nothing to roll back to" is a fact to record, not a failure.
+          previous=$(pnpm exec wrangler deployments list --json 2>/dev/null \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j?.[0]?.version_id??j?.deployments?.[0]?.version_id??"")}catch{console.log("")}})' || true)
+          echo "version=${previous}" >> "$GITHUB_OUTPUT"
+          if [ -n "${previous}" ]; then
+            echo "previous worker version: ${previous}"
+          else
+            echo "no previous worker version — this is a first deploy, and there is nothing to roll back to"
+          fi
+
+      - name: Deploy the worker
+        id: deploy_worker
+        if: ${{ github.event.inputs.skip_worker != 'true' }}
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ingestion/edgar-worker
+          command: deploy
+
+      # A worker with no cron is a worker that deploys green and never runs.
+      - name: Assert the cron triggers are the ones this project decided on
+        if: ${{ github.event.inputs.skip_worker != 'true' }}
+        run: node scripts/assert-worker-crons.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # ── WEB ────────────────────────────────────────────────────────────
+      #
+      # BUILT ON VERCEL'S INFRASTRUCTURE, NOT HERE. `vercel build --prebuilt`
+      # is broken for pnpm monorepos outside Vercel's own build container — it
+      # hardcodes a PATH that does not exist elsewhere (vercel/vercel#15204) —
+      # so this runner uploads the repository and Vercel builds it. The
+      # project's Root Directory is `apps/web`; that is a project setting, not
+      # a flag, and DEPLOY.md says where to set it.
+      #
+      # ── THE CONSEQUENCE THAT MATTERS ──────────────────────────────
+      #
+      # Because the build happens THERE, nothing this workflow puts in `env:`
+      # reaches it. In particular DEPLOY_ENV: r20 made "production" a
+      # declaration rather than an inference from NODE_ENV, precisely so that
+      # a build which is not a deployment cannot accidentally arm the RLS
+      # hard-fail — and the mirror of that is that the one build where it MUST
+      # arm has to declare itself, in Vercel's own environment.
+      #
+      # If DEPLOY_ENV is missing there, `next build` sees NODE_ENV=production
+      # with no declaration, falls back to NODE_ENV, and the gate still arms.
+      # If it is set to something else, it does NOT. Either way the failure is
+      # silent at build time, so it is asserted here instead, before the
+      # upload — along with APP_DATABASE_URL, whose absence would make the
+      # deployed app refuse every request.
+      #
+      # `vercel env ls` prints NAMES and not values, so this reads the
+      # configuration without ever handling the secrets it is checking for.
+      - name: Install the Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Assert the Vercel production environment is configured
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          names=$(vercel env ls production --token="$VERCEL_TOKEN" 2>&1 || true)
+          missing=""
+          for required in DEPLOY_ENV APP_DATABASE_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
+            if ! printf '%s' "$names" | grep -qE "(^|[[:space:]])${required}([[:space:]]|$)"; then
+              missing="${missing} ${required}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error title=Vercel production environment is incomplete::Missing:${missing}. NEXT_PUBLIC_* are compiled into the browser bundle at BUILD time, and DEPLOY_ENV is what arms the RLS hard-fail on the one build where it matters. See DEPLOY.md."
+            exit 1
+          fi
+          echo "Vercel production declares DEPLOY_ENV, APP_DATABASE_URL and both NEXT_PUBLIC_* values"
+
+      - name: Record the current production deployment (rollback target)
+        id: web_before
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          # First deploy has no predecessor; that is a fact to record rather
+          # than a failure, and the rollback step reads this to decide whether
+          # it has anywhere to go.
+          previous=$(vercel ls --prod --token="$VERCEL_TOKEN" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app' | head -1 || true)
+          echo "url=${previous}" >> "$GITHUB_OUTPUT"
+          if [ -n "${previous}" ]; then
+            echo "previous production deployment: ${previous}"
+          else
+            echo "no previous production deployment — first deploy, nothing to roll back to"
+          fi
+
+      - name: Pull the production environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Deploy the web app
+        id: deploy_web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # NO --prebuilt. See the note above: it is broken for pnpm monorepos
+          # outside Vercel's build container.
+          url=$(vercel deploy --prod --token="$VERCEL_TOKEN" | tail -1)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "deployed: ${url}"
+          echo "- web: ${url}" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── SMOKE ──────────────────────────────────────────────────────────
+      #
+      # The last thing between this build and the public, and the only gate in
+      # the pipeline that talks to the deployment as a visitor does.
+      #
+      # Every check in `scripts/smoke-production.mjs` is either something that
+      # has actually gone wrong on this project or something only a real
+      # deployment can be wrong about. In particular it re-checks the four r20
+      # findings, so they cannot come back in production without failing here:
+      # `X-Powered-By` absent; `/api/me/*` carrying no `user_id`; no body
+      # anywhere naming the application role, the pooler host or an internal
+      # address; and no source map served.
+      #
+      # A SKIP COUNTS AS A FAILURE in that script. An unchecked control is not
+      # a passing one.
+      #
+      # SITE_URL, not the deployment URL, when one is configured: every
+      # `vercel deploy` also produces a unique per-deployment hostname, and
+      # smoking that one proves the build works while proving nothing about
+      # the domain visitors actually reach — the alias, the redirect and the
+      # certificate all live on the other name.
+      - name: Smoke test the deployment
+        id: smoke
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          DEPLOYMENT_URL: ${{ steps.deploy_web.outputs.url }}
+          FORCE_FAILURE: ${{ github.event.inputs.force_smoke_failure }}
+        run: |
+          set -euo pipefail
+          target="${SITE_URL:-$DEPLOYMENT_URL}"
+          echo "smoking ${target}"
+          echo "- smoked: ${target}" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${FORCE_FAILURE}" = "true" ]; then
+            # The dry run. Points the smoke suite at a host that cannot answer
+            # so the rollback path below is exercised end to end on a real
+            # release, without breaking anything. `pnpm deploy:prod --
+            # --dry-run-rollback` sets this.
+            echo "::warning title=DRY RUN::force_smoke_failure is set. Smoke is being pointed at an unreachable host to exercise rollback. DEPLOYMENT_ACTIVE will NOT be flipped."
+            target="http://127.0.0.1:9"
+          fi
+
+          node scripts/smoke-production.mjs --base="${target}" | tee smoke.log
+
+      # ── ARM THE SCHEDULED WORKFLOWS ────────────────────────────────────
+      #
+      # `DEPLOYMENT_ACTIVE` is the repository variable that four scheduled
+      # workflows check in their job-level `if:` — nightly analytics, ops
+      # (ops-check + digest), backfill (reconcile + backfill), and the Supabase
+      # keep-alive. Until it is `true` every one of them SKIPS.
+      #
+      # It is flipped here and nowhere else, and only after smoke passed. The
+      # ordering is the point: a scheduled job firing against a deployment
+      # that failed its smoke test would be the first thing to touch
+      # production after a bad release.
+      #
+      # Each of those workflows ALSO guards on its own secret being non-empty,
+      # so flipping this does not arm a job whose credentials are missing — it
+      # reports "nothing to do" and exits 0 instead of failing twice a week.
+      #
+      # DEPLOY_PAT, not GITHUB_TOKEN: the default token cannot write repository
+      # variables. The PAT needs `repo` scope (classic) or Variables:write
+      # (fine-grained). DEPLOY.md says so.
+      #
+      # `if: success()` is explicit rather than implied. A step with no
+      # condition after a failed step does not run — but the rollback steps
+      # below carry `if: failure()`, and having both stated makes the pair
+      # readable as a pair.
+      - name: Arm the scheduled workflows
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error title=DEPLOY_PAT is not set::Smoke passed but DEPLOYMENT_ACTIVE cannot be flipped, so the four scheduled workflows stay skipped. Set the secret and re-run, or set the variable by hand: gh variable set DEPLOYMENT_ACTIVE --body true"
+            exit 1
+          fi
+          gh variable set DEPLOYMENT_ACTIVE --body true --repo "${{ github.repository }}"
+          echo "DEPLOYMENT_ACTIVE=true — nightly analytics, ops, backfill and keep-alive are now armed"
+          echo "- DEPLOYMENT_ACTIVE: **true** (4 scheduled workflows armed)" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── ROLLBACK ───────────────────────────────────────────────────────
+      #
+      # Runs when anything above failed, which by construction means smoke
+      # failed or a deploy step did. DEPLOYMENT_ACTIVE is never flipped on this
+      # path — the step above is `if: success()`, so a failed run leaves the
+      # scheduled workflows exactly as it found them.
+      #
+      # WHAT IS AND IS NOT ROLLED BACK, stated because the asymmetry is
+      # deliberate:
+      #
+      #   web     — rolled back. It is the only thing the public sees.
+      #   worker  — rolled back to the version recorded before the deploy.
+      #   MIGRATIONS — NOT rolled back, and this is not an oversight. A
+      #             down-migration run automatically, against a production
+      #             database, on a path that only executes when something has
+      #             already gone wrong, is a worse risk than the forward state.
+      #             Every migration in this project is additive; the previous
+      #             web build runs against the new schema. If one ever is not,
+      #             that is a release that needs a human, and the summary below
+      #             says so.
+      - name: Roll back the web deployment
+        if: failure() && steps.deploy_web.outcome == 'success'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          PREVIOUS: ${{ steps.web_before.outputs.url }}
+        run: |
+          if [ -z "${PREVIOUS}" ]; then
+            echo "::warning title=No rollback target::This was the first production deployment, so there is no previous one to return to. The deployment is live and failed its smoke test — take it down by hand if that is the right call."
+            exit 0
+          fi
+          echo "rolling production back to ${PREVIOUS}"
+          vercel rollback "${PREVIOUS}" --token="$VERCEL_TOKEN" --yes
+          echo "- ROLLED BACK web to ${PREVIOUS}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back the worker
+        if: failure() && steps.deploy_worker.outcome == 'success'
+        working-directory: ingestion/edgar-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS: ${{ steps.worker_before.outputs.version }}
+        run: |
+          if [ -z "${PREVIOUS}" ]; then
+            echo "::warning title=No worker rollback target::First worker deployment; nothing to return to."
+            exit 0
+          fi
+          echo "rolling the worker back to ${PREVIOUS}"
+          pnpm exec wrangler rollback "${PREVIOUS}" --message "release ${{ github.run_id }} failed smoke" --yes
+          echo "- ROLLED BACK worker to ${PREVIOUS}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Last, and unconditional, so the run never ends without saying what
+      # state production is in. A failed deploy that reports nothing is how a
+      # half-rolled-back deployment gets left overnight.
+      - name: Say what happened
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### Outcome"
+            echo ""
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "Released. Smoke passed and DEPLOYMENT_ACTIVE is true."
+            else
+              echo "**RELEASE FAILED — \`${{ job.status }}\`**"
+              echo ""
+              echo "- DEPLOYMENT_ACTIVE was **not** flipped; the scheduled workflows are unchanged."
+              echo "- Migrations were **not** reverted. They are additive by convention and the"
+              echo "  previous web build runs against the new schema — but confirm that for the"
+              echo "  migrations in this release before re-releasing."
+              echo "- Re-run after fixing, or roll further back by hand:"
+              echo "  \`vercel rollback <url>\` and \`wrangler rollback <version>\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -112,6 +112,57 @@ single row is reachable, so even `UPDATE alert_channels SET ...` with no
 `APP_DB_PASSWORD` and refuses to finish if the role ends up with `SUPERUSER`
 or `BYPASSRLS`.
 
+### In production, the fallback is fatal
+
+Until r20 a missing `APP_DATABASE_URL` printed one warning and carried on:
+
+```json
+{ "event": "db_admin_fallback", "detail": "APP_DATABASE_URL is not set, ..." }
+```
+
+That line appeared in a real local production build, and the `insiderflow_app`
+role had never been created on any database, including this one. The reason it
+survived that long is the reason it is now fatal: **the failure is
+unobservable.** Every query in the app also filters by user id in its own
+`WHERE` clause, so with the policies inert the product behaves identically —
+same pages, same tests, same logs. There is nothing downstream to notice.
+
+So the fallback is now refused wherever the deployment says it is production,
+in two places:
+
+| Where                            | What happens                                           |
+| -------------------------------- | ------------------------------------------------------ |
+| `next.config.ts`, at build start | prints `BUILD REFUSED` and exits 1                     |
+| `getDb()`, on the first query    | throws; no request is ever served over that connection |
+
+Below production both stay a single warning, because a self-hoster who has not
+created the role yet should still get a working site.
+
+**What counts as production** is a declaration, not `NODE_ENV`. `next build`
+sets `NODE_ENV=production` for every production build — the Docker image, the
+Playwright harness, a CI artefact — and none of those deploys anything.
+
+- `VERCEL_ENV` or `DEPLOY_ENV` set → authoritative; `production` enforces.
+- Neither set → `NODE_ENV=production` enforces.
+
+It fails closed: an undeclared production build is refused. The three build
+sites that are legitimately not deployments each declare themselves with
+`DEPLOY_ENV` at the site — `Dockerfile` (`local-container`),
+`playwright.config.ts` (`e2e`), `.github/workflows/ci.yml` (`ci`) — and
+`db-env.test.ts` asserts none of them opts out by claiming production with a
+placeholder connection string instead.
+
+Two failures are caught that a presence check would miss:
+`APP_DATABASE_URL === DATABASE_URL` (the admin URL under a second name), and
+an `APP_DATABASE_URL` whose username is a role that ships with `BYPASSRLS`
+(`postgres`, `supabase_admin`, `rds_superuser`, …).
+
+This reads environment variables, so it proves configuration and not
+enforcement. `pnpm db:bootstrap -- --check` is the half that proves
+enforcement, by connecting. Neither substitutes for the other, and
+[PRODUCTION_READINESS.md](../PRODUCTION_READINESS.md) records them as two
+separate claims.
+
 ## Environment
 
 | Variable                        | Where           | Purpose                                                                |
@@ -121,6 +172,7 @@ or `BYPASSRLS`.
 | `APP_DATABASE_URL`              | web             | The `insiderflow_app` role. RLS-bound. What the request path must use. |
 | `DATABASE_URL`                  | ingestion, jobs | Admin/owner connection. Migrations and cron jobs only.                 |
 | `APP_DB_PASSWORD`               | local setup, CI | Read by `pnpm db:app-role` when issuing the app role's login.          |
+| `DEPLOY_ENV`                    | web             | Declares what this process is. `production` makes the row above fatal. |
 
 Enable GitHub OAuth and email magic links in the Supabase dashboard, with
 `https://<your-deployment>/auth/callback` as the redirect URL.

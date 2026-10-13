@@ -44,6 +44,28 @@ The one thing that _is_ an incident: a genuine secret accidentally given a
 `NEXT_PUBLIC_` prefix. `SUPABASE_SERVICE_KEY` must never be prefixed. If it ever
 is, rotate it immediately — it has been served to every visitor since the build.
 
+#### Every `NEXT_PUBLIC_*` this repository defines, with a verdict each
+
+Enumerated in r20 rather than sampled: the sweep read every reference in
+source, config, workflows, `.env.example`, the Dockerfile and compose file.
+There are four. Each one is judged on what an attacker can DO with it, not on
+whether it looks sensitive.
+
+| Variable                         | Verdict                    | Why that is the verdict                                                                                                                                                                                                                                                                  |
+| -------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`       | 🟢 Public                  | The origin the browser posts sign-ins to. It is in the network tab of every visitor's first authenticated request; it cannot be secret and be usable.                                                                                                                                    |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`  | 🟢 Public **by design**    | Identifies the project to the Auth service. Carries no authority beyond an anonymous caller's. In this deployment it is a `sb_publishable_` key; RLS and GoTrue are what protect the data behind it.                                                                                     |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | 🟢 Public **by design**    | Cloudflare's site key is rendered into the widget's markup; a challenge cannot work without the browser holding it. The secret half is in **no environment this app reads** — it is a field in the Supabase dashboard, and Supabase does the verification (see `lib/auth/turnstile.ts`). |
+| `NEXT_PUBLIC_SITE_URL`           | 🟢 Public, and barely used | Read in exactly one place, `packages/alerts/scripts/send-live-alert.mjs`, a delivery probe, with a hard-coded fallback. Not in `.env.example`; nothing on the request path reads it. A base URL is public by definition.                                                                 |
+
+Verified rather than reasoned: `pnpm lint:client-bundle` decodes every JWT in
+`.next/static` and reads its own `role` claim, so a `service_role` token would
+be caught regardless of what it was named, and `sb_secret_` is matched only
+with twenty characters of key material after it (the bare prefix is
+`@supabase/supabase-js`'s own classifier — see the script's header). The r20
+build scanned 94 client assets: no findings, and **zero source maps**, which
+the gate now also refuses.
+
 ---
 
 ## Where secrets live

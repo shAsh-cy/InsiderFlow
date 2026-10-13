@@ -29,6 +29,16 @@ const PUBLIC_ENDPOINTS = [
   "/api/heatmap",
   "/api/companies?q=ZZ&limit=5",
   "/api/stream?mode=poll",
+  // Added in r20. The six above were the whole list, and the four below are
+  // the endpoints that share `serializeTrade` and the query layer with them —
+  // so a widened select would have been caught on `/api/trades` and missed
+  // here only by luck. `/api/screener/*` in particular joins the analytics
+  // tables, which the six above do not touch.
+  "/api/screener/cluster-buys?limit=10",
+  "/api/screener/unusual-flow?limit=10",
+  "/api/companies/ZZNOVA",
+  "/api/companies/ZZNOVA/sentiment",
+  "/api/health",
 ];
 
 /** Keys that must never appear anywhere in a public body, at any depth. */
@@ -138,17 +148,82 @@ test.describe("the public API envelope", () => {
   test("an error body names no internal detail", async ({ request }) => {
     // A stack trace, a SQL fragment or a file path in an error is a map of
     // the server drawn for whoever sent a bad request.
-    const response = await request.get("/api/trades?limit=notanumber");
+    //
+    // Four URLs, not one. The single `?limit=notanumber` case only ever
+    // exercised the ZodError branch of `handleApi`; a 404, an unauthenticated
+    // /api/me route and an unknown screener preset each take a different path
+    // to a body, and the three of them were untested.
+    const cases = [
+      "/api/trades?limit=notanumber",
+      "/api/companies/THIS-TICKER-DOES-NOT-EXIST",
+      "/api/screener/not-a-preset",
+      "/api/me/watchlist",
+    ];
+    for (const url of cases) {
+      const response = await request.get(url);
+      const text = await response.text();
+      expect(response.status(), `${url} must answer with a status, not hang`).toBeLessThan(600);
+      for (const marker of [
+        "at Object.",
+        "node_modules",
+        "/app/",
+        "SELECT ",
+        "pg_",
+        "ECONNREFUSED",
+        "insiderflow_app",
+        "pooler.supabase.com",
+      ]) {
+        expect(text, `${url} leaked ${marker}`).not.toContain(marker);
+      }
+    }
+  });
+
+  test("/api/health reports a cause without describing the deployment", async ({ request }) => {
+    // The endpoint the docs tell you to point an uptime monitor at:
+    // unauthenticated, uncached, `Access-Control-Allow-Origin: *`. Its 503
+    // branch used to answer with postgres.js's message verbatim, which names
+    // the application role, the pooler hostname, the region and the internal
+    // address. It is a 200 here — the database is up — so what this asserts
+    // is that the SHAPE cannot carry those even when it is not.
+    const response = await request.get("/api/health");
     const text = await response.text();
+    // 200, flatly. `globalSetup` has already proved the database is up, so
+    // a 503 here is a real failure and accepting it would make this test
+    // unable to fail — the 503 BODY is pinned by the classifier's unit test
+    // in src/lib/api/error-redaction.ts, which can produce one on demand.
+    expect(response.status(), "the database is up; a 503 is a genuine failure").toBe(200);
+    // `password` on its own was the first version of this list and it FAILED
+    // on a healthy response: the readiness block legitimately contains
+    // "Email+password provider disabled", which is a deployment step this
+    // project deliberately reports. A marker that matches correct output is a
+    // marker that gets deleted the first week, so the list names what a
+    // DRIVER leak actually looks like instead of a word that appears in it.
     for (const marker of [
-      "at Object.",
-      "node_modules",
-      "/app/",
-      "SELECT ",
-      "pg_",
+      "insiderflow_app",
+      "pooler.supabase.com",
       "ECONNREFUSED",
+      "password authentication",
+      "getaddrinfo",
+      "postgres://",
     ]) {
-      expect(text, `an error body leaked ${marker}`).not.toContain(marker);
+      expect(text, `/api/health leaked ${marker}`).not.toContain(marker);
+    }
+  });
+
+  test("the signed-out /api/me routes say only that a session is required", async ({ request }) => {
+    // `/api/me/watchlist` and `/api/me/alert-rules` returned whole Drizzle
+    // rows until r20, so every response carried `userId` — a key this file
+    // has forbidden since it was written and only ever checked against the
+    // public endpoints. Without credentials the suite cannot read an
+    // authenticated body, so this asserts the reachable half: the 401 is a
+    // fixed envelope, and the authenticated shape is pinned by the
+    // schema-driven unit test in src/lib/api/me-serializers.test.ts.
+    for (const url of ["/api/me/watchlist", "/api/me/alert-rules", "/api/me/channels"]) {
+      const response = await request.get(url);
+      expect(response.status(), `${url} must refuse an anonymous read`).toBe(401);
+      expect(await response.json()).toEqual({
+        error: { code: "unauthorized", message: "Sign in required" },
+      });
     }
   });
 });

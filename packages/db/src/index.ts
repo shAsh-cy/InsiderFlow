@@ -35,6 +35,7 @@ export {
   countDistinct,
   desc,
   eq,
+  getTableColumns,
   gt,
   gte,
   ilike,

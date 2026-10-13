@@ -1,6 +1,6 @@
 # Deployment state — PAUSED
 
-**Checkpoint date:** 2026-08-06
+**Checkpoint date:** 2026-08-06, updated 2026-08-20 (r21)
 **Branch:** `main` @ `888d622` (`merge: audit remediation and cross-user isolation closeout`)
 **CI:** green — [run 31029669123](https://github.com/shAsh-cy/InsiderFlow/actions/runs/31029669123), both jobs including the required `image-secret-scan` gate
 
@@ -10,6 +10,28 @@
 > otherwise, no session should run a deploy, a login, a migration against a
 > remote database, or any other infrastructure command. Feature, UI, test and
 > security work on branches is fine — see [Docs-only discipline](#docs-only-discipline).
+
+> ## r21: the pipeline now exists. It has never been run.
+>
+> [`.github/workflows/release.yml`](.github/workflows/release.yml) and
+> [`DEPLOY.md`](DEPLOY.md) automate most of the Part 2 runbook below.
+> **Nothing about the pause has changed:** no project has been provisioned, no
+> secret set, no migration run against anything but the local Docker Postgres,
+> and the workflow has never been dispatched. It is code, verified the way code
+> can be — actionlint over all eight workflow files, and every script in it
+> exercised by hand against the local stack — and it is not evidence of a
+> deployment.
+>
+> Two things it changes about resuming:
+>
+> - Steps 4 through 8 of the runbook are now the workflow's steps, in the same
+>   order, with the RLS proof as a blocking gate. Read `DEPLOY.md` first; it
+>   carries the secret map, the two-ports rule and the Supabase decisions.
+> - The `DEPLOY_ENV` requirement is new and load-bearing. r20 made the RLS
+>   hard-fail arm on a declaration rather than on `NODE_ENV`, and the web app
+>   builds on Vercel's infrastructure, so `DEPLOY_ENV=production` must be a
+>   **Vercel** environment variable. The pipeline asserts its presence before
+>   uploading; nothing else can.
 
 This file exists so a future session can resume Part 2 of the deployment
 exactly where it stopped, with no rediscovery and no code changes. It is the
@@ -236,23 +258,37 @@ Whichever path is taken, add the admin-direction assertion to
 
 ### Known documentation gaps to fix during Part 2
 
-Not yet fixed. Each is a place where `docs/quickstart.md` is stale relative to
-the remediation, and each must be fixed **in the same commit** as the step that
-needed it, then logged in `DEPLOYMENT_REPORT.md`.
+Recorded here in r15. **Three of the four were closed in r20/r21**; the status
+of each is marked rather than the entry deleted, because a gap that was fixed
+and a gap that was never real look identical once the line is gone.
 
-- Step 1 (Supabase) says `pnpm db:bootstrap` migrates and verifies, but never
-  tells you to create the application role (`APP_DB_PASSWORD=… pnpm db:app-role`)
-  or to set `APP_DATABASE_URL`. Without the latter, bootstrap now **fails**
-  with `rls_not_proven` — correctly, but the documented happy path does not
-  produce a passing run.
-- Step 2 (Vercel) lists four environment variables and omits `APP_DATABASE_URL`
-  entirely, so a deployment following the docs would run the web app on the
-  admin connection — the configuration the audit found inert.
+- ~~Step 1 (Supabase) says `pnpm db:bootstrap` migrates and verifies, but never
+  tells you to create the application role or to set `APP_DATABASE_URL`.~~
+  **CLOSED (r20).** `docs/quickstart.md` now runs `db:app-role` and exports
+  `APP_DATABASE_URL` in both the local and the deploy paths, and says why the
+  step is not optional. This was the reason the role had never been created on
+  any database.
+- ~~Step 2 (Vercel) lists four environment variables and omits
+  `APP_DATABASE_URL`.~~ **CLOSED (r20/r21).** quickstart lists it as required;
+  `DEPLOY.md` carries the full map, and the release pipeline refuses to upload
+  if the Vercel production environment does not declare it.
 - Step 5 lists `backfill.yml` as "manual". It now also runs a **nightly
-  reconciliation** at `20 7 * * *`.
-- Nothing documents that `NEXT_PUBLIC_*` must be present at **build** time for
-  the browser bundle. Partially addressed for Docker in this checkpoint's
-  parent commits; the Vercel section still does not mention it.
+  reconciliation** at `20 7 * * *`. **STILL OPEN.**
+- ~~Nothing documents that `NEXT_PUBLIC_*` must be present at **build** time for
+  the browser bundle.~~ **CLOSED (r21).** `DEPLOY.md` says so in the Vercel
+  table, and the pipeline asserts both `NEXT_PUBLIC_*` values are present in
+  the production environment before it uploads — the same failure that produced
+  a page claiming auth was configured on the server and unconfigured after
+  hydration in the Docker image.
+
+One gap found in r21 and not previously recorded:
+
+- `packages/db/scripts/app-role.mjs` prints a suggested `APP_DATABASE_URL` by
+  swapping only the username, which is **wrong for Supabase**: Supavisor routes
+  by username and expects `insiderflow_app.<project-ref>`. It is informational
+  output rather than a functional path, but a deployer following it verbatim
+  gets an authentication failure with a confusing message. `DEPLOY.md` says so
+  next to the variable; the script itself is unchanged.
 
 ---
 
@@ -317,6 +353,15 @@ was created to stop accepting — so it is repeated here, next to the step that
 makes it accurate.
 
 ## RESUME — Part 2 runbook
+
+**Read [DEPLOY.md](DEPLOY.md) first.** Since r21, steps 4–8 below are the
+`release.yml` pipeline's own steps, in this order, run by `pnpm deploy:prod`
+behind one approval. What remains manual is everything a workflow cannot do:
+creating the projects, setting the secrets, and the three dashboard decisions.
+
+The runbook is kept in full because it records the ORDER and the reasoning,
+and because step 1 is still the thing to measure before anything is
+provisioned.
 
 Ordered. Do not skip step 1; it can invalidate later steps.
 

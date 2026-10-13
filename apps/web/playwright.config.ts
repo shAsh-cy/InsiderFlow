@@ -180,7 +180,16 @@ export default defineConfig({
           // shell usually has this set and CI's does not, which is exactly
           // the kind of difference that produces a green laptop and a red
           // pipeline.
-          env: { INSIDERFLOW_SHOW_SYNTHETIC: "true" },
+          //
+          // DEPLOY_ENV: this harness runs `next build`, which sets
+          // NODE_ENV=production, and next.config.ts refuses a production
+          // build with no APP_DATABASE_URL because such a deployment cannot
+          // enforce row-level security. The suite is a production BUILD and
+          // not a deployment, and it says so here rather than the check
+          // carrying a special case for it. The alternative — putting a
+          // credential-shaped string in CI to satisfy a security gate — is
+          // how a gate stops meaning anything.
+          env: { INSIDERFLOW_SHOW_SYNTHETIC: "true", DEPLOY_ENV: "e2e" },
         },
       }),
 });

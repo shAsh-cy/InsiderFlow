@@ -71,6 +71,29 @@ test.describe("security headers", () => {
     ).toBe("nosniff");
   });
 
+  test("nothing announces the framework, and no source map is served", async ({ request }) => {
+    // Both of these were ASSUMED to be off going into the r20 leak audit.
+    // One was: `productionBrowserSourceMaps` is false unless ANALYZE=1.
+    // The other was not — `poweredByHeader` had never been set, so every
+    // response carried `X-Powered-By: Next.js`. The difference between the
+    // two is that one had a line in next.config.ts and the other had a
+    // sentence in a checklist.
+    for (const path of ["/", "/trades", "/api/health"]) {
+      const headers = (await request.get(path)).headers();
+      expect(headers["x-powered-by"], `${path} announces the framework`).toBeUndefined();
+    }
+
+    // A source map beside a chunk republishes the unminified source tree,
+    // including every comment, to every visitor. `.map` files are emitted
+    // only under ANALYZE=1; this asserts the shipped build has none by
+    // asking the server for one that would exist if it did.
+    const html = await (await request.get("/")).text();
+    const chunk = /\/_next\/static\/chunks\/[^"']+?\.js/.exec(html)?.[0];
+    expect(chunk, "no chunk found in the document — this test would prove nothing").toBeTruthy();
+    const map = await request.get(`${chunk}.map`);
+    expect(map.status(), `${chunk}.map is being served`).toBe(404);
+  });
+
   test("the referrer policy keeps same-origin referrers, which the CSRF gate depends on", async ({
     request,
   }) => {

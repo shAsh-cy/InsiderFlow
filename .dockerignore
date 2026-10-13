@@ -75,6 +75,21 @@ lighthouserc*
 codecov.yml
 renovate.json
 
+# Agent tooling. `.claude/` and `skills-lock.json` are UNTRACKED — they exist
+# in a working directory and not in the repository — and the r20 image audit
+# found both inside the built image, because `COPY . .` copies the build
+# CONTEXT and the build context is a developer's directory rather than a
+# checkout.
+#
+# That is the same mistake as the `.env.local` leak this file's header
+# describes, arriving from the other direction: there, a pattern was too
+# narrow to exclude a secret; here, a directory nobody thought about was
+# never named at all. Untracked paths are the ones with no reviewer, so the
+# ignore file has to name them explicitly or the image inherits whatever
+# happens to be on the machine that built it.
+.claude
+skills-lock.json
+
 # NOT excluded, deliberately: eslint.config.mjs, .prettierrc and friends.
 # r12 made the production build's ESLint pass actually run, so the config
 # is a BUILD input now — dropping it here would break `next build` inside

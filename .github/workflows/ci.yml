@@ -50,6 +50,15 @@ jobs:
       - name: Lint the changelog
         run: pnpm lint:changelog
 
+      # The other half of the changelog's honesty. `lint:changelog` proves
+      # every claimed commit is real; this proves the reconstructed sections
+      # (r10-r16, written in r18 from git history) quote those commits
+      # verbatim rather than paraphrasing them into something they did not
+      # say. Archaeology's failure mode is a plausible sentence, and a
+      # plausible sentence is indistinguishable from a recorded one later.
+      - name: Lint the reconstructed changelog quotations
+        run: pnpm lint:changelog-quotes
+
       - name: Lint e2e locators
         run: pnpm lint:e2e-locators
 
@@ -65,8 +74,17 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # DEPLOY_ENV: `next build` sets NODE_ENV=production, and next.config.ts
+      # refuses a production build with no APP_DATABASE_URL — such a
+      # deployment connects as the admin role and every row-level-security
+      # policy on the user tables is skipped. This runner builds an artefact
+      # and deploys nothing, so it declares that here. Setting a fake
+      # APP_DATABASE_URL instead would have made the gate pass on every future
+      # PR while proving nothing about any deployment.
       - name: Build
         run: pnpm build
+        env:
+          DEPLOY_ENV: ci
 
       # AFTER the build, because it scans the build output. `.next/static`
       # is what every visitor downloads, so a key that lands there is
@@ -106,6 +124,21 @@ jobs:
       # it is set here too for the migrate/seed/analytics steps.
       INSIDERFLOW_SHOW_SYNTHETIC: "true"
 
+      # The RLS-bound application role, for the proof step below AND for the
+      # server the suite manages — Playwright's webServer inherits this
+      # environment, so the 354 e2e tests run against an app connected as
+      # `insiderflow_app` with FORCE ROW LEVEL SECURITY applying to every
+      # query it makes. Running them as the admin role would have been
+      # testing a configuration that must never ship.
+      #
+      # The password is committed on purpose and is not a secret: this
+      # database is a container created by the step below, published on
+      # loopback only, and destroyed with the runner. The alternative — a
+      # repository secret — would make the gate silently skip on every fork,
+      # which is the failure mode that let RLS sit inert for eight rounds.
+      APP_DB_PASSWORD: ci-ephemeral-not-a-secret
+      APP_DATABASE_URL: postgres://insiderflow_app:ci-ephemeral-not-a-secret@localhost:5433/insiderflow
+
     steps:
       - uses: actions/checkout@v4
 
@@ -140,6 +173,23 @@ jobs:
 
       - name: Migrate and seed
         run: pnpm db:migrate && pnpm seed
+
+      # THE PROOF THAT HAD ONLY EVER BEEN A COMMAND.
+      #
+      # `pnpm db:bootstrap -- --check` inserts a probe row as admin and tries
+      # to read it back over APP_DATABASE_URL with no `app.user_id` set. Zero
+      # rows with no context, one row with the owner's, zero with another
+      # user's — that is enforcement, as opposed to `pg_class.relrowsecurity`,
+      # which was true for the whole period RLS was doing nothing.
+      #
+      # It existed and passed for anyone who ran it. Nothing ran it. That is
+      # the same defect as the e2e suite this job exists to fix, and it is why
+      # the fallback warning below reached a production build unnoticed: a
+      # check nobody executes is indistinguishable from one that does not
+      # exist. `db:app-role` is run first because migration 0009 creates
+      # `insiderflow_app` NOLOGIN and without a password, deliberately.
+      - name: Create the application role and PROVE row-level security
+        run: pnpm db:app-role && pnpm db:bootstrap -- --check
 
       # Migrations and the seed leave every DERIVED table empty, and the
       # heatmap, the two analytics screener presets and the leaderboard read

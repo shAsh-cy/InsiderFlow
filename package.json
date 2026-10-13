@@ -16,6 +16,7 @@
     "lint:scripts": "eslint scripts",
     "lighthouse": "node scripts/lighthouse.mjs",
     "lint:changelog": "node scripts/lint-changelog.mjs",
+    "lint:changelog-quotes": "node scripts/lint-changelog-quotes.mjs",
     "lint:e2e-locators": "node scripts/lint-e2e-locators.mjs",
     "// test": "Sequential: four packages spin up PGlite (Postgres in WASM), and running those WASM heaps concurrently exhausts memory on a 2-core runner (VirtualAlloc/OOM). Serial is slower but deterministic.",
     "test": "pnpm -r --workspace-concurrency=1 test",
@@ -39,7 +40,10 @@
     "lint:api-schemas": "node scripts/lint-api-schemas.mjs",
     "lint:client-bundle": "node scripts/lint-client-bundle.mjs",
     "measure:edgar-latency": "pnpm --filter @insiderflow/db exec tsx scripts/measure-edgar-latency.mjs",
-    "alerts:send-live": "pnpm --filter @insiderflow/alerts exec tsx scripts/send-live-alert.mjs"
+    "alerts:send-live": "pnpm --filter @insiderflow/alerts exec tsx scripts/send-live-alert.mjs",
+    "// deploy:prod": "THE one command. Dispatches .github/workflows/release.yml; GitHub runs the deploy behind the production environment's required reviewer. See DEPLOY.md.",
+    "deploy:prod": "node scripts/deploy-prod.mjs",
+    "smoke:prod": "node scripts/smoke-production.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
