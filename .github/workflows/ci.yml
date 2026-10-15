@@ -148,6 +148,9 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://iugwzzaexdbrdqtnibij.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_Ciu2lpiVgSBnewMulci_Kw_Wpqc25nR
 
+      # Keep e2e test suite concurrency from tripping the 60/min default rate limit on loopback.
+      RATE_LIMIT_PUBLIC_PER_MIN: "600"
+
     steps:
       - uses: actions/checkout@v4
 

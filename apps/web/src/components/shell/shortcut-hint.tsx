@@ -38,7 +38,7 @@ export function ShortcutHint({ className }: { className?: string }) {
       aria-hidden
       data-testid="palette-hint"
       className={cn(
-        "num inline-flex min-w-12 justify-center rounded-sm border border-border px-1 text-2xs text-ink-faint",
+        "num inline-flex min-w-[52px] justify-center rounded-sm border border-border px-1 text-2xs text-ink-faint",
         className,
       )}
     >
