@@ -67,6 +67,7 @@ paths = [
   # CI plants a decoy secret to prove the image-secret gate can fail. The
   # decoy is meant to be found by that gate, not by this one.
   '''\.github/workflows/ci\.yml''',
+  '''\.github/workflows/quality\.yml''',
   # Lockfiles carry integrity hashes that look like high-entropy strings.
   '''pnpm-lock\.yaml''',
 

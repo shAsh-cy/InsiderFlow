@@ -37,6 +37,8 @@ jobs:
       # The suite asserts against the ZZ* fixtures, which are hidden by
       # default so they can never reach a real deployment's analytics.
       INSIDERFLOW_SHOW_SYNTHETIC: "true"
+      NEXT_PUBLIC_SUPABASE_URL: https://iugwzzaexdbrdqtnibij.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_Ciu2lpiVgSBnewMulci_Kw_Wpqc25nR
 
     steps:
       - uses: actions/checkout@v4
