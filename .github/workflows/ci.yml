@@ -143,6 +143,11 @@ jobs:
       APP_DB_PASSWORD: ci-ephemeral-not-a-secret
       APP_DATABASE_URL: postgres://insiderflow_app:ci-ephemeral-not-a-secret@localhost:5433/insiderflow
 
+      # Development Supabase project public anon key & URL for client auth chrome.
+      # Public values, not secrets (docs/security.md).
+      NEXT_PUBLIC_SUPABASE_URL: https://iugwzzaexdbrdqtnibij.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_Ciu2lpiVgSBnewMulci_Kw_Wpqc25nR
+
     steps:
       - uses: actions/checkout@v4
 
