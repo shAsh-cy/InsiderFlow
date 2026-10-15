@@ -1,4 +1,11 @@
 import { expect, test } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+
+/** True when the deployment has Supabase credentials wired up. */
+async function authConfigured(request: APIRequestContext): Promise<boolean> {
+  const body = await (await request.get("/login")).text();
+  return !body.includes("Auth is not configured");
+}
 
 /**
  * THE MASTHEAD'S AUTH AFFORDANCE (r7, Item B).
@@ -26,7 +33,13 @@ import { expect, test } from "@playwright/test";
 
 test.describe("signed out", () => {
   for (const route of ["/", "/trades"]) {
-    test(`${route} offers a plain sign-in link and no menu`, async ({ page }) => {
+    test(`${route} offers a plain sign-in link and no menu`, async ({ page, request }) => {
+      const configured = await authConfigured(request);
+      test.skip(
+        !configured,
+        "Auth is not configured on this deployment; sign-in link is omitted by design.",
+      );
+
       await page.goto(route);
       const header = page.getByRole("banner");
 
@@ -87,7 +100,13 @@ test.describe("a cookie that does not resolve to a user", () => {
       page,
       context,
       baseURL,
+      request,
     }) => {
+      const configured = await authConfigured(request);
+      test.skip(
+        !configured,
+        "Auth is not configured on this deployment; sign-in link is omitted by design.",
+      );
       const { hostname } = new URL(baseURL!);
       // Supabase's cookie name is project-scoped; several plausible
       // spellings are planted so the test does not depend on which one this

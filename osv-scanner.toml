@@ -1,0 +1,10 @@
+# osv-scanner configuration.
+# Documented devDependency advisories already tracked in package.json auditConfig.ignoreCves.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+reason = "Dev dependency in @next/eslint-plugin-next; CVE-2026-93687 already ignored in package.json auditConfig."
+
+[[IgnoredVulns]]
+id = "GHSA-82fw-gwwq-j7x9"
+reason = "Dev dependency in vitest / @vitest/mocker 3.2.7; path traversal in mocking redirect, not in production bundle."
